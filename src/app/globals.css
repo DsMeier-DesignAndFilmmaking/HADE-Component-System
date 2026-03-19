@@ -1,0 +1,54 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --color-ink: #0b0d12;
+  --color-surface: #f6f7f9;
+  --color-line: #d8dce3;
+  --color-accent: #316bff;
+  --color-obsidian: #080b11;
+}
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    @apply bg-surface text-ink;
+    font-feature-settings: "kern" 1, "liga" 1;
+  }
+
+  ::selection {
+    @apply bg-accentSoft text-accent;
+  }
+
+  :focus-visible {
+    @apply outline-none ring-2 ring-accent ring-offset-2;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  .gradient-hade {
+    background: linear-gradient(135deg, #316bff 0%, #8b5cf6 50%, #10b981 100%);
+  }
+
+  .gradient-dark {
+    background: linear-gradient(180deg, #080b11 0%, #1c2236 100%);
+  }
+
+  .border-gradient {
+    border-image: linear-gradient(135deg, #316bff40, #8b5cf640, #10b98140) 1;
+  }
+}
