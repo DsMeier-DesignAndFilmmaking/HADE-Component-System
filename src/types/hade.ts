@@ -174,3 +174,85 @@ export interface DecisionDiagramProps {
   compact?: boolean;
   className?: string;
 }
+
+export type SignalNodeState = "idle" | "active" | "stale";
+
+export type EngineNodeState = "idle" | "running" | "complete";
+
+export type ExperienceNodeState = "queued" | "ready" | "delivered";
+
+export interface DecisionFlowSignalNode {
+  id: string;
+  type: SignalType;
+  state: SignalNodeState;
+  strength?: number;
+  label?: string;
+}
+
+export interface DecisionFlowEngineNode {
+  id: string;
+  label: string;
+  detail: string;
+  state: EngineNodeState;
+  latencyMs?: number;
+}
+
+export interface DecisionFlowExperienceNode {
+  id: string;
+  label: string;
+  detail: string;
+  mode: UserSignalMode;
+  state: ExperienceNodeState;
+}
+
+export interface DecisionFlowDiagramProps {
+  animated?: boolean;
+  className?: string;
+}
+
+// ─── User Signal (composite context for adaptive components) ─────────────────
+
+export type UserSignalMode = "explore" | "book" | "compare";
+
+export type Urgency = "low" | "medium" | "high";
+
+export interface UserSignal {
+  intent: Intent;
+  urgency: Urgency;
+  mode: UserSignalMode;
+  context?: string; // freeform label, e.g. "weekend brunch"
+}
+
+// ─── Adaptive Component Props ────────────────────────────────────────────────
+
+export interface AdaptiveCardProps {
+  signal: UserSignal;
+  title: string;
+  description?: string;
+  image?: string;
+  metrics?: Array<{ label: string; value: string }>; // for "compare" mode
+  ctaLabel?: string;
+  ctaHref?: string;
+  onCtaClick?: () => void;
+  className?: string;
+  children?: React.ReactNode;
+}
+
+export interface ContextSignalBadgeProps {
+  signal: UserSignal;
+  showContext?: boolean;
+  animated?: boolean;
+  className?: string;
+}
+
+export interface AdaptiveButtonProps {
+  signal: UserSignal;
+  label?: string;
+  href?: string;
+  onClick?: () => void;
+  disabled?: boolean;
+  loading?: boolean;
+  size?: ComponentSize;
+  className?: string;
+  children?: React.ReactNode;
+}

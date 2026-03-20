@@ -3,11 +3,13 @@
 @tailwind utilities;
 
 :root {
-  --color-ink: #0b0d12;
-  --color-surface: #f6f7f9;
-  --color-line: #d8dce3;
-  --color-accent: #316bff;
-  --color-obsidian: #080b11;
+  --color-background: #fafafa;
+  --color-surface: #ffffff;
+  --color-text-primary: #1f2937;
+  --color-text-muted: #4b5563;
+  --color-accent-primary: #316bff;
+  --color-accent-secondary: #f59e0b;
+  --color-border: #e5e7eb;
 }
 
 @layer base {
@@ -22,16 +24,16 @@
   }
 
   body {
-    @apply bg-surface text-ink;
+    @apply bg-background text-textPrimary;
     font-feature-settings: "kern" 1, "liga" 1;
   }
 
   ::selection {
-    @apply bg-accentSoft text-accent;
+    @apply bg-accentPrimary/15 text-textPrimary;
   }
 
   :focus-visible {
-    @apply outline-none ring-2 ring-accent ring-offset-2;
+    @apply outline-none ring-2 ring-accentPrimary ring-offset-2 ring-offset-background;
   }
 }
 

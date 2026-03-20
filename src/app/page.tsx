@@ -1,8 +1,7 @@
 import Link from "next/link";
-import { DecisionDiagram } from "@/components/hade/diagrams/DecisionDiagram";
+import { Layout } from "@/components/layout";
+import DecisionFlowDiagram from "@/components/hade/diagrams/DecisionFlowDiagram";
 import { HadeButton } from "@/components/hade/buttons/HadeButton";
-import { HadeHeading } from "@/components/hade/typography/HadeHeading";
-import { HadeText } from "@/components/hade/typography/HadeText";
 
 const HADE_LAYERS = [
   {
@@ -13,13 +12,13 @@ const HADE_LAYERS = [
   },
   {
     letter: "A",
-    color: "#8B5CF6",
+    color: "#2563EB",
     title: "Adaptive Logic Architecture",
     description: "Weight signals by trust, score candidates by intent alignment and proximity.",
   },
   {
     letter: "D",
-    color: "#10B981",
+    color: "#0F766E",
     title: "Decision Layer Orchestration",
     description: "Generate confident primary recommendations with human-voiced rationale.",
   },
@@ -39,110 +38,80 @@ const NAV_LINKS = [
 
 export default function HomePage() {
   return (
-    <main className="min-h-screen bg-obsidian text-surface">
-      {/* Nav */}
-      <nav className="border-b border-white/10 px-6 py-4">
-        <div className="mx-auto flex max-w-6xl items-center justify-between">
-          <span className="font-mono text-sm font-bold tracking-widest text-accent uppercase">
-            HADE System <span className="text-white/30">v1</span>
-          </span>
-          <div className="flex items-center gap-6">
+    <Layout>
+      <main className="min-h-screen bg-background text-textPrimary">
+        <section className="mx-auto max-w-7xl px-6 py-16 md:py-20">
+          <div className="grid grid-cols-1 gap-10 xl:grid-cols-2 xl:items-center xl:gap-16">
+            <div className="min-w-0">
+              <p className="mb-4 font-mono text-xs uppercase tracking-widest text-accentPrimary">
+                Hyperlocal Agentic Decision Engine
+              </p>
+              <h1 className="mb-6 text-balance text-4xl font-bold tracking-tight text-textPrimary sm:text-5xl">
+                Adaptive UX, <span className="text-accentPrimary">context-first.</span>
+              </h1>
+              <p className="mb-8 max-w-xl text-base leading-relaxed text-textMuted">
+                HADE reads live environmental and behavioral signals, weights them by trust,
+                and orchestrates adaptive component experiences that match user intent in real time.
+              </p>
+              <div className="flex flex-wrap gap-3">
+                <HadeButton href="/demo" variant="primary" size="default">
+                  Try the Demo
+                </HadeButton>
+                <HadeButton href="/components" variant="secondary" size="default">
+                  Browse Components
+                </HadeButton>
+              </div>
+            </div>
+
+            <div className="w-full rounded-2xl border border-border bg-surface p-4 md:p-6">
+  <p className="mb-4 font-mono text-xs uppercase tracking-widest text-textMuted">
+    Decision Pipeline
+  </p>
+  <div className="w-full max-w-full overflow-visible">
+    <DecisionFlowDiagram className="w-full h-auto" />
+  </div>
+</div>
+          </div>
+        </section>
+
+        <section className="mx-auto max-w-6xl px-6 pb-14 md:pb-20">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {HADE_LAYERS.map((layer) => (
+              <div key={layer.letter} className="rounded-2xl border border-border bg-surface p-6">
+                <span className="mb-3 block font-mono text-4xl font-black" style={{ color: layer.color }}>
+                  {layer.letter}
+                </span>
+                <p className="mb-2 text-sm font-semibold text-textPrimary">{layer.title}</p>
+                <p className="text-xs leading-relaxed text-textMuted">{layer.description}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="mx-auto max-w-6xl border-t border-border px-6 py-14 md:py-16">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             {NAV_LINKS.map((link) => (
               <Link
                 key={link.href}
                 href={link.href}
-                className="text-sm text-white/60 hover:text-white transition-colors"
+                className="group rounded-xl border border-border bg-surface p-5 transition-all duration-200 hover:border-accentPrimary/50 hover:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accentPrimary focus-visible:ring-offset-2 focus-visible:ring-offset-background"
               >
-                {link.label}
+                <p className="mb-1 font-semibold text-textPrimary transition-colors group-hover:text-accentPrimary">
+                  {link.label} →
+                </p>
+                <p className="text-xs text-textMuted">{link.description}</p>
               </Link>
             ))}
           </div>
-        </div>
-      </nav>
+        </section>
 
-      {/* Hero */}
-      <section className="mx-auto max-w-6xl px-6 py-20">
-        <div className="grid grid-cols-1 gap-16 lg:grid-cols-2 lg:items-center">
-          {/* Left: copy */}
-          <div>
-            <p className="mb-4 font-mono text-xs uppercase tracking-widest text-accent">
-              Hyperlocal Agentic Decision Engine
-            </p>
-            <HadeHeading level={1} color="surface" className="mb-6 text-balance">
-              Adaptive UX,{" "}
-              <span className="text-accent">context-first.</span>
-            </HadeHeading>
-            <HadeText variant="body" color="surface" className="mb-8 opacity-70 text-balance">
-              HADE is a decision infrastructure that reads environmental signals, weights them by
-              social trust, and generates confident, personalized recommendations with human-voiced
-              rationale — ready to integrate into any product surface.
-            </HadeText>
-            <div className="flex flex-wrap gap-3">
-              <HadeButton href="/demo" variant="primary" size="default">
-                Try the Demo
-              </HadeButton>
-              <HadeButton href="/components" variant="ghost" size="default">
-                Browse Components
-              </HadeButton>
-            </div>
+        <footer className="border-t border-border px-6 py-6">
+          <div className="mx-auto flex max-w-6xl items-center justify-between text-xs font-mono text-textMuted">
+            <span>hade-system-v1</span>
+            <span>Next.js · TypeScript · Tailwind · Framer Motion</span>
           </div>
-
-          {/* Right: diagram */}
-          <div className="rounded-2xl border border-white/10 bg-slateGlass p-6">
-            <p className="mb-4 font-mono text-xs uppercase tracking-widest text-white/40">
-              Decision Pipeline
-            </p>
-            <DecisionDiagram interactive />
-          </div>
-        </div>
-      </section>
-
-      {/* HADE Letter Blocks */}
-      <section className="mx-auto max-w-6xl px-6 pb-20">
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {HADE_LAYERS.map((layer) => (
-            <div
-              key={layer.letter}
-              className="rounded-2xl border border-white/10 bg-slateGlass p-6"
-            >
-              <span
-                className="block font-mono text-4xl font-black mb-3"
-                style={{ color: layer.color }}
-              >
-                {layer.letter}
-              </span>
-              <p className="text-sm font-semibold text-white mb-2">{layer.title}</p>
-              <p className="text-xs text-white/50 leading-relaxed">{layer.description}</p>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* Quick links */}
-      <section className="border-t border-white/10 mx-auto max-w-6xl px-6 py-16">
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          {NAV_LINKS.map((link) => (
-            <Link
-              key={link.href}
-              href={link.href}
-              className="group rounded-xl border border-white/10 bg-slateGlass p-5 hover:border-accent/40 hover:bg-slateGlass/80 transition-all duration-200"
-            >
-              <p className="font-semibold text-white group-hover:text-accent transition-colors mb-1">
-                {link.label} →
-              </p>
-              <p className="text-xs text-white/50">{link.description}</p>
-            </Link>
-          ))}
-        </div>
-      </section>
-
-      {/* Footer */}
-      <footer className="border-t border-white/10 px-6 py-6">
-        <div className="mx-auto max-w-6xl flex items-center justify-between text-xs text-white/30 font-mono">
-          <span>hade-system-v1</span>
-          <span>Next.js · TypeScript · Tailwind · Framer Motion</span>
-        </div>
-      </footer>
-    </main>
+        </footer>
+      </main>
+    </Layout>
   );
 }

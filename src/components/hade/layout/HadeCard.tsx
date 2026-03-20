@@ -1,10 +1,10 @@
 import type { HadeCardProps } from "@/types/hade";
 
 const glowClasses = {
-  true: "shadow-glowBlue border-accent/30",
-  blue: "shadow-glowBlue border-accent/30",
-  lime: "shadow-glow border-cyberLime/30",
-  false: "shadow-panel border-line",
+  true: "shadow-glowBlue border-accentPrimary/30",
+  blue: "shadow-glowBlue border-accentPrimary/30",
+  lime: "shadow-glow border-accentSecondary/30",
+  false: "shadow-panel border-border",
 };
 
 export function HadeCard({ glow = false, className = "", children }: HadeCardProps) {
@@ -14,7 +14,7 @@ export function HadeCard({ glow = false, className = "", children }: HadeCardPro
   return (
     <div
       className={[
-        "rounded-2xl border bg-white p-6 transition-shadow duration-300",
+        "rounded-2xl border bg-surface p-6 transition-shadow duration-300",
         glowClass,
         className,
       ]

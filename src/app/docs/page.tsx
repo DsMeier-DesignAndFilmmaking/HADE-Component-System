@@ -1,5 +1,6 @@
 import { HadeHeading } from "@/components/hade/typography/HadeHeading";
 import { HadeText } from "@/components/hade/typography/HadeText";
+import { Layout } from "@/components/layout";
 
 function Section({ id, title, children }: { id: string; title: string; children: React.ReactNode }) {
   return (
@@ -32,8 +33,9 @@ function CodeBlock({ code }: { code: string }) {
 
 export default function DocsPage() {
   return (
-    <main className="min-h-screen bg-surface">
-      <div className="mx-auto max-w-4xl px-6 py-12">
+    <Layout>
+      <main className="min-h-screen bg-background">
+        <div className="mx-auto max-w-4xl px-6 py-12">
         <p className="font-mono text-xs uppercase tracking-widest text-accent mb-3">
           API Reference
         </p>
@@ -248,7 +250,8 @@ const text = generateRationale(opportunity, context);
 </AdaptiveContainer>`}
           />
         </Section>
-      </div>
-    </main>
+        </div>
+      </main>
+    </Layout>
   );
 }

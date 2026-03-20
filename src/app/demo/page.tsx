@@ -11,6 +11,8 @@ import { HadeButton } from "@/components/hade/buttons/HadeButton";
 import { HadeHeading } from "@/components/hade/typography/HadeHeading";
 import { HadeText } from "@/components/hade/typography/HadeText";
 import { useHadeAdaptiveContext } from "@/lib/hade/hooks";
+import { Layout } from "@/components/layout";
+
 
 const SIGNAL_TYPES: SignalType[] = [
   "PRESENCE",
@@ -193,8 +195,10 @@ function DemoInner() {
 
 export default function DemoPage() {
   return (
-    <AdaptiveContainer config={{ default_intent: "anything" }}>
-      <DemoInner />
-    </AdaptiveContainer>
+    <Layout>
+      <AdaptiveContainer config={{ default_intent: "anything" }}>
+        <DemoInner />
+      </AdaptiveContainer>
+    </Layout>
   );
 }

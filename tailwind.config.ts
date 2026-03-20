@@ -9,9 +9,17 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
+        // Semantic light theme tokens
+        background: "#FAFAFA",
+        surface: "#FFFFFF",
+        textPrimary: "#1F2937",
+        textMuted: "#4B5563",
+        accentPrimary: "#316BFF",
+        accentSecondary: "#F59E0B",
+        border: "#E5E7EB",
         // Core HADE palette
         ink: "#0b0d12",
-        surface: "#f6f7f9",
+        surfaceLegacy: "#f6f7f9",
         line: "#d8dce3",
         accent: "#316BFF",
         accentSoft: "#E7EEFF",

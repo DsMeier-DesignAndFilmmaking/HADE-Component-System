@@ -5,6 +5,7 @@ import { HadeHeading } from "@/components/hade/typography/HadeHeading";
 import { HadeText } from "@/components/hade/typography/HadeText";
 import { SignalBadge } from "@/components/hade/adaptive/SignalBadge";
 import { DecisionDiagram } from "@/components/hade/diagrams/DecisionDiagram";
+import { Layout } from "@/components/layout";
 import type { SignalType } from "@/types/hade";
 
 const SIGNAL_TYPES: SignalType[] = [
@@ -37,8 +38,9 @@ function CodeSnippet({ code }: { code: string }) {
 
 export default function ComponentsPage() {
   return (
-    <main className="min-h-screen bg-surface">
-      <div className="mx-auto max-w-4xl px-6 py-12">
+    <Layout>
+      <main className="min-h-screen bg-background">
+        <div className="mx-auto max-w-4xl px-6 py-12">
         <p className="font-mono text-xs uppercase tracking-widest text-accent mb-3">
           Component Library
         </p>
@@ -148,7 +150,8 @@ export default function ComponentsPage() {
 <DecisionDiagram compact />        // condensed layout`}
           />
         </Section>
-      </div>
-    </main>
+        </div>
+      </main>
+    </Layout>
   );
 }

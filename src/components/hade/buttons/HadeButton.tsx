@@ -18,11 +18,11 @@ interface HadeButtonProps {
 
 const variantClasses: Record<ComponentVariant, string> = {
   primary:
-    "bg-accent text-white border border-accent hover:bg-accent/90 shadow-glowBlue/30",
+    "bg-accentPrimary text-white border border-accentPrimary hover:bg-accentPrimary/90 shadow-glowBlue/30",
   secondary:
-    "bg-transparent text-accent border border-accent hover:bg-accentSoft",
+    "bg-surface text-accentPrimary border border-accentPrimary hover:bg-accentPrimary/10",
   ghost:
-    "bg-transparent text-ink border border-transparent hover:bg-surface hover:border-line",
+    "bg-transparent text-textPrimary border border-transparent hover:bg-surface hover:border-border",
 };
 
 const sizeClasses: Record<ComponentSize, string> = {
@@ -43,7 +43,7 @@ export function HadeButton({
   type = "button",
 }: HadeButtonProps) {
   const base =
-    "inline-flex items-center justify-center gap-2 rounded-xl font-medium tracking-tight transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 select-none";
+    "inline-flex items-center justify-center gap-2 rounded-xl font-medium tracking-tight transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accentPrimary focus-visible:ring-offset-2 focus-visible:ring-offset-background select-none";
 
   const classes = [
     base,
@@ -58,7 +58,7 @@ export function HadeButton({
   const motionProps = {
     whileHover: { scale: disabled || loading ? 1 : 1.02 },
     whileTap: { scale: disabled || loading ? 1 : 0.97 },
-    transition: { type: "spring", stiffness: 400, damping: 20 },
+    transition: { type: "spring" as const, stiffness: 400, damping: 20 },
   };
 
   const content = loading ? (
