@@ -142,17 +142,39 @@ async def decide(req: DecideRequest):
     summary = _generate_summary(req)
     session_id = req.session_id or str(uuid.uuid4())
 
+    # ── Geo fallback: prevent ocean queries when coordinates are unset ──
+    lat = req.geo.lat
+    lng = req.geo.lng
+    if lat == 0.0 and lng == 0.0:
+        logger.warning("geo=(0,0) detected — using San Francisco fallback")
+        print("[main] geo fallback: using San Francisco (37.7749, -122.4194)")
+        lat = 37.7749
+        lng = -122.4194
+
     # ── Data Ingestion: fetch real-world venue candidates ──
     venues = await get_nearby_venues(
-        lat=req.geo.lat,
-        lng=req.geo.lng,
+        lat=lat,
+        lng=lng,
         radius_meters=req.radius_meters,
     )
     logger.info("Decision pipeline: %d venues available (session=%s)", len(venues), session_id)
 
     if not venues:
+        logger.warning("No venues found — returning structured fallback (session=%s)", session_id)
         return {
-            "decision": None,
+            "decision": {
+                "id": "fallback_no_venues",
+                "venue_name": "No venues found nearby",
+                "category": "venue",
+                "geo": {"lat": lat, "lng": lng},
+                "distance_meters": 0,
+                "eta_minutes": 0,
+                "neighborhood": "",
+                "confidence": 0.0,
+                "rationale": "No open venues were found in your area right now.",
+                "why_now": "Try expanding your search radius or checking back later.",
+                "situation_summary": summary,
+            },
             "context_snapshot": {
                 "situation_summary": summary,
                 "interpreted_intent": req.situation.intent or "inferred",
@@ -166,7 +188,7 @@ async def decide(req: DecideRequest):
     decision = await run_hade_decision(req, venues, summary)
 
     selected = _find_venue_by_name(venues, decision["venue_name"])
-    distance = _haversine(req.geo.lat, req.geo.lng, selected.latitude, selected.longitude)
+    distance = _haversine(lat, lng, selected.latitude, selected.longitude)
     eta = round(distance / 80)  # ~80 m/min walking pace
 
     is_llm = decision["confidence"] > 0.0

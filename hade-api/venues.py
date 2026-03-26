@@ -53,19 +53,19 @@ class Venue(BaseModel):
 # ─── Internal Helpers ─────────────────────────────────────────────────────────
 
 def _passes_hade_filter(place: dict) -> bool:
-    """Apply HADE spontaneity filter: OPERATIONAL + currently open.
+    """Apply HADE spontaneity filter: OPERATIONAL + not explicitly closed.
 
-    Venues missing opening hours data are excluded (strict spontaneity
-    requirement — we only recommend places we *know* are open right now).
+    Venues missing opening hours data are included by default — missing
+    data is not the same as closed. Only exclude if openNow is explicitly False.
     """
     if place.get("businessStatus") != "OPERATIONAL":
         return False
 
     opening_hours = place.get("currentOpeningHours")
     if opening_hours is None:
-        return False
+        return True  # No hours data — include, don't penalize
 
-    return opening_hours.get("openNow", False) is True
+    return opening_hours.get("openNow", True) is not False
 
 
 def _parse_venue(place: dict) -> Venue:
@@ -106,6 +106,7 @@ async def get_nearby_venues(
         Returns an empty list on any API failure (graceful degradation).
     """
     api_key = os.environ.get("GOOGLE_PLACES_API_KEY")
+    print(f"[venues] lat={lat}, lng={lng}, api_key_set={bool(api_key)}")
     if not api_key:
         logger.warning("GOOGLE_PLACES_API_KEY not set — skipping venue fetch")
         return []
@@ -120,7 +121,7 @@ async def get_nearby_venues(
     }
 
     body = {
-        "textQuery": "places",
+        "textQuery": "restaurants cafes bars parks",
         "locationBias": {
             "circle": {
                 "center": {
@@ -130,13 +131,13 @@ async def get_nearby_venues(
                 "radius": radius_meters,
             }
         },
-        "includedTypes": included_types,
     }
 
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             response = await client.post(PLACES_API_URL, headers=headers, json=body)
 
+        print(f"[venues] Google Places API status={response.status_code}")
         if response.status_code != 200:
             logger.error(
                 "Google Places API error: status=%d body=%s",
@@ -147,12 +148,14 @@ async def get_nearby_venues(
 
         data = response.json()
         places = data.get("places", [])
+        print(f"[venues] raw results={len(places)}")
 
         venues = [
             _parse_venue(place)
             for place in places
             if _passes_hade_filter(place)
         ]
+        print(f"[venues] after HADE filter={len(venues)}")
 
         logger.info(
             "Venue fetch: %d raw results → %d after HADE filter (lat=%.4f, lng=%.4f)",

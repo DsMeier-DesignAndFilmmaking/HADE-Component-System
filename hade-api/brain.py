@@ -270,7 +270,7 @@ async def run_hade_decision(
         decision = _parse_llm_response(raw_response, venues)
         logger.info(
             "LLM decision: venue='%s' confidence=%.2f",
-            decision["selected_venue_name"],
+            decision["venue_name"],
             decision["confidence"],
         )
         return decision
