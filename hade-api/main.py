@@ -1,11 +1,27 @@
 from __future__ import annotations
+import logging
+import math
 import uuid
 from datetime import datetime
 from typing import Optional, List
 
+from dotenv import load_dotenv
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
+
+from brain import run_hade_decision
+from venues import get_nearby_venues, Venue
+
+# ─── Environment & Logging ────────────────────────────────────────────────────
+
+load_dotenv()
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
+)
+logger = logging.getLogger("hade")
 
 # ─── App Initialization ───────────────────────────────────────────────────────
 
@@ -99,23 +115,83 @@ def _generate_summary(req: DecideRequest) -> str:
     group = req.social.group_type
     return f"{t.replace('_', ' ').capitalize()} in Denver, {group} context, {energy} energy."
 
+def _haversine(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    """Calculate distance in meters between two lat/lng points."""
+    R = 6_371_000  # Earth radius in meters
+    phi1, phi2 = math.radians(lat1), math.radians(lat2)
+    d_phi = math.radians(lat2 - lat1)
+    d_lambda = math.radians(lng2 - lng1)
+    a = (
+        math.sin(d_phi / 2) ** 2
+        + math.cos(phi1) * math.cos(phi2) * math.sin(d_lambda / 2) ** 2
+    )
+    return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+def _find_venue_by_name(venues: list[Venue], name: str) -> Venue:
+    """Find a venue by name (case-insensitive). Falls back to first venue."""
+    name_lower = name.strip().lower()
+    for v in venues:
+        if v.name.strip().lower() == name_lower:
+            return v
+    return venues[0]
+
 # ─── Endpoints ────────────────────────────────────────────────────────────────
 
 @app.post("/hade/decide")
 async def decide(req: DecideRequest):
     summary = _generate_summary(req)
+    session_id = req.session_id or str(uuid.uuid4())
+
+    # ── Data Ingestion: fetch real-world venue candidates ──
+    venues = await get_nearby_venues(
+        lat=req.geo.lat,
+        lng=req.geo.lng,
+        radius_meters=req.radius_meters,
+    )
+    logger.info("Decision pipeline: %d venues available (session=%s)", len(venues), session_id)
+
+    if not venues:
+        return {
+            "decision": None,
+            "context_snapshot": {
+                "situation_summary": summary,
+                "interpreted_intent": req.situation.intent or "inferred",
+                "decision_basis": "no_venues",
+                "candidates_evaluated": 0,
+            },
+            "session_id": session_id,
+        }
+
+    # ── LLM Orchestration: context-aware venue selection ──
+    decision = await run_hade_decision(req, venues, summary)
+
+    selected = _find_venue_by_name(venues, decision["venue_name"])
+    distance = _haversine(req.geo.lat, req.geo.lng, selected.latitude, selected.longitude)
+    eta = round(distance / 80)  # ~80 m/min walking pace
+
+    is_llm = decision["confidence"] > 0.0
+
     return {
         "decision": {
-            "id": "v_cruise_room",
-            "venue_name": "The Cruise Room",
-            "category": "Art Deco cocktail bar",
-            "neighborhood": "Downtown Denver",
-            "confidence": 0.94,
-            "rationale": f"The Cruise Room is the move tonight for a {req.social.group_type}—it matches your {req.state.energy} energy perfectly.",
-            "why_now": f"Optimal signal density for the current window.",
-            "situation_summary": summary,
+            "id": f"v_{selected.name.lower().replace(' ', '_')[:20]}",
+            "venue_name": selected.name,
+            "category": selected.types[0] if selected.types else "venue",
+            "geo": {"lat": selected.latitude, "lng": selected.longitude},
+            "distance_meters": round(distance),
+            "eta_minutes": eta,
+            "neighborhood": selected.address,
+            "confidence": decision["confidence"],
+            "rationale": decision["rationale"],
+            "why_now": decision["why_now"],
+            "situation_summary": decision.get("situation_summary") or summary,
         },
-        "session_id": req.session_id or str(uuid.uuid4())
+        "context_snapshot": {
+            "situation_summary": summary,
+            "interpreted_intent": req.situation.intent or "inferred",
+            "decision_basis": "llm" if is_llm else "fallback",
+            "candidates_evaluated": len(venues),
+        },
+        "session_id": session_id,
     }
 
 @app.get("/health")

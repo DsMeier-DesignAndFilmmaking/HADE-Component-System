@@ -13,7 +13,7 @@ import type {
 // ─── Default Config ───────────────────────────────────────────────────────────
 
 const DEFAULT_CONFIG: Required<HadeConfig> = {
-  api_url: process.env.NEXT_PUBLIC_HADE_API_URL ?? "http://localhost:8000",
+  api_url: process.env.NEXT_PUBLIC_HADE_API_URL ?? "/api",
   default_radius: 1500,
   auto_emit_presence: false,
   trust_threshold: 0.3,

@@ -182,7 +182,7 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
         const apiUrl =
           config.api_url ??
           process.env.NEXT_PUBLIC_HADE_API_URL ??
-          "http://localhost:8000";
+          "/api";
 
         const body: DecideRequest = {
           geo: req?.geo ?? context.geo!,

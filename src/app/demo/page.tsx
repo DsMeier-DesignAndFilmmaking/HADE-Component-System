@@ -237,7 +237,7 @@ function DemoInner() {
             Emit signals then click <strong>Generate Decision</strong> to see the decision.
           </p>
           <p className="text-xs text-ink/30 mt-1 font-mono">
-            Backend: {process.env.NEXT_PUBLIC_HADE_API_URL ?? "http://localhost:8000"}
+            Backend: {process.env.NEXT_PUBLIC_HADE_API_URL ?? "/api"}
           </p>
         </div>
       )}
