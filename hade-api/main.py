@@ -36,11 +36,21 @@ app = FastAPI(title="HADE Decision Engine", version="0.1.0-mock")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    # Allow ALL origins for the demo to bypass Vercel/Localtunnel mismatch
+    allow_origins=["*"], 
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    # Crucial: Allow the browser to see these headers
+    expose_headers=["*"],
 )
+
+@app.middleware("http")
+async def add_localtunnel_header(request, call_next):
+    response = await call_next(request)
+    # This tells Localtunnel to skip the warning page
+    response.headers["bypass-tunnel-reminder"] = "true"
+    return response
 
 # ─── Pydantic Models — mirrors src/types/hade.ts ──────────────────────────────
 
