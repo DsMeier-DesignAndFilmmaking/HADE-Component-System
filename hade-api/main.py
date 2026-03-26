@@ -1,8 +1,3 @@
-"""
-HADE Decision Engine — v0 Production Demo
-Optimized for Vercel + Localtunnel + MacBook Pro Build Server.
-"""
-
 from __future__ import annotations
 import uuid
 from datetime import datetime
@@ -14,21 +9,19 @@ from pydantic import BaseModel, Field
 
 # ─── App Initialization ───────────────────────────────────────────────────────
 
-app = FastAPI(title="HADE Decision Engine", version="0.1.0-prod-bridge")
+app = FastAPI(title="HADE Decision Engine", version="0.1.0-prod")
 
 # 1. PERMISSIVE CORS SETUP
-# Allows the deployed Vercel domain to communicate with your local Mac.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Essential for Localtunnel/Vercel handshake
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
     expose_headers=["*"],
 )
 
-# 2. LOCALTUNNEL BYPASS & PREFLIGHT MIDDLEWARE
-# Manually handles the 'OPTIONS' preflight and skips the Localtunnel landing page.
+# 2. BYPASS MIDDLEWARE
 @app.middleware("http")
 async def hade_bridge_middleware(request: Request, call_next):
     if request.method == "OPTIONS":
@@ -37,14 +30,12 @@ async def hade_bridge_middleware(request: Request, call_next):
         response.headers["Access-Control-Allow-Methods"] = "*"
         response.headers["Access-Control-Allow-Headers"] = "*"
         return response
-
     response = await call_next(request)
-    # This header specifically skips the Localtunnel warning screen
     response.headers["bypass-tunnel-reminder"] = "true"
     response.headers["Access-Control-Allow-Origin"] = "*"
     return response
 
-# ─── Data Models (Mirrors HADE TypeScript Definitions) ───────────────────────
+# ─── Data Models ──────────────────────────────────────────────────────────────
 
 class GeoLocation(BaseModel):
     lat: float
@@ -91,7 +82,7 @@ class DecideRequest(BaseModel):
     signals: List[Signal] = Field(default_factory=list)
     rejection_history: List[RejectionEntry] = Field(default_factory=list)
 
-# ─── Business Logic — Time & Situation ────────────────────────────────────────
+# ─── Business Logic ──────────────────────────────────────────────────────────
 
 def _get_time_of_day() -> str:
     h = datetime.now().hour
@@ -113,8 +104,6 @@ def _generate_summary(req: DecideRequest) -> str:
 @app.post("/hade/decide")
 async def decide(req: DecideRequest):
     summary = _generate_summary(req)
-    
-    # Static 'The Cruise Room' decision for v0 Gold Path
     return {
         "decision": {
             "id": "v_cruise_room",
@@ -122,8 +111,8 @@ async def decide(req: DecideRequest):
             "category": "Art Deco cocktail bar",
             "neighborhood": "Downtown Denver",
             "confidence": 0.94,
-            "rationale": f"The Cruise Room is the move tonight for a {req.social.group_type}—it perfectly matches your {req.state.energy} energy with an intentional Art Deco vibe.",
-            "why_now": f"Optimal signal density for {req.time_of_day or 'the current window'}.",
+            "rationale": f"The Cruise Room is the move tonight for a {req.social.group_type}—it matches your {req.state.energy} energy perfectly.",
+            "why_now": f"Optimal signal density for the current window.",
             "situation_summary": summary,
         },
         "session_id": req.session_id or str(uuid.uuid4())
@@ -131,8 +120,4 @@ async def decide(req: DecideRequest):
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "bridge": "active", "venue": "The Cruise Room"}
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    return {"status": "ok", "bridge": "active"}

@@ -272,6 +272,7 @@ export interface AdaptiveState {
   decision: HadeDecision | null;
   isLoading: boolean;
   error: string | null;
+  setGeo: (geo: { lat: number; lng: number }) => void;
   emit: (type: SignalType, payload?: Partial<Signal>) => void;
   decide: (req?: Partial<DecideRequest>) => Promise<void>;
   pivot: (reason: string) => void;

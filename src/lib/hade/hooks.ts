@@ -93,6 +93,11 @@ export function useHadeEngine(config: HadeConfig = {}) {
     [updateContext]
   );
 
+  const setGeo = useCallback(
+    (geo: { lat: number; lng: number }) => updateContext({ geo }),
+    [updateContext]
+  );
+
   return {
     context,
     updateContext,
@@ -102,6 +107,7 @@ export function useHadeEngine(config: HadeConfig = {}) {
     setGroupType,
     setGroupSize,
     setRadius,
+    setGeo,
   };
 }
 
@@ -156,7 +162,7 @@ export function useSignals(initialTypes?: SignalType[]) {
  * so the backend produces a new decision excluding the rejected venue.
  */
 export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
-  const { context, updateContext } = useHadeEngine(config);
+  const { context, updateContext, setGeo } = useHadeEngine(config);
   const { signals, emit } = useSignals();
   const [decision, setDecision] = useState<HadeDecision | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -243,6 +249,7 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
     decision,
     isLoading,
     error,
+    setGeo,
     emit,
     decide,
     pivot,

@@ -36,7 +36,7 @@ const SAMPLE_CONTENT: Record<SignalType, string[]> = {
 const DEFAULT_GEO = { lat: 39.7392, lng: -104.9903 };
 
 function DemoInner() {
-  const { signals, emit, decision, isLoading, error, decide } = useHadeAdaptiveContext();
+  const { signals, emit, decision, isLoading, error, decide, setGeo } = useHadeAdaptiveContext();
   const [selectedType, setSelectedType] = useState<SignalType>("PRESENCE");
   const [strength, setStrength] = useState(0.7);
 
@@ -46,22 +46,26 @@ function DemoInner() {
 
   useEffect(() => {
     if (!navigator.geolocation) {
+      setGeo(DEFAULT_GEO);
       setGeoStatus("denied");
       return;
     }
     setGeoStatus("loading");
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        setUserGeo({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        const geo = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        setUserGeo(geo);
+        setGeo(geo);          // Write real coordinates into HadeContext
         setGeoStatus("idle");
       },
       () => {
         // Permission denied or unavailable — fall back to Denver
+        setGeo(DEFAULT_GEO);  // Write Denver fallback into HadeContext
         setGeoStatus("denied");
       },
       { timeout: 8000, maximumAge: 60_000 }
     );
-  }, []);
+  }, [setGeo]);
 
   const resolvedGeo = userGeo ?? DEFAULT_GEO;
 
@@ -154,7 +158,7 @@ function DemoInner() {
             <HadeButton
               variant="secondary"
               size="sm"
-              onClick={() => decide({ geo: resolvedGeo })}
+              onClick={() => decide()}
               loading={isLoading}
               className="flex-1"
             >
