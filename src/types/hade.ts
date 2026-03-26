@@ -1,4 +1,4 @@
-// ─── Primitives ─────────────────────────────────────────────────────────────
+// ─── Primitives ──────────────────────────────────────────────────────────────
 
 export interface GeoLocation {
   lat: number;
@@ -21,7 +21,191 @@ export type ComponentVariant = "primary" | "secondary" | "ghost";
 
 export type ComponentSize = "default" | "sm" | "lg";
 
-// ─── Signals ─────────────────────────────────────────────────────────────────
+// ─── Situation-First Primitives ───────────────────────────────────────────────
+
+/**
+ * Expanded time-of-day with higher resolution than the legacy 4-value enum.
+ * Drives intent inference and rationale tone.
+ */
+export type TimeOfDay =
+  | "morning"        // 05:00–11:00 — breakfast window
+  | "midday"         // 11:00–13:00 — lunch window
+  | "afternoon"      // 13:00–17:00 — post-lunch, pre-evening
+  | "early_evening"  // 17:00–19:00 — post-work, pre-dinner
+  | "evening"        // 19:00–22:00 — prime dinner/social window
+  | "late_night";    // 22:00–05:00 — reduced options, comfort or scene
+
+/**
+ * Expanded day classification. weekend_prime is Friday/Saturday evening —
+ * the highest social energy window of any week.
+ */
+export type DayType =
+  | "weekday"          // Mon–Thu (any hour)
+  | "weekday_evening"  // Mon–Thu after 18:00
+  | "weekend"          // Sat–Sun daytime
+  | "weekend_prime"    // Fri–Sat evening (18:00+) — max social energy
+  | "holiday";         // Explicit public holiday override
+
+/**
+ * How adventurous the user is in this moment.
+ * comfort = familiar, low-risk. open = flexible. adventurous = wants discovery.
+ */
+export type Openness = "comfort" | "open" | "adventurous";
+
+/**
+ * Social configuration of the group.
+ */
+export type GroupType = "solo" | "couple" | "friends" | "family" | "work";
+
+/**
+ * Spending tolerance. Informs venue category filtering before the LLM call.
+ */
+export type Budget = "free" | "low" | "medium" | "high" | "unlimited";
+
+// ─── Human State Groups ───────────────────────────────────────────────────────
+
+/**
+ * What the user wants to do and how urgently.
+ * intent: null means the engine should infer from time_of_day + day_type.
+ */
+export interface HadeSituation {
+  intent: Intent | null;
+  urgency: "low" | "medium" | "high";
+}
+
+/**
+ * The user's current physical and mental state.
+ * These directly influence venue type, distance tolerance, and noise preference.
+ */
+export interface HadeState {
+  energy: EnergyLevel;
+  openness: Openness;
+}
+
+/**
+ * Who is in the group and how many.
+ */
+export interface HadeSocial {
+  group_size: number;
+  group_type: GroupType;
+}
+
+/**
+ * Real-world blockers. Optional — no constraints means maximum flexibility.
+ */
+export interface HadeConstraints {
+  budget?: Budget;
+  time_available_minutes?: number;  // how long they have; undefined = no limit
+  distance_tolerance?: "walking" | "short_drive" | "any";
+}
+
+// ─── Rejection History ────────────────────────────────────────────────────────
+
+export interface RejectionEntry {
+  venue_id: string;
+  venue_name: string;
+  pivot_reason: string;
+}
+
+// ─── HADE Context (v0 Contract) ───────────────────────────────────────────────
+
+/**
+ * The canonical context object for HADE v0.
+ * Situation-First: human state is organized into semantic groups,
+ * not flattened into a raw data bag.
+ *
+ * This is what gets assembled client-side (via buildContext) and
+ * serialized into the POST /hade/decide request.
+ */
+export interface HadeContext {
+  // Where
+  geo: GeoLocation | null;
+
+  // When (auto-derived by buildContext unless provided)
+  time_of_day: TimeOfDay;
+  day_type: DayType;
+
+  // Human state — the "Situation-First" groups
+  situation: HadeSituation;
+  state: HadeState;
+  social: HadeSocial;
+  constraints: HadeConstraints;
+
+  // System fields
+  radius_meters: number;
+  session_id: string | null;
+  signals: Signal[];
+  rejection_history: RejectionEntry[];
+}
+
+export interface HadeConfig {
+  api_url?: string;
+  default_radius?: number;
+  auto_emit_presence?: boolean;
+  trust_threshold?: number; // min edge_weight to display attribution
+}
+
+// ─── Decide API ───────────────────────────────────────────────────────────────
+
+/**
+ * What the frontend sends to POST /hade/decide.
+ * Mirrors HadeContext but all groups are optional — backend applies defaults.
+ */
+export interface DecideRequest {
+  geo: GeoLocation;
+  situation?: Partial<HadeSituation>;
+  state?: Partial<HadeState>;
+  social?: Partial<HadeSocial>;
+  constraints?: HadeConstraints;
+  time_of_day?: TimeOfDay;
+  day_type?: DayType;
+  radius_meters?: number;
+  session_id?: string | null;
+  signals?: Signal[];
+  rejection_history?: RejectionEntry[];
+}
+
+/**
+ * The single decision returned by the backend.
+ * No fallbacks. No primary+secondary. One decision.
+ *
+ * situation_summary is the anchor sentence the LLM used as its
+ * reasoning starting point — exposed here for transparency and debugging.
+ */
+export interface HadeDecision {
+  id: string;
+  venue_name: string;
+  category: string;
+  geo: GeoLocation;
+  distance_meters: number;
+  eta_minutes: number;
+  neighborhood?: string;
+
+  // LLM output — contextually grounded, non-generic
+  rationale: string;            // 1–2 sentences, references a context factor
+  why_now: string;              // what made this right specifically NOW
+  confidence: number;           // 0–1 composite score
+
+  // The anchor sentence that drove this decision
+  situation_summary: string;
+}
+
+/**
+ * What POST /hade/decide returns.
+ * One decision. Context snapshot for observability. Session continuity.
+ */
+export interface DecideResponse {
+  decision: HadeDecision;
+  context_snapshot: {
+    situation_summary: string;
+    interpreted_intent: string;
+    decision_basis: string;
+    candidates_evaluated: number;
+  };
+  session_id: string;
+}
+
+// ─── Signals ──────────────────────────────────────────────────────────────────
 
 export interface Signal {
   id: string;
@@ -40,11 +224,11 @@ export interface TrustAttribution {
   user_id: string;
   display_name: string;
   edge_weight: number; // 0–1 social proximity
-  time_ago: string; // human-readable, e.g. "2h ago"
-  quote?: string; // optional direct quote
+  time_ago: string;    // human-readable, e.g. "2h ago"
+  quote?: string;
 }
 
-// ─── Opportunities ───────────────────────────────────────────────────────────
+// ─── Opportunity (legacy — kept for signal attribution display) ───────────────
 
 export interface EventInfo {
   id: string;
@@ -59,75 +243,33 @@ export interface PrimarySignal {
   content: string | null;
 }
 
+/**
+ * Opportunity is the backend's candidate venue before a decision is made.
+ * Kept for trust attribution display and signal visualization components.
+ * The primary decision output is HadeDecision, not Opportunity.
+ */
 export interface Opportunity {
   id: string;
   venue_name: string;
   category: string;
   distance_meters: number;
   eta_minutes: number;
-  rationale: string; // personalized, human-voiced copy
+  rationale: string;
   trust_attributions: TrustAttribution[];
   geo: GeoLocation;
   is_primary: boolean;
   event: EventInfo | null;
   primary_signal: PrimarySignal | null;
   neighborhood?: string;
-  score?: number; // composite ranking score
+  score?: number;
 }
 
-// ─── Decide API ──────────────────────────────────────────────────────────────
-
-export interface DecideRequest {
-  geo: GeoLocation;
-  intent?: Intent | null;
-  group_size?: number;
-  session_id?: string | null;
-  energy_level?: EnergyLevel;
-  radius_meters?: number;
-  rejection_history?: Array<{
-    venue_id: string;
-    venue_name: string;
-    pivot_reason: string;
-  }>;
-}
-
-export interface DecideResponse {
-  primary: Opportunity;
-  fallbacks: Opportunity[];
-  context_state_id: string;
-  provider?: "gemini" | "openai";
-}
-
-// ─── HADE Context ────────────────────────────────────────────────────────────
-
-export interface HadeContext {
-  geo: GeoLocation | null;
-  intent: Intent;
-  energy_level: EnergyLevel;
-  group_size: number;
-  radius_meters: number;
-  session_id: string | null;
-  time_of_day: "morning" | "afternoon" | "evening" | "night";
-  day_type: "weekday" | "weekend";
-  signals: Signal[];
-  rejection_history: DecideRequest["rejection_history"];
-}
-
-export interface HadeConfig {
-  api_url?: string;
-  default_radius?: number;
-  default_intent?: Intent;
-  auto_emit_presence?: boolean;
-  trust_threshold?: number; // min edge_weight to display attribution
-}
-
-// ─── Adaptive State ──────────────────────────────────────────────────────────
+// ─── Adaptive State ───────────────────────────────────────────────────────────
 
 export interface AdaptiveState {
   context: HadeContext;
   signals: Signal[];
-  opportunities: Opportunity[];
-  primary: Opportunity | null;
+  decision: HadeDecision | null;
   isLoading: boolean;
   error: string | null;
   emit: (type: SignalType, payload?: Partial<Signal>) => void;
@@ -135,7 +277,7 @@ export interface AdaptiveState {
   pivot: (reason: string) => void;
 }
 
-// ─── Component Props ─────────────────────────────────────────────────────────
+// ─── Component Props ──────────────────────────────────────────────────────────
 
 export interface HadeButtonProps {
   variant?: ComponentVariant;
@@ -210,7 +352,7 @@ export interface DecisionFlowDiagramProps {
   className?: string;
 }
 
-// ─── User Signal (composite context for adaptive components) ─────────────────
+// ─── User Signal (adaptive component presentation context) ────────────────────
 
 export type UserSignalMode = "explore" | "book" | "compare";
 
@@ -220,17 +362,17 @@ export interface UserSignal {
   intent: Intent;
   urgency: Urgency;
   mode: UserSignalMode;
-  context?: string; // freeform label, e.g. "weekend brunch"
+  context?: string;
 }
 
-// ─── Adaptive Component Props ────────────────────────────────────────────────
+// ─── Adaptive Component Props ─────────────────────────────────────────────────
 
 export interface AdaptiveCardProps {
   signal: UserSignal;
   title: string;
   description?: string;
   image?: string;
-  metrics?: Array<{ label: string; value: string }>; // for "compare" mode
+  metrics?: Array<{ label: string; value: string }>;
   ctaLabel?: string;
   ctaHref?: string;
   onCtaClick?: () => void;

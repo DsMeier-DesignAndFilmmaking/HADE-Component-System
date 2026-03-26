@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 
+
 const inter = Inter({
   subsets: ["latin"],
   variable: "--font-inter",
@@ -20,7 +21,7 @@ export const metadata: Metadata = {
     template: "%s | HADE System",
   },
   description:
-    "Hyperlocal Agentic Decision Engine — adaptive UX component system and interactive demo.",
+    "Human-Aware Decision Engine — adaptive UX component system and interactive demo.",
   keywords: ["HADE", "adaptive UX", "decision engine", "component system"],
 };
 

@@ -40,7 +40,7 @@ export default function ComponentsPage() {
   return (
     <Layout>
       <main className="min-h-screen bg-background">
-        <div className="mx-auto max-w-4xl px-6 py-12">
+        <div className="mx-auto max-w-7xl px-6 py-12">
         <p className="font-mono text-xs uppercase tracking-widest text-accent mb-3">
           Component Library
         </p>

@@ -44,7 +44,7 @@ export default function HomePage() {
           <div className="grid grid-cols-1 gap-10 xl:grid-cols-2 xl:items-center xl:gap-16">
             <div className="min-w-0">
               <p className="mb-4 font-mono text-xs uppercase tracking-widest text-accentPrimary">
-                Hyperlocal Agentic Decision Engine
+                Human-Aware Decision Engine
               </p>
               <h1 className="mb-6 text-balance text-4xl font-bold tracking-tight text-textPrimary sm:text-5xl">
                 Adaptive UX, <span className="text-accentPrimary">context-first.</span>
@@ -74,7 +74,7 @@ export default function HomePage() {
           </div>
         </section>
 
-        <section className="mx-auto max-w-6xl px-6 pb-14 md:pb-20">
+        <section className="mx-auto max-w-7xl px-6 pb-14 md:pb-20">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {HADE_LAYERS.map((layer) => (
               <div key={layer.letter} className="rounded-2xl border border-border bg-surface p-6">
@@ -88,7 +88,7 @@ export default function HomePage() {
           </div>
         </section>
 
-        <section className="mx-auto max-w-6xl border-t border-border px-6 py-14 md:py-16">
+        <section className="mx-auto max-w-7xl border-t border-border px-6 py-14 md:py-16">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             {NAV_LINKS.map((link) => (
               <Link
@@ -106,7 +106,7 @@ export default function HomePage() {
         </section>
 
         <footer className="border-t border-border px-6 py-6">
-          <div className="mx-auto flex max-w-6xl items-center justify-between text-xs font-mono text-textMuted">
+          <div className="mx-auto flex max-w-7xl items-center justify-between text-xs font-mono text-textMuted">
             <span>hade-system-v1</span>
             <span>Next.js · TypeScript · Tailwind · Framer Motion</span>
           </div>

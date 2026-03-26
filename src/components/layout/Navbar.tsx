@@ -16,7 +16,7 @@ export function Navbar() {
     <header className="sticky top-0 z-40 border-b border-border bg-surface/95 backdrop-blur">
       <nav
         aria-label="Primary"
-        className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3 sm:px-6"
+        className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6"
       >
         <Link
           href="/"
@@ -57,7 +57,7 @@ export function Navbar() {
           isOpen ? "block" : "hidden",
         ].join(" ")}
       >
-        <div className="mx-auto flex max-w-6xl flex-col px-4 py-2 sm:px-6">
+        <div className="mx-auto flex max-w-7xl flex-col px-4 py-2 sm:px-6">
           {NAV_LINKS.map((link) => (
             <Link
               key={link.href}

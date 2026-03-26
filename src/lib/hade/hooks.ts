@@ -5,14 +5,16 @@ import type {
   HadeContext,
   HadeConfig,
   AdaptiveState,
+  HadeDecision,
   Signal,
   SignalType,
-  Opportunity,
   DecideRequest,
   Intent,
   EnergyLevel,
+  Openness,
+  GroupType,
 } from "@/types/hade";
-import { buildContext, rankOpportunities } from "./engine";
+import { buildContext } from "./engine";
 import {
   emitSignal,
   aggregateSignals,
@@ -24,7 +26,10 @@ import {
 
 /**
  * Core hook for building and managing HadeContext.
- * Provides context construction, updates, and derived state.
+ * Provides context construction and typed setters for each nested group.
+ *
+ * updateContext() performs a deep merge — partial nested objects are merged
+ * with existing values, not replaced wholesale.
  */
 export function useHadeEngine(config: HadeConfig = {}) {
   const [context, setContext] = useState<HadeContext>(() =>
@@ -33,18 +38,53 @@ export function useHadeEngine(config: HadeConfig = {}) {
 
   const updateContext = useCallback(
     (patch: Partial<HadeContext>) => {
-      setContext((prev) => buildContext({ ...prev, ...patch }, config));
+      setContext((prev) =>
+        buildContext(
+          {
+            ...prev,
+            ...patch,
+            // Deep merge nested groups so callers can pass partial objects
+            situation: { ...prev.situation, ...patch.situation },
+            state: { ...prev.state, ...patch.state },
+            social: { ...prev.social, ...patch.social },
+            constraints: { ...prev.constraints, ...patch.constraints },
+          },
+          config
+        )
+      );
     },
     [config]
   );
 
+  // Typed setters — preferred over raw updateContext for common mutations
+
   const setIntent = useCallback(
-    (intent: Intent) => updateContext({ intent }),
+    (intent: Intent | null) =>
+      updateContext({ situation: { intent } as HadeContext["situation"] }),
     [updateContext]
   );
 
-  const setEnergyLevel = useCallback(
-    (energy_level: EnergyLevel) => updateContext({ energy_level }),
+  const setEnergy = useCallback(
+    (energy: EnergyLevel) =>
+      updateContext({ state: { energy } as HadeContext["state"] }),
+    [updateContext]
+  );
+
+  const setOpenness = useCallback(
+    (openness: Openness) =>
+      updateContext({ state: { openness } as HadeContext["state"] }),
+    [updateContext]
+  );
+
+  const setGroupType = useCallback(
+    (group_type: GroupType) =>
+      updateContext({ social: { group_type } as HadeContext["social"] }),
+    [updateContext]
+  );
+
+  const setGroupSize = useCallback(
+    (group_size: number) =>
+      updateContext({ social: { group_size } as HadeContext["social"] }),
     [updateContext]
   );
 
@@ -53,7 +93,16 @@ export function useHadeEngine(config: HadeConfig = {}) {
     [updateContext]
   );
 
-  return { context, updateContext, setIntent, setEnergyLevel, setRadius };
+  return {
+    context,
+    updateContext,
+    setIntent,
+    setEnergy,
+    setOpenness,
+    setGroupType,
+    setGroupSize,
+    setRadius,
+  };
 }
 
 // ─── useSignals ───────────────────────────────────────────────────────────────
@@ -94,25 +143,29 @@ export function useSignals(initialTypes?: SignalType[]) {
   return { signals: filtered, all: signals, emit, clear };
 }
 
-// ─── useAdaptive ─────────────────────────────────────────────────────────────
+// ─── useAdaptive ──────────────────────────────────────────────────────────────
 
 /**
- * Full adaptive state hook — combines context, signals, and decide API.
- * This is the primary hook for AdaptiveContainer and demo pages.
+ * Primary hook — combines context, signals, and the /decide API.
+ * Returns a single decision (HadeDecision | null), not a list.
+ *
+ * decide() POSTs to /hade/decide and stores the backend's decision directly.
+ * The backend decision is trusted — no client-side re-ranking.
+ *
+ * pivot() adds the current decision to rejection_history and re-calls decide()
+ * so the backend produces a new decision excluding the rejected venue.
  */
 export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
   const { context, updateContext } = useHadeEngine(config);
-  const { signals, emit, clear: clearSignals } = useSignals();
-  const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
+  const { signals, emit } = useSignals();
+  const [decision, setDecision] = useState<HadeDecision | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const primary = opportunities.find((o) => o.is_primary) ?? opportunities[0] ?? null;
 
   const decide = useCallback(
     async (req?: Partial<DecideRequest>) => {
       if (!context.geo && !req?.geo) {
-        setError("Location required to generate recommendations.");
+        setError("Location is required to generate a decision.");
         return;
       }
 
@@ -121,36 +174,37 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
 
       try {
         const apiUrl =
-          config.api_url ?? process.env.NEXT_PUBLIC_HADE_API_URL ?? "http://localhost:8000";
+          config.api_url ??
+          process.env.NEXT_PUBLIC_HADE_API_URL ??
+          "http://localhost:8000";
 
         const body: DecideRequest = {
           geo: req?.geo ?? context.geo!,
-          intent: req?.intent ?? context.intent,
-          group_size: req?.group_size ?? context.group_size,
-          session_id: req?.session_id ?? context.session_id,
-          energy_level: req?.energy_level ?? context.energy_level,
+          situation: req?.situation ?? context.situation,
+          state: req?.state ?? context.state,
+          social: req?.social ?? context.social,
+          constraints: req?.constraints ?? context.constraints,
+          time_of_day: req?.time_of_day ?? context.time_of_day,
+          day_type: req?.day_type ?? context.day_type,
           radius_meters: req?.radius_meters ?? context.radius_meters,
+          session_id: req?.session_id ?? context.session_id,
+          signals: req?.signals ?? signals,
           rejection_history: req?.rejection_history ?? context.rejection_history,
         };
 
-        const res = await fetch(`${apiUrl}/decide`, {
+        const res = await fetch(`${apiUrl}/hade/decide`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
         });
 
         if (!res.ok) {
-          throw new Error(`API error ${res.status}: ${res.statusText}`);
+          throw new Error(`HADE API error ${res.status}: ${res.statusText}`);
         }
 
         const data = await res.json();
-        const ranked = rankOpportunities(
-          [data.primary, ...data.fallbacks],
-          context
-        );
-        setOpportunities(
-          ranked.map((o, i) => ({ ...o, is_primary: i === 0 }))
-        );
+        // Trust the backend's decision directly — no client-side re-ranking
+        setDecision(data.decision as HadeDecision);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Unknown error");
       } finally {
@@ -162,27 +216,31 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
 
   const pivot = useCallback(
     (reason: string) => {
-      if (!primary) return;
+      if (!decision) return;
+
+      // Add the dismissed venue to rejection_history
       updateContext({
         rejection_history: [
           ...(context.rejection_history ?? []),
           {
-            venue_id: primary.id,
-            venue_name: primary.venue_name,
+            venue_id: decision.id,
+            venue_name: decision.venue_name,
             pivot_reason: reason,
           },
         ],
       });
-      setOpportunities((prev) => prev.filter((o) => !o.is_primary));
+
+      // Clear current decision and request a new one
+      setDecision(null);
+      decide();
     },
-    [context.rejection_history, primary, updateContext]
+    [context.rejection_history, decision, updateContext, decide]
   );
 
   return {
     context,
     signals,
-    opportunities,
-    primary,
+    decision,
     isLoading,
     error,
     emit,
@@ -191,7 +249,7 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
   };
 }
 
-// ─── HadeContext React Context ────────────────────────────────────────────────
+// ─── HadeAdaptiveContext ──────────────────────────────────────────────────────
 
 export const HadeAdaptiveContext = createContext<AdaptiveState | null>(null);
 
