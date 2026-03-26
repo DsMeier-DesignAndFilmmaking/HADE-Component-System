@@ -12,6 +12,7 @@ import { HadeHeading } from "@/components/hade/typography/HadeHeading";
 import { HadeText } from "@/components/hade/typography/HadeText";
 import { useHadeAdaptiveContext } from "@/lib/hade/hooks";
 import { Layout } from "@/components/layout";
+import { LocationHUD } from "@/components/hade/LocationHUD";
 
 const SIGNAL_TYPES: SignalType[] = [
   "PRESENCE",
@@ -81,16 +82,19 @@ function DemoInner() {
 
   return (
     <div className="mx-auto max-w-7xl px-6 py-12">
-      <div className="mb-10">
-        <p className="font-mono text-xs uppercase tracking-widest text-accent mb-3">
-          Interactive Demo
-        </p>
-        <HadeHeading level={1} className="mb-3">
-          Signal Emitter
-        </HadeHeading>
-        <HadeText variant="body" color="muted">
-          Emit signals to simulate real-world context, then trigger a decision.
-        </HadeText>
+      <div className="mb-10 flex items-start justify-between gap-4">
+        <div>
+          <p className="font-mono text-xs uppercase tracking-widest text-accent mb-3">
+            Interactive Demo
+          </p>
+          <HadeHeading level={1} className="mb-3">
+            Signal Emitter
+          </HadeHeading>
+          <HadeText variant="body" color="muted">
+            Emit signals to simulate real-world context, then trigger a decision.
+          </HadeText>
+        </div>
+        <LocationHUD geo={userGeo} geoStatus={geoStatus} className="shrink-0 mt-1" />
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
@@ -141,15 +145,6 @@ function DemoInner() {
               className="w-full accent-accent"
             />
           </div>
-
-          {/* Geo status indicator */}
-          <p className="font-mono text-xs text-ink/30 mb-5">
-            {geoStatus === "loading" && "⊙ Acquiring location…"}
-            {geoStatus === "denied" && "⊘ Location unavailable — using Denver default"}
-            {geoStatus === "idle" && userGeo &&
-              `⊕ ${userGeo.lat.toFixed(4)}, ${userGeo.lng.toFixed(4)}`}
-            {geoStatus === "idle" && !userGeo && "⊙ Using Denver default"}
-          </p>
 
           <HadeButton variant="primary" onClick={handleEmit} className="w-full">
             Emit Signal
