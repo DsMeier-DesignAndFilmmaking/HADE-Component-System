@@ -4,9 +4,9 @@
     "role": "Primary decision engine for HADE L2 Intelligence.",
     "tone": [
       "Technical",
-      "Concise"
+      "Sarcastic"
     ],
     "guardrails": "If location signal < 10% accuracy, fallback to last known City Pack.",
-    "last_updated": "2026-03-30T19:12:00.000Z"
+    "last_updated": "2026-03-30T19:24:00.000Z"
   }
 ]
