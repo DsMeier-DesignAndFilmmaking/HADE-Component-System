@@ -1,0 +1,42 @@
+name: HADE Notion Sync
+
+on:
+  push:
+    branches: [ main ]    # Syncs whenever you push new code
+  workflow_dispatch:      # Adds a "Run" button in GitHub to sync manually
+  schedule:
+    - cron: '0 * * * *'   # Automatically syncs every hour
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Notion Client
+        run: npm install @notionhq/client
+
+      - name: Run Sync Script
+        env:
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
+        # This points to the script we created in Step 3
+        run: node scripts/sync-notion.js
+
+      - name: Commit and Push Changes
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "chore: sync HADE brain from Notion Strategic Command Center"
+          file_pattern: 'src/config/agent_definitions.json'
+
+      - name: Trigger Vercel Deployment
+        run: |
+          curl -X POST ${{ secrets.VERCEL_DEPLOY_HOOK }}
