@@ -399,3 +399,72 @@ export interface AdaptiveButtonProps {
   className?: string;
   children?: React.ReactNode;
 }
+
+// ─── Agent Persona (synced from Notion L2) ──────────────────────────────────
+
+/**
+ * Valid tone modifiers for agent personas.
+ * Each tag maps to a system prompt behavioral modifier.
+ * Sourced from the Notion "Tone" multi_select column.
+ */
+export type AgentTone =
+  | "Concise"
+  | "Technical"
+  | "Editorial"
+  | "Warm"
+  | "Minimalist"
+  | "Adventurous"
+  | "Grounded";
+
+/**
+ * Valid LLM model targets. Null means inherit from HADE_LLM_PROVIDER env var.
+ * ollama-* targets are for local deployment on the 2013 iMac.
+ */
+export type ModelTarget =
+  | "claude-sonnet"
+  | "claude-haiku"
+  | "gpt-4o"
+  | "gpt-4o-mini"
+  | "gemini-flash"
+  | "ollama-mistral"
+  | "ollama-llama3"
+  | "ollama-phi3";
+
+/**
+ * An agent persona synced from the Notion Strategic Command Center.
+ * This defines WHO the LLM is when making decisions — its identity,
+ * constraints, and communication style.
+ *
+ * The sync pipeline (scripts/sync-notion.js) validates every field
+ * before writing to src/config/agent_definitions.json.
+ */
+export interface AgentPersona {
+  /** Unique identifier. Regex: ^[A-Z][A-Za-z0-9_]{2,39}$ */
+  id: string;
+
+  /** One-sentence role description. 10-200 characters. */
+  role: string;
+
+  /** 1-3 tone tags from the AgentTone enum. */
+  tone: AgentTone[];
+
+  /** Behavioral constraints. Array of rule strings (parsed from pipe-delimited Notion field). */
+  guardrails: string[];
+
+  /** LLM target. Null = inherit from env. */
+  model_target?: ModelTarget | null;
+
+  /** ISO 8601 timestamp of last Notion edit. */
+  last_updated: string;
+}
+
+/**
+ * The root structure of agent_definitions.json.
+ */
+export interface AgentDefinitions {
+  version: string;
+  synced_at: string;
+  source_database_id: string;
+  agents: AgentPersona[];
+  validation_warnings: string[];
+}
