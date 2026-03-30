@@ -1,9 +1,9 @@
-const { Client } = require('@notionhq/client');
+const Notion = require('@notionhq/client'); // Import the whole module
 const fs = require('fs');
 const path = require('path');
 
-// Initialize Notion Client
-const notion = new Client({ 
+// Initialize Notion Client safely
+const notion = new Notion.Client({ 
   auth: process.env.NOTION_TOKEN 
 });
 
@@ -13,7 +13,11 @@ async function syncHADE() {
   try {
     console.log('🧠 Fetching HADE Strategic Command Center data...');
     
-    // Explicitly call the query method
+    // Debug check: ensures the databases object exists
+    if (!notion.databases || typeof notion.databases.query !== 'function') {
+      throw new Error(`Notion Client structure mismatch. Available keys: ${Object.keys(notion).join(', ')}`);
+    }
+
     const response = await notion.databases.query({
       database_id: databaseId,
     });
@@ -21,7 +25,7 @@ async function syncHADE() {
     const agents = response.results.map((page) => {
       const props = page.properties;
       
-      // We use bracket notation to safely access Notion properties
+      // Safety check for Notion properties
       return {
         id: props["Name"]?.title?.[0]?.plain_text || 'unknown',
         role: props["Role"]?.rich_text?.[0]?.plain_text || '',
@@ -31,20 +35,18 @@ async function syncHADE() {
       };
     });
 
-    // Ensure the config directory exists relative to the project root
+    // Path resolution using current working directory
     const dir = path.join(process.cwd(), 'src', 'config');
     if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
+      fs.mkdirSync(dir, { recursive: true });
     }
 
-    // Write the JSON file
     const filePath = path.join(dir, 'agent_definitions.json');
     fs.writeFileSync(filePath, JSON.stringify(agents, null, 2));
 
     console.log(`✅ Success! Synced ${agents.length} agents to: ${filePath}`);
   } catch (error) {
     console.error('❌ Sync failed:', error.message);
-    // Log the full error for debugging in GitHub Actions
     if (error.body) console.error('Notion API Error Body:', error.body);
     process.exit(1);
   }
