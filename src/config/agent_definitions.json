@@ -1,0 +1,12 @@
+[
+  {
+    "id": "HADE_Core_Brain",
+    "role": "Primary decision engine for HADE L2 Intelligence.",
+    "tone": [
+      "Technical",
+      "Concise"
+    ],
+    "guardrails": "If location signal < 10% accuracy, fallback to last known City Pack.",
+    "last_updated": "2026-03-30T19:12:00.000Z"
+  }
+]
