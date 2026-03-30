@@ -5,16 +5,22 @@ on:
     branches: [ main ]
   workflow_dispatch:
   schedule:
+    # Runs every hour to keep the brain fresh
     - cron: '0 * * * *'
 
 jobs:
   sync:
     runs-on: ubuntu-latest
+    
+    # Explicitly grant write access to the repository
+    permissions:
+      contents: write
+
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0 
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -22,20 +28,24 @@ jobs:
           node-version: '20'
 
       - name: Install Dependencies
-        run: npm ci
+        # Using 'install' instead of 'ci' if you don't have a package-lock.json yet
+        run: npm install
 
       - name: Run Sync Script
         env:
           NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
           NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
+        # Ensure this matches your filename (sync-notion.js or sync-notion.mjs)
         run: node scripts/sync-notion.js
 
-      - name: Commit and Push Changes
+      - name: Commit and Push changes
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: "chore: sync HADE brain from Notion Strategic Command Center"
           file_pattern: 'src/config/agent_definitions.json'
+          push_options: '--force'
 
       - name: Trigger Vercel Deployment
+        if: success()
         run: |
           curl -X POST ${{ secrets.VERCEL_DEPLOY_HOOK }}
