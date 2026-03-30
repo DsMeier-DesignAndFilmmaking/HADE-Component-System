@@ -1,9 +1,9 @@
-const Notion = require('@notionhq/client'); // Import the whole module
+const { Client } = require('@notionhq/client'); // Destructure Client directly
 const fs = require('fs');
 const path = require('path');
 
-// Initialize Notion Client safely
-const notion = new Notion.Client({ 
+// Initialize the Client using the constructor
+const notion = new Client({ 
   auth: process.env.NOTION_TOKEN 
 });
 
@@ -13,11 +13,7 @@ async function syncHADE() {
   try {
     console.log('🧠 Fetching HADE Strategic Command Center data...');
     
-    // Debug check: ensures the databases object exists
-    if (!notion.databases || typeof notion.databases.query !== 'function') {
-      throw new Error(`Notion Client structure mismatch. Available keys: ${Object.keys(notion).join(', ')}`);
-    }
-
+    // The logs showed 'databases' exists, so we call it directly here
     const response = await notion.databases.query({
       database_id: databaseId,
     });
@@ -25,7 +21,8 @@ async function syncHADE() {
     const agents = response.results.map((page) => {
       const props = page.properties;
       
-      // Safety check for Notion properties
+      // Safety check for Notion properties using bracket notation
+      // Note: Ensure your Notion columns are named exactly "Name", "Role", "Tone", "Guardrails"
       return {
         id: props["Name"]?.title?.[0]?.plain_text || 'unknown',
         role: props["Role"]?.rich_text?.[0]?.plain_text || '',
@@ -35,7 +32,6 @@ async function syncHADE() {
       };
     });
 
-    // Path resolution using current working directory
     const dir = path.join(process.cwd(), 'src', 'config');
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
@@ -47,7 +43,9 @@ async function syncHADE() {
     console.log(`✅ Success! Synced ${agents.length} agents to: ${filePath}`);
   } catch (error) {
     console.error('❌ Sync failed:', error.message);
-    if (error.body) console.error('Notion API Error Body:', error.body);
+    if (error.body) {
+        console.error('Notion API Details:', JSON.parse(error.body).message);
+    }
     process.exit(1);
   }
 }
