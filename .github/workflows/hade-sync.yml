@@ -2,10 +2,10 @@ name: HADE Notion Sync
 
 on:
   push:
-    branches: [ main ]    # Syncs whenever you push new code
-  workflow_dispatch:      # Adds a "Run" button in GitHub to sync manually
+    branches: [ main ]
+  workflow_dispatch:
   schedule:
-    - cron: '0 * * * *'   # Automatically syncs every hour
+    - cron: '0 * * * *'
 
 jobs:
   sync:
@@ -21,14 +21,13 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Install Notion Client
-        run: npm install @notionhq/client
+      - name: Install Dependencies
+        run: npm ci
 
       - name: Run Sync Script
         env:
           NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
           NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
-        # This points to the script we created in Step 3
         run: node scripts/sync-notion.js
 
       - name: Commit and Push Changes
