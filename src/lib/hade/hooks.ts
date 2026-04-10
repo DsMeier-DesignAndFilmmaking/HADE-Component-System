@@ -6,6 +6,9 @@ import type {
   HadeConfig,
   AdaptiveState,
   HadeDecision,
+  HadeResponse,
+  HadeUX,
+  UiState,
   Signal,
   SignalType,
   DecideRequest,
@@ -161,15 +164,24 @@ export function useSignals(initialTypes?: SignalType[]) {
  * pivot() adds the current decision to rejection_history and re-calls decide()
  * so the backend produces a new decision excluding the rejected venue.
  */
+function _deriveUX(decision: HadeDecision, basis: string): HadeUX {
+  const c = decision.confidence;
+  const ui_state: UiState = c >= 0.7 ? "high" : c >= 0.4 ? "medium" : "low";
+  const cta = basis === "fallback" ? "Explore nearby" : "Go now";
+  return { ui_state, cta, badges: [], alternatives: [] };
+}
+
 export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
   const { context, updateContext, setGeo } = useHadeEngine(config);
   const { signals, emit } = useSignals();
   const [decision, setDecision] = useState<HadeDecision | null>(null);
+  const [response, setResponse] = useState<HadeResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const decide = useCallback(
     async (req?: Partial<DecideRequest>) => {
+      // 1. Check for location
       if (!context.geo && !req?.geo) {
         setError("Location is required to generate a decision.");
         return;
@@ -179,12 +191,14 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
       setError(null);
 
       try {
-        const apiUrl =
-          config.api_url ??
-          process.env.NEXT_PUBLIC_HADE_API_URL ??
-          "/api";
+        const apiUrl = config.api_url ?? process.env.NEXT_PUBLIC_HADE_API_URL ?? "/api";
 
+        // 2. Build the body with the Persona
         const body: DecideRequest = {
+          // Pass the persona explicitly if provided in the call, 
+          // or fallback to whatever logic you prefer
+          persona: req?.persona, 
+          
           geo: req?.geo ?? context.geo!,
           situation: req?.situation ?? context.situation,
           state: req?.state ?? context.state,
@@ -209,15 +223,18 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
         }
 
         const data = await res.json();
-        // Trust the backend's decision directly — no client-side re-ranking
-        setDecision(data.decision as HadeDecision);
+        console.log("[HADE] full response:", data);
+        const dec = data.decision as HadeDecision;
+        const ux = _deriveUX(dec, data.context_snapshot?.decision_basis ?? "llm");
+        setDecision(dec);
+        setResponse({ decision: dec, ux, context_snapshot: data.context_snapshot, session_id: data.session_id });
       } catch (err) {
         setError(err instanceof Error ? err.message : "Unknown error");
       } finally {
         setIsLoading(false);
       }
     },
-    [context, config.api_url]
+    [context, config.api_url, signals] // Added signals to dependency array for accuracy
   );
 
   const pivot = useCallback(
@@ -247,6 +264,7 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
     context,
     signals,
     decision,
+    response,
     isLoading,
     error,
     setGeo,

@@ -10,6 +10,7 @@ import anthropic
 logger = logging.getLogger("hade.providers.anthropic")
 
 DEFAULT_MODEL = "claude-sonnet-4-20250514"
+_DEFAULT_LLM_TIMEOUT = 5.0
 
 
 class AnthropicProvider:
@@ -20,15 +21,16 @@ class AnthropicProvider:
         if not api_key or api_key == "your_key_here":
             raise RuntimeError("ANTHROPIC_API_KEY is not set or is a placeholder")
 
-        self._client = anthropic.AsyncAnthropic(api_key=api_key, timeout=15.0)
+        _timeout = float(os.environ.get("HADE_LLM_TIMEOUT", _DEFAULT_LLM_TIMEOUT))
+        self._client = anthropic.AsyncAnthropic(api_key=api_key, timeout=_timeout)
         self._model = os.environ.get("HADE_ANTHROPIC_MODEL", DEFAULT_MODEL)
-        logger.info("Anthropic provider initialized (model=%s)", self._model)
+        logger.info("Anthropic provider initialized (model=%s, timeout=%.1fs)", self._model, _timeout)
 
     async def generate(self, system_prompt: str, user_content: str) -> str:
         """Generate a response using Anthropic Claude."""
         response = await self._client.messages.create(
             model=self._model,
-            max_tokens=1024,
+            max_tokens=256,
             system=system_prompt,
             messages=[{"role": "user", "content": user_content}],
         )

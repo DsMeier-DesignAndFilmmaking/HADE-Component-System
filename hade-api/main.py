@@ -191,7 +191,16 @@ async def decide(req: DecideRequest):
     distance = _haversine(lat, lng, selected.latitude, selected.longitude)
     eta = round(distance / 80)  # ~80 m/min walking pace
 
-    is_llm = decision["confidence"] > 0.0
+    is_llm = "llm_failure_reason" not in decision
+
+    context_snapshot = {
+        "situation_summary": summary,
+        "interpreted_intent": req.situation.intent or "inferred",
+        "decision_basis": "llm" if is_llm else "fallback",
+        "candidates_evaluated": len(venues),
+    }
+    if not is_llm:
+        context_snapshot["llm_failure_reason"] = decision.get("llm_failure_reason", "provider_error")
 
     return {
         "decision": {
@@ -207,12 +216,7 @@ async def decide(req: DecideRequest):
             "why_now": decision["why_now"],
             "situation_summary": decision.get("situation_summary") or summary,
         },
-        "context_snapshot": {
-            "situation_summary": summary,
-            "interpreted_intent": req.situation.intent or "inferred",
-            "decision_basis": "llm" if is_llm else "fallback",
-            "candidates_evaluated": len(venues),
-        },
+        "context_snapshot": context_snapshot,
         "session_id": session_id,
     }
 

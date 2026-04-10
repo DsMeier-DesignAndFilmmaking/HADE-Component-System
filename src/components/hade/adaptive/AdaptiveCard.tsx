@@ -52,7 +52,6 @@ function fallbackMetrics(
 export function AdaptiveCard({
   signal,
   title,
-  description,
   image,
   metrics,
   ctaLabel,
@@ -83,7 +82,6 @@ export function AdaptiveCard({
             {modeEyebrow[signal.mode]}
           </p>
           <h3 className="mt-1 text-xl font-semibold tracking-tight text-ink">{title}</h3>
-          {description && <p className="mt-2 text-sm text-ink/70">{description}</p>}
         </div>
 
         <ContextSignalBadge

@@ -10,6 +10,7 @@ import openai
 logger = logging.getLogger("hade.providers.openai")
 
 DEFAULT_MODEL = "gpt-4o-mini"
+_DEFAULT_LLM_TIMEOUT = 5.0
 
 
 class OpenAIProvider:
@@ -20,9 +21,10 @@ class OpenAIProvider:
         if not api_key or api_key == "your_key_here":
             raise RuntimeError("OPENAI_API_KEY is not set or is a placeholder")
 
-        self._client = openai.AsyncOpenAI(api_key=api_key, timeout=15.0)
+        _timeout = float(os.environ.get("HADE_LLM_TIMEOUT", _DEFAULT_LLM_TIMEOUT))
+        self._client = openai.AsyncOpenAI(api_key=api_key, timeout=_timeout)
         self._model = os.environ.get("HADE_OPENAI_MODEL", DEFAULT_MODEL)
-        logger.info("OpenAI provider initialized (model=%s)", self._model)
+        logger.info("OpenAI provider initialized (model=%s, timeout=%.1fs)", self._model, _timeout)
 
     async def generate(self, system_prompt: str, user_content: str) -> str:
         """Generate a response using OpenAI GPT."""
@@ -33,7 +35,7 @@ class OpenAIProvider:
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_content},
             ],
-            max_tokens=1024,
+            max_tokens=256,
         )
 
         return response.choices[0].message.content or ""

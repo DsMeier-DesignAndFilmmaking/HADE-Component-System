@@ -11,6 +11,7 @@ import google.generativeai as genai
 logger = logging.getLogger("hade.providers.google")
 
 DEFAULT_MODEL = "gemini-1.5-flash"
+_DEFAULT_LLM_TIMEOUT = 5.0
 
 
 class GoogleProvider:
@@ -36,12 +37,14 @@ class GoogleProvider:
             system_instruction=system_prompt,
             generation_config=genai.GenerationConfig(
                 response_mime_type="application/json",
-                max_output_tokens=1024,
+                max_output_tokens=256,
             ),
         )
 
-        response = await asyncio.to_thread(
-            model.generate_content, user_content
+        _timeout = float(os.environ.get("HADE_LLM_TIMEOUT", _DEFAULT_LLM_TIMEOUT))
+        response = await asyncio.wait_for(
+            asyncio.to_thread(model.generate_content, user_content),
+            timeout=_timeout,
         )
 
         return response.text

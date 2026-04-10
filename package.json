@@ -2,13 +2,14 @@
   "name": "hade-system-v1",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
     "type-check": "tsc --noEmit",
-    "sync": "node scripts/sync-notion.js"
+    "sync": "node --env-file=.env scripts/sync-notion.js"
   },
   "dependencies": {
     "framer-motion": "^12.0.0",

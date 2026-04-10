@@ -152,6 +152,7 @@ export interface HadeConfig {
  * Mirrors HadeContext but all groups are optional — backend applies defaults.
  */
 export interface DecideRequest {
+  persona?: AgentPersona; // The Notion-synced agent definition
   geo: GeoLocation;
   situation?: Partial<HadeSituation>;
   state?: Partial<HadeState>;
@@ -199,9 +200,37 @@ export interface DecideResponse {
   context_snapshot: {
     situation_summary: string;
     interpreted_intent: string;
-    decision_basis: string;
+    decision_basis: "llm" | "fallback";
     candidates_evaluated: number;
+    llm_failure_reason?: "timeout" | "parse_error" | "validation_error" | "provider_error";
   };
+  session_id: string;
+}
+
+// ─── UX Layer ─────────────────────────────────────────────────────────────────
+
+/**
+ * Confidence tier mapped to UX presentation intensity.
+ * Derived client-side from decision.confidence.
+ */
+export type UiState = "high" | "medium" | "low";
+
+export interface HadeUX {
+  ui_state: UiState;
+  cta: string;
+  badges: string[];
+  alternatives: any[];
+}
+
+/**
+ * Full shaped response stored in AdaptiveState.
+ * Mirrors DecideResponse but adds a computed ux block derived from
+ * decision.confidence and context_snapshot.decision_basis.
+ */
+export interface HadeResponse {
+  decision: HadeDecision;
+  ux: HadeUX;
+  context_snapshot: DecideResponse["context_snapshot"];
   session_id: string;
 }
 
@@ -270,6 +299,7 @@ export interface AdaptiveState {
   context: HadeContext;
   signals: Signal[];
   decision: HadeDecision | null;
+  response: HadeResponse | null;
   isLoading: boolean;
   error: string | null;
   setGeo: (geo: { lat: number; lng: number }) => void;
@@ -371,7 +401,6 @@ export interface UserSignal {
 export interface AdaptiveCardProps {
   signal: UserSignal;
   title: string;
-  description?: string;
   image?: string;
   metrics?: Array<{ label: string; value: string }>;
   ctaLabel?: string;

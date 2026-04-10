@@ -3,9 +3,9 @@
 import { useState, useEffect } from "react";
 import type { SignalType } from "@/types/hade";
 import { AdaptiveContainer } from "@/components/hade/adaptive/AdaptiveContainer";
+import { DecisionCard } from "@/components/hade/adaptive/DecisionCard";
 import { SignalBadge } from "@/components/hade/adaptive/SignalBadge";
 import { SignalFlow } from "@/components/hade/diagrams/SignalFlow";
-import { HadeCard } from "@/components/hade/layout/HadeCard";
 import { HadePanel } from "@/components/hade/layout/HadePanel";
 import { HadeButton } from "@/components/hade/buttons/HadeButton";
 import { HadeHeading } from "@/components/hade/typography/HadeHeading";
@@ -13,6 +13,10 @@ import { HadeText } from "@/components/hade/typography/HadeText";
 import { useHadeAdaptiveContext } from "@/lib/hade/hooks";
 import { Layout } from "@/components/layout";
 import { LocationHUD } from "@/components/hade/LocationHUD";
+
+// Protocol Imports - Hardened Data from Notion Sync
+import agentData from "@/config/agent_definitions.json";
+import type { AgentDefinitions, AgentPersona } from "@/types/hade";
 
 const SIGNAL_TYPES: SignalType[] = [
   "PRESENCE",
@@ -23,6 +27,10 @@ const SIGNAL_TYPES: SignalType[] = [
   "EVENT",
 ];
 
+// Cast synced JSON to our strict TypeScript interfaces
+const definitions = agentData as AgentDefinitions;
+const agents = definitions.agents;
+
 const SAMPLE_CONTENT: Record<SignalType, string[]> = {
   PRESENCE: ["Checked in at venue", "Near the waterfront", "Spotted downtown"],
   SOCIAL_RELAY: ["Alex: 'the miso ramen is insane'", "Sam just arrived", "Jordan recommends this spot"],
@@ -32,11 +40,15 @@ const SAMPLE_CONTENT: Record<SignalType, string[]> = {
   EVENT: ["Pop-up market on 5th", "Jazz night at The Standard", "Chef's table opening"],
 };
 
-// Denver downtown — fallback when geolocation is unavailable or denied
 const DEFAULT_GEO = { lat: 39.7392, lng: -104.9903 };
 
 function DemoInner() {
-  const { signals, emit, decision, isLoading, error, decide, setGeo } = useHadeAdaptiveContext();
+  const { signals, emit, response, isLoading, error, decide, setGeo, pivot } = useHadeAdaptiveContext();
+  
+  // ─── Persona State (Notion-Driven) ─────────────────────────────────────────
+  const [activeAgent, setActiveAgent] = useState<AgentPersona>(agents[0]);
+  const lastSync = new Date(definitions.synced_at).toLocaleString();
+
   const [selectedType, setSelectedType] = useState<SignalType>("PRESENCE");
   const [strength, setStrength] = useState(0.7);
 
@@ -55,12 +67,11 @@ function DemoInner() {
       (pos) => {
         const geo = { lat: pos.coords.latitude, lng: pos.coords.longitude };
         setUserGeo(geo);
-        setGeo(geo);          // Write real coordinates into HadeContext
+        setGeo(geo);
         setGeoStatus("idle");
       },
       () => {
-        // Permission denied or unavailable — fall back to Denver
-        setGeo(DEFAULT_GEO);  // Write Denver fallback into HadeContext
+        setGeo(DEFAULT_GEO);
         setGeoStatus("denied");
       },
       { timeout: 8000, maximumAge: 60_000 }
@@ -69,14 +80,12 @@ function DemoInner() {
 
   const resolvedGeo = userGeo ?? DEFAULT_GEO;
 
-  // ─── Signal Emission ────────────────────────────────────────────────────────
   const handleEmit = () => {
     const contents = SAMPLE_CONTENT[selectedType];
     const content = contents[Math.floor(Math.random() * contents.length)];
     emit(selectedType, {
       content,
       strength,
-      // Emit near the user's real location (or Denver default), with small jitter
       geo: {
         lat: resolvedGeo.lat + (Math.random() - 0.5) * 0.005,
         lng: resolvedGeo.lng + (Math.random() - 0.5) * 0.005,
@@ -86,29 +95,83 @@ function DemoInner() {
 
   return (
     <div className="mx-auto max-w-7xl px-6 py-12">
+      {/* Header */}
       <div className="mb-10 flex items-start justify-between gap-4">
         <div>
           <p className="font-mono text-xs uppercase tracking-widest text-accent mb-3">
-            Interactive Demo
+            System Intelligence
           </p>
           <HadeHeading level={1} className="mb-3">
             Signal Emitter
           </HadeHeading>
           <HadeText variant="body" color="muted">
-            Emit signals to simulate real-world context, then trigger a decision.
+            Test context-aware decisions using personas synced from your Strategic Command Center.
           </HadeText>
         </div>
         <LocationHUD geo={userGeo} geoStatus={geoStatus} className="shrink-0 mt-1" />
       </div>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        {/* ── Emitter Panel ──────────────────────────────────────────────────── */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        {/* ── 1. Persona Registry (Notion-Synced) ───────────────────────────── */}
         <HadePanel
           header={
-            <p className="text-sm font-semibold text-ink">Emit Signal</p>
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-semibold text-ink">Persona Registry</p>
+              <span className="text-[10px] text-ink/30 font-mono">L2 Sync</span>
+            </div>
           }
         >
-          {/* Signal type selector */}
+          <div className="space-y-3">
+            {agents.map((agent) => (
+              <button
+                key={agent.id}
+                onClick={() => setActiveAgent(agent)}
+                className={`w-full text-left p-3 rounded-lg border transition-all ${
+                  activeAgent.id === agent.id
+                    ? "border-accent bg-accent/5 ring-1 ring-accent/20"
+                    : "border-line hover:border-ink/20 bg-transparent"
+                }`}
+              >
+                <div className="flex justify-between items-start mb-1">
+                  <span className={`font-mono text-xs font-bold ${activeAgent.id === agent.id ? "text-accent" : "text-ink"}`}>
+                    {agent.id}
+                  </span>
+                  <span className="text-[9px] px-1.5 py-0.5 rounded-sm bg-ink/5 text-ink/40 border border-line uppercase font-medium">
+                    {agent.model_target?.split('-')[0] || 'cloud'}
+                  </span>
+                </div>
+                <p className="text-[11px] leading-tight text-ink/50 line-clamp-2 italic mb-2">
+                  "{agent.role}"
+                </p>
+                <div className="flex gap-1 flex-wrap">
+                  {agent.tone.map(t => (
+                    <span key={t} className="text-[9px] bg-ink/5 px-1.5 py-0.5 rounded text-ink/60 border border-line/50">
+                      {t}
+                    </span>
+                  ))}
+                </div>
+              </button>
+            ))}
+          </div>
+          
+          <div className="mt-6 pt-4 border-t border-line">
+            <p className="text-[10px] uppercase tracking-widest text-ink/30 mb-1">Last Notion Sync</p>
+            <p className="text-[10px] font-mono text-ink/40">{lastSync}</p>
+          </div>
+        </HadePanel>
+
+        {/* ── 2. Emitter Panel ──────────────────────────────────────────────── */}
+        <HadePanel
+          header={
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-semibold text-ink">Emit Signal</p>
+              <div className="flex items-center gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+                <span className="text-[10px] font-mono text-ink/40 uppercase tracking-tighter">Live</span>
+              </div>
+            </div>
+          }
+        >
           <div className="mb-5">
             <label className="block text-xs font-medium text-ink/60 uppercase tracking-widest mb-2">
               Signal Type
@@ -134,8 +197,7 @@ function DemoInner() {
             </div>
           </div>
 
-          {/* Strength slider */}
-          <div className="mb-3">
+          <div className="mb-6">
             <label className="block text-xs font-medium text-ink/60 uppercase tracking-widest mb-2">
               Strength — {Math.round(strength * 100)}%
             </label>
@@ -154,30 +216,30 @@ function DemoInner() {
             Emit Signal
           </HadeButton>
 
-          <div className="mt-4 flex gap-2">
+          <div className="mt-4 pt-4 border-t border-line">
+            <p className="text-[10px] uppercase tracking-widest text-ink/30 mb-3 text-center">Engine Activation</p>
             <HadeButton
               variant="secondary"
               size="sm"
-              onClick={() => decide()}
+              onClick={() => decide({ persona: activeAgent })} // Pass the Notion-synced object here 
               loading={isLoading}
-              className="flex-1"
+              className="w-full"
             >
-              Generate Decision
+              Generate Decision as {activeAgent.id}
             </HadeButton>
           </div>
 
-          {/* API error state */}
           {error && (
             <p className="mt-3 text-xs text-red-400 font-mono">{error}</p>
           )}
         </HadePanel>
 
-        {/* ── Signal List ────────────────────────────────────────────────────── */}
+        {/* ── 3. Signal List ────────────────────────────────────────────────── */}
         <HadePanel
           header={
             <div className="flex items-center justify-between">
               <p className="text-sm font-semibold text-ink">Active Signals</p>
-              <span className="font-mono text-xs text-ink/40">{signals.length} signals</span>
+              <span className="font-mono text-xs text-ink/40">{signals.length} total</span>
             </div>
           }
         >
@@ -186,67 +248,31 @@ function DemoInner() {
       </div>
 
       {/* ── Decision Output ───────────────────────────────────────────────────── */}
-      {decision && (
-        <div className="mt-6">
-          <HadeCard glow="blue">
-            <div className="flex items-start justify-between gap-4 mb-3">
-              <div>
-                <p className="font-mono text-xs uppercase tracking-widest text-accent mb-1">
-                  Decision
-                </p>
-                <HadeHeading level={3}>{decision.venue_name}</HadeHeading>
-                <HadeText variant="caption" color="muted">
-                  {decision.category}
-                  {decision.neighborhood ? ` · ${decision.neighborhood}` : ""}
-                  {" · "}
-                  {decision.eta_minutes}m away
-                </HadeText>
-              </div>
-              <span className="shrink-0 rounded-lg bg-accentSoft px-3 py-1.5 font-mono text-xs font-bold text-accent">
-                {Math.round(decision.confidence * 100)}% confidence
-              </span>
-            </div>
-
-            {/* Primary rationale */}
-            <HadeText variant="body" color="ink" className="italic">
-              &quot;{decision.rationale}&quot;
-            </HadeText>
-
-            {/* Why now */}
-            {decision.why_now && (
-              <HadeText variant="caption" color="muted" className="mt-2">
-                {decision.why_now}
-              </HadeText>
-            )}
-
-            {/* Situation summary — engine's interpretation of the moment */}
-            {decision.situation_summary && (
-              <p className="mt-3 font-mono text-xs text-ink/30 border-t border-line pt-3">
-                <span className="text-ink/20 mr-1">↳</span>
-                {decision.situation_summary}
-              </p>
-            )}
-          </HadeCard>
-        </div>
+      {response && (
+        <DecisionCard
+          response={response}
+          agentId={activeAgent.id}
+          onPivot={pivot}
+          className="mt-6"
+        />
       )}
 
-      {/* ── Empty State ───────────────────────────────────────────────────────── */}
-      {!decision && !isLoading && (
+      {/* ── Empty/Loading States ──────────────────────────────────────────────── */}
+      {!response && !isLoading && (
         <div className="mt-6 rounded-2xl border border-dashed border-line p-8 text-center">
           <p className="text-sm text-ink/40">
-            Emit signals then click <strong>Generate Decision</strong> to see the decision.
+            Emit signals, select a persona, then generate a decision.
           </p>
           <p className="text-xs text-ink/30 mt-1 font-mono">
-            Backend: {process.env.NEXT_PUBLIC_HADE_API_URL ?? "/api"}
+            Hardware Target: <span className="text-accent">{activeAgent.model_target || "Cloud (Default)"}</span>
           </p>
         </div>
       )}
 
-      {/* ── Loading State ─────────────────────────────────────────────────────── */}
       {isLoading && (
         <div className="mt-6 rounded-2xl border border-line p-8 text-center">
-          <p className="text-sm text-ink/40 font-mono animate-pulse">
-            Interpreting situation…
+          <p className="text-sm text-ink/40 font-mono animate-pulse uppercase tracking-widest">
+            {activeAgent.id} is interpreting situation…
           </p>
         </div>
       )}

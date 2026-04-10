@@ -1,12 +1,22 @@
-[
-  {
-    "id": "HADE_Core_Brain",
-    "role": "Primary decision engine for HADE L2 Intelligence.",
-    "tone": [
-      "Technical",
-      "Sarcastic"
-    ],
-    "guardrails": "If location signal < 10% accuracy, fallback to last known City Pack.",
-    "last_updated": "2026-03-30T19:24:00.000Z"
-  }
-]
+{
+  "version": "1.0",
+  "synced_at": "2026-03-30T21:19:40.505Z",
+  "source_database_id": "333ff0a0...",
+  "agents": [
+    {
+      "id": "HADE_Core_Brain",
+      "role": "Primary decision engine for HADE L2 Intelligence.",
+      "tone": [
+        "Technical",
+        "Concise",
+        "Editorial"
+      ],
+      "guardrails": [
+        "If location signal < 10% accuracy, fallback to last known City Pack."
+      ],
+      "model_target": null,
+      "last_updated": "2026-03-30T21:14:00.000Z"
+    }
+  ],
+  "validation_warnings": []
+}
