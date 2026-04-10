@@ -223,11 +223,18 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
         }
 
         const data = await res.json();
-        console.log("[HADE] full response:", data);
+        console.log("HADE API RESPONSE:", JSON.stringify(data, null, 2));
         const dec = data.decision as HadeDecision;
         const ux = _deriveUX(dec, data.context_snapshot?.decision_basis ?? "llm");
+        const transformedResponse: HadeResponse = {
+          decision: dec,
+          ux,
+          context_snapshot: data.context_snapshot,
+          session_id: data.session_id,
+        };
+        console.log("HADE TRANSFORMED RESPONSE:", JSON.stringify(transformedResponse, null, 2));
         setDecision(dec);
-        setResponse({ decision: dec, ux, context_snapshot: data.context_snapshot, session_id: data.session_id });
+        setResponse(transformedResponse);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Unknown error");
       } finally {
