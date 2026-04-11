@@ -28,8 +28,22 @@ export function DecisionCard({
   onPivot,
   className = "",
 }: DecisionCardProps) {
-  const { decision, ux, context_snapshot } = response;
-  const state = ux.ui_state;
+  if (!response?.decision) return null;
+
+  const { decision, context_snapshot } = response;
+  const fallbackState: UiState =
+    decision.confidence >= 0.7 ? "high" : decision.confidence >= 0.4 ? "medium" : "low";
+  const state: UiState = response.ux?.ui_state ?? fallbackState;
+  const ctaLabel =
+    typeof response.ux?.cta === "string" && response.ux.cta.trim().length > 0
+      ? response.ux.cta
+      : state === "low"
+      ? "Refine decision"
+      : state === "medium"
+      ? "Expand search"
+      : "Go now";
+  const badges = Array.isArray(response.ux?.badges) ? response.ux.badges : [];
+  const alternatives = Array.isArray(response.ux?.alternatives) ? response.ux.alternatives : [];
   const isFallback = context_snapshot.decision_basis === "fallback";
 
   return (
@@ -87,9 +101,9 @@ export function DecisionCard({
         )}
 
         {/* ── Badges ─────────────────────────────────────────────────────────── */}
-        {ux.badges.length > 0 && (
+        {badges.length > 0 && (
           <div className="mt-3 flex flex-wrap gap-1.5">
-            {ux.badges.map((badge) => (
+            {badges.map((badge) => (
               <span
                 key={badge}
                 className="rounded-full border border-line bg-surface px-2.5 py-1 text-[11px] font-medium text-ink/60"
@@ -101,13 +115,13 @@ export function DecisionCard({
         )}
 
         {/* ── Alternatives — MEDIUM only ─────────────────────────────────────── */}
-        {state === "medium" && ux.alternatives.length > 0 && (
+        {state === "medium" && alternatives.length > 0 && (
           <div className="mt-4">
             <p className="text-[10px] font-mono uppercase tracking-widest text-ink/30 mb-2">
               Also Nearby
             </p>
             <div className="space-y-2">
-              {ux.alternatives.map((alt: any, i: number) => (
+              {alternatives.map((alt: any, i: number) => (
                 <div
                   key={i}
                   className="flex items-center justify-between rounded-xl border border-line px-3 py-2.5"
@@ -159,7 +173,7 @@ export function DecisionCard({
             size="sm"
             onClick={onCta}
           >
-            {ux.cta}
+            {ctaLabel}
           </HadeButton>
         </div>
 

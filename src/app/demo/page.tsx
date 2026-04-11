@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import type { SignalType, Intent } from "@/types/hade";
+import type { SignalType, Intent, DecideRequest, UiState } from "@/types/hade";
 import { AdaptiveContainer } from "@/components/hade/adaptive/AdaptiveContainer";
 import { DecisionCard } from "@/components/hade/adaptive/DecisionCard";
 import { SignalBadge } from "@/components/hade/adaptive/SignalBadge";
@@ -60,6 +60,7 @@ function DemoInner() {
   const [showRefinePanel, setShowRefinePanel] = useState(false);
   const [refineIntent, setRefineIntent] = useState<Intent | null>(null);
   const [refineUrgency, setRefineUrgency] = useState<"low" | "medium" | "high">("medium");
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (!navigator.geolocation) {
@@ -84,21 +85,42 @@ function DemoInner() {
   }, [setGeo]);
 
   const resolvedGeo = userGeo ?? DEFAULT_GEO;
+  const isBusy = isLoading || loading;
+
+  const runDecide = async (request?: Partial<DecideRequest>) => {
+    setLoading(true);
+    try {
+      await decide(request);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const resolveUiState = (): UiState | null => {
+    if (!response?.decision) return null;
+    if (response.ux?.ui_state) return response.ux.ui_state;
+    const confidence = response.decision.confidence;
+    return confidence >= 0.7 ? "high" : confidence >= 0.4 ? "medium" : "low";
+  };
 
   // ─── CTA Handlers ──────────────────────────────────────────────────────────
 
   // medium: expand radius 50%, update context, re-decide
-  const handleCtaMedium = () => {
+  const handleCtaMedium = async () => {
     const newRadius = Math.round(context.radius_meters * 1.5);
     setRadius(newRadius);
-    decide({ radius_meters: newRadius, session_id: response?.session_id ?? undefined, persona: activeAgent });
+    await runDecide({
+      radius_meters: newRadius,
+      session_id: response?.session_id ?? undefined,
+      persona: activeAgent,
+    });
   };
 
   // low: open inline refine panel
   const handleCtaLow = () => setShowRefinePanel(true);
 
   // refine panel confirm: emit BEHAVIORAL signal + re-decide with updated situation
-  const handleRefineConfirm = () => {
+  const handleRefineConfirm = async () => {
     emit("BEHAVIORAL", {
       content: `Refined: ${refineIntent ?? "anything"} · urgency ${refineUrgency}`,
       strength: 0.9,
@@ -107,19 +129,19 @@ function DemoInner() {
         lng: resolvedGeo.lng + (Math.random() - 0.5) * 0.001,
       },
     });
-    decide({
+    setShowRefinePanel(false);
+    await runDecide({
       situation: { intent: refineIntent, urgency: refineUrgency },
       session_id: response?.session_id ?? undefined,
       persona: activeAgent,
     });
-    setShowRefinePanel(false);
   };
 
   // dispatcher: routes by ui_state; "high" / "Go now" is informational — no call
   const handleCta = () => {
-    if (!response) return;
-    if (response.ux.ui_state === "medium") handleCtaMedium();
-    else if (response.ux.ui_state === "low") handleCtaLow();
+    const uiState = resolveUiState();
+    if (uiState === "medium") void handleCtaMedium();
+    else if (uiState === "low") handleCtaLow();
   };
 
   const handleEmit = () => {
@@ -263,8 +285,10 @@ function DemoInner() {
             <HadeButton
               variant="secondary"
               size="sm"
-              onClick={() => decide({ persona: activeAgent })} // Pass the Notion-synced object here 
-              loading={isLoading}
+              onClick={() => {
+                void runDecide({ persona: activeAgent });
+              }} // Pass the Notion-synced object here 
+              loading={isBusy}
               className="w-full"
             >
               Generate Decision as {activeAgent.id}
@@ -290,7 +314,7 @@ function DemoInner() {
       </div>
 
       {/* ── Decision Output ───────────────────────────────────────────────────── */}
-      {response && (
+      {response?.decision && !isBusy && (
         <>
           <DecisionCard
             response={response}
@@ -350,7 +374,14 @@ function DemoInner() {
               </div>
 
               <div className="flex gap-3">
-                <HadeButton variant="primary" size="sm" onClick={handleRefineConfirm} className="flex-1">
+                <HadeButton
+                  variant="primary"
+                  size="sm"
+                  onClick={() => {
+                    void handleRefineConfirm();
+                  }}
+                  className="flex-1"
+                >
                   Confirm &amp; Refine
                 </HadeButton>
                 <HadeButton variant="secondary" size="sm" onClick={() => setShowRefinePanel(false)} className="flex-1">
@@ -363,7 +394,7 @@ function DemoInner() {
       )}
 
       {/* ── Empty/Loading States ──────────────────────────────────────────────── */}
-      {!response && !isLoading && (
+      {!response && !isBusy && (
         <div className="mt-6 rounded-2xl border border-dashed border-line p-8 text-center">
           <p className="text-sm text-ink/40">
             Emit signals, select a persona, then generate a decision.
@@ -374,7 +405,7 @@ function DemoInner() {
         </div>
       )}
 
-      {isLoading && (
+      {isBusy && (
         <div className="mt-6 rounded-2xl border border-line p-8 text-center">
           <p className="text-sm text-ink/40 font-mono animate-pulse uppercase tracking-widest">
             {activeAgent.id} is interpreting situation…

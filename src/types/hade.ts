@@ -224,12 +224,11 @@ export interface HadeUX {
 
 /**
  * Full shaped response stored in AdaptiveState.
- * Mirrors DecideResponse but adds a computed ux block derived from
- * decision.confidence and context_snapshot.decision_basis.
+ * Mirrors DecideResponse. Some environments may also include a ux block.
  */
 export interface HadeResponse {
   decision: HadeDecision;
-  ux: HadeUX;
+  ux?: HadeUX;
   context_snapshot: DecideResponse["context_snapshot"];
   session_id: string;
 }
