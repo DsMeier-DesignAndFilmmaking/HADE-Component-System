@@ -154,25 +154,28 @@ export function useSignals(initialTypes?: SignalType[]) {
 
 // ─── useAdaptive ──────────────────────────────────────────────────────────────
 
+function _deriveUX(decision: HadeDecision, basis: string): HadeUX {
+  const c = decision.confidence;
+  const ui_state: UiState = c >= 0.7 ? "high" : c >= 0.4 ? "medium" : "low";
+  const cta =
+    ui_state === "high" ? "Go now" :
+    ui_state === "medium" ? "Explore nearby" :
+    "Help me refine";
+  return { ui_state, cta, badges: [], alternatives: [] };
+}
+
 /**
  * Primary hook — combines context, signals, and the /decide API.
  * Returns a single decision (HadeDecision | null), not a list.
  *
  * decide() POSTs to /hade/decide and stores the backend's decision directly.
- * The backend decision is trusted — no client-side re-ranking.
  *
  * pivot() adds the current decision to rejection_history and re-calls decide()
  * so the backend produces a new decision excluding the rejected venue.
  */
-function _deriveUX(decision: HadeDecision, basis: string): HadeUX {
-  const c = decision.confidence;
-  const ui_state: UiState = c >= 0.7 ? "high" : c >= 0.4 ? "medium" : "low";
-  const cta = basis === "fallback" ? "Explore nearby" : "Go now";
-  return { ui_state, cta, badges: [], alternatives: [] };
-}
 
 export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
-  const { context, updateContext, setGeo } = useHadeEngine(config);
+  const { context, updateContext, setGeo, setRadius } = useHadeEngine(config);
   const { signals, emit } = useSignals();
   const [decision, setDecision] = useState<HadeDecision | null>(null);
   const [response, setResponse] = useState<HadeResponse | null>(null);
@@ -223,18 +226,18 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
         }
 
         const data = await res.json();
-        console.log("HADE API RESPONSE:", JSON.stringify(data, null, 2));
+        console.log("[HADE] full response:", data);
         const dec = data.decision as HadeDecision;
         const ux = _deriveUX(dec, data.context_snapshot?.decision_basis ?? "llm");
-        const transformedResponse: HadeResponse = {
+        const shaped: HadeResponse = {
           decision: dec,
           ux,
           context_snapshot: data.context_snapshot,
           session_id: data.session_id,
         };
-        console.log("HADE TRANSFORMED RESPONSE:", JSON.stringify(transformedResponse, null, 2));
         setDecision(dec);
-        setResponse(transformedResponse);
+        setResponse(shaped);
+        updateContext({ session_id: data.session_id });
       } catch (err) {
         setError(err instanceof Error ? err.message : "Unknown error");
       } finally {
@@ -275,6 +278,7 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
     isLoading,
     error,
     setGeo,
+    setRadius,
     emit,
     decide,
     pivot,

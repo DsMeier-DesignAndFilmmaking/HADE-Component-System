@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 
@@ -10,7 +11,7 @@ import openai
 logger = logging.getLogger("hade.providers.openai")
 
 DEFAULT_MODEL = "gpt-4o-mini"
-_DEFAULT_LLM_TIMEOUT = 5.0
+_DEFAULT_LLM_TIMEOUT = 6.0
 
 
 class OpenAIProvider:
@@ -28,14 +29,17 @@ class OpenAIProvider:
 
     async def generate(self, system_prompt: str, user_content: str) -> str:
         """Generate a response using OpenAI GPT."""
-        response = await self._client.chat.completions.create(
-            model=self._model,
-            response_format={"type": "json_object"},
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_content},
-            ],
-            max_tokens=256,
-        )
-
-        return response.choices[0].message.content or ""
+        try:
+            response = await self._client.chat.completions.create(
+                model=self._model,
+                response_format={"type": "json_object"},
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_content},
+                ],
+                max_tokens=512,
+            )
+            return response.choices[0].message.content or ""
+        except openai.APITimeoutError as exc:
+            # Re-raise as asyncio.TimeoutError so brain.py classifies it correctly
+            raise asyncio.TimeoutError(str(exc)) from exc

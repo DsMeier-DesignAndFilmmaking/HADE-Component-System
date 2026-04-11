@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 
@@ -10,7 +11,7 @@ import anthropic
 logger = logging.getLogger("hade.providers.anthropic")
 
 DEFAULT_MODEL = "claude-sonnet-4-20250514"
-_DEFAULT_LLM_TIMEOUT = 5.0
+_DEFAULT_LLM_TIMEOUT = 6.0
 
 
 class AnthropicProvider:
@@ -28,12 +29,14 @@ class AnthropicProvider:
 
     async def generate(self, system_prompt: str, user_content: str) -> str:
         """Generate a response using Anthropic Claude."""
-        response = await self._client.messages.create(
-            model=self._model,
-            max_tokens=256,
-            system=system_prompt,
-            messages=[{"role": "user", "content": user_content}],
-        )
-
-        # Extract text from the first content block
-        return response.content[0].text
+        try:
+            response = await self._client.messages.create(
+                model=self._model,
+                max_tokens=512,
+                system=system_prompt,
+                messages=[{"role": "user", "content": user_content}],
+            )
+            return response.content[0].text
+        except anthropic.APITimeoutError as exc:
+            # Re-raise as asyncio.TimeoutError so brain.py classifies it correctly
+            raise asyncio.TimeoutError(str(exc)) from exc

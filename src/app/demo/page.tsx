@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import type { SignalType } from "@/types/hade";
+import type { SignalType, Intent } from "@/types/hade";
 import { AdaptiveContainer } from "@/components/hade/adaptive/AdaptiveContainer";
 import { DecisionCard } from "@/components/hade/adaptive/DecisionCard";
 import { SignalBadge } from "@/components/hade/adaptive/SignalBadge";
@@ -43,7 +43,7 @@ const SAMPLE_CONTENT: Record<SignalType, string[]> = {
 const DEFAULT_GEO = { lat: 39.7392, lng: -104.9903 };
 
 function DemoInner() {
-  const { signals, emit, response, isLoading, error, decide, setGeo, pivot } = useHadeAdaptiveContext();
+  const { signals, emit, response, context, isLoading, error, decide, setGeo, setRadius, pivot } = useHadeAdaptiveContext();
   
   // ─── Persona State (Notion-Driven) ─────────────────────────────────────────
   const [activeAgent, setActiveAgent] = useState<AgentPersona>(agents[0]);
@@ -55,6 +55,11 @@ function DemoInner() {
   // ─── Real Geolocation ───────────────────────────────────────────────────────
   const [userGeo, setUserGeo] = useState<{ lat: number; lng: number } | null>(null);
   const [geoStatus, setGeoStatus] = useState<"idle" | "loading" | "denied">("idle");
+
+  // ─── Refine Panel State ─────────────────────────────────────────────────────
+  const [showRefinePanel, setShowRefinePanel] = useState(false);
+  const [refineIntent, setRefineIntent] = useState<Intent | null>(null);
+  const [refineUrgency, setRefineUrgency] = useState<"low" | "medium" | "high">("medium");
 
   useEffect(() => {
     if (!navigator.geolocation) {
@@ -79,6 +84,43 @@ function DemoInner() {
   }, [setGeo]);
 
   const resolvedGeo = userGeo ?? DEFAULT_GEO;
+
+  // ─── CTA Handlers ──────────────────────────────────────────────────────────
+
+  // medium: expand radius 50%, update context, re-decide
+  const handleCtaMedium = () => {
+    const newRadius = Math.round(context.radius_meters * 1.5);
+    setRadius(newRadius);
+    decide({ radius_meters: newRadius, session_id: response?.session_id ?? undefined, persona: activeAgent });
+  };
+
+  // low: open inline refine panel
+  const handleCtaLow = () => setShowRefinePanel(true);
+
+  // refine panel confirm: emit BEHAVIORAL signal + re-decide with updated situation
+  const handleRefineConfirm = () => {
+    emit("BEHAVIORAL", {
+      content: `Refined: ${refineIntent ?? "anything"} · urgency ${refineUrgency}`,
+      strength: 0.9,
+      geo: {
+        lat: resolvedGeo.lat + (Math.random() - 0.5) * 0.001,
+        lng: resolvedGeo.lng + (Math.random() - 0.5) * 0.001,
+      },
+    });
+    decide({
+      situation: { intent: refineIntent, urgency: refineUrgency },
+      session_id: response?.session_id ?? undefined,
+      persona: activeAgent,
+    });
+    setShowRefinePanel(false);
+  };
+
+  // dispatcher: routes by ui_state; "high" / "Go now" is informational — no call
+  const handleCta = () => {
+    if (!response) return;
+    if (response.ux.ui_state === "medium") handleCtaMedium();
+    else if (response.ux.ui_state === "low") handleCtaLow();
+  };
 
   const handleEmit = () => {
     const contents = SAMPLE_CONTENT[selectedType];
@@ -249,12 +291,75 @@ function DemoInner() {
 
       {/* ── Decision Output ───────────────────────────────────────────────────── */}
       {response && (
-        <DecisionCard
-          response={response}
-          agentId={activeAgent.id}
-          onPivot={pivot}
-          className="mt-6"
-        />
+        <>
+          <DecisionCard
+            response={response}
+            agentId={activeAgent.id}
+            onCta={handleCta}
+            onPivot={pivot}
+            className="mt-6"
+          />
+
+          {/* ── Refine Panel — low state only ──────────────────────────────── */}
+          {showRefinePanel && (
+            <div className="mt-4 rounded-2xl border border-line bg-surface p-6">
+              <p className="font-mono text-xs uppercase tracking-widest text-accent mb-4">
+                Refine Your Search
+              </p>
+
+              <div className="mb-5">
+                <label className="block text-xs font-medium text-ink/60 uppercase tracking-widest mb-2">
+                  What are you after?
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {(["eat", "drink", "chill", "scene", "anything"] as Intent[]).map((intent) => (
+                    <button
+                      key={intent}
+                      onClick={() => setRefineIntent(intent === refineIntent ? null : intent)}
+                      className={`px-3 py-1.5 rounded-full border text-xs font-medium transition-all ${
+                        refineIntent === intent
+                          ? "border-accent bg-accent/10 text-accent"
+                          : "border-line bg-transparent text-ink/50 hover:border-ink/20"
+                      }`}
+                    >
+                      {intent.charAt(0).toUpperCase() + intent.slice(1)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="mb-6">
+                <label className="block text-xs font-medium text-ink/60 uppercase tracking-widest mb-2">
+                  How urgent?
+                </label>
+                <div className="flex gap-2">
+                  {(["low", "medium", "high"] as const).map((u) => (
+                    <button
+                      key={u}
+                      onClick={() => setRefineUrgency(u)}
+                      className={`flex-1 py-2 rounded-xl border text-xs font-medium transition-all ${
+                        refineUrgency === u
+                          ? "border-accent bg-accent/10 text-accent"
+                          : "border-line bg-transparent text-ink/50 hover:border-ink/20"
+                      }`}
+                    >
+                      {u.charAt(0).toUpperCase() + u.slice(1)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <HadeButton variant="primary" size="sm" onClick={handleRefineConfirm} className="flex-1">
+                  Confirm &amp; Refine
+                </HadeButton>
+                <HadeButton variant="secondary" size="sm" onClick={() => setShowRefinePanel(false)} className="flex-1">
+                  Cancel
+                </HadeButton>
+              </div>
+            </div>
+          )}
+        </>
       )}
 
       {/* ── Empty/Loading States ──────────────────────────────────────────────── */}
