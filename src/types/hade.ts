@@ -304,7 +304,7 @@ export interface AdaptiveState {
   error: string | null;
   setGeo: (geo: { lat: number; lng: number }) => void;
   setRadius: (radius_meters: number | ((prev: number) => number)) => void;
-  emit: (type: SignalType, payload?: Partial<Signal>) => void;
+  emit: (type: SignalType, payload?: Partial<Signal>) => Signal;
   decide: (req?: Partial<DecideRequest>) => Promise<void>;
   pivot: (reason: string) => void;
 }

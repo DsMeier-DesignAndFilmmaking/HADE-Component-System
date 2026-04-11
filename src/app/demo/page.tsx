@@ -38,6 +38,7 @@ const SAMPLE_CONTENT: Record<SignalType, string[]> = {
   BEHAVIORAL: ["Browsing dinner options", "Group of 3", "Looking for something chill"],
   AMBIENT: ["Live music nearby", "Happy hour ends at 7", "Rooftop open tonight"],
   EVENT: ["Pop-up market on 5th", "Jazz night at The Standard", "Chef's table opening"],
+  INTENT: ["Craving a quick bite", "Want a low-key drink", "Open to anything nearby"],
 };
 
 const DEFAULT_GEO = { lat: 39.7392, lng: -104.9903 };

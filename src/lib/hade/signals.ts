@@ -36,6 +36,7 @@ function getDefaultTTL(type: SignalType): number {
     BEHAVIORAL: 2 * 60 * 60 * 1000,   // 2 hr
     AMBIENT: 4 * 60 * 60 * 1000,      // 4 hr
     EVENT: 24 * 60 * 60 * 1000,       // 24 hr
+    INTENT: 2 * 60 * 60 * 1000,       // 2 hr
   };
   return ttlMap[type];
 }
@@ -137,6 +138,7 @@ export function signalTypeLabel(type: SignalType): string {
     BEHAVIORAL: "Behavioral",
     AMBIENT: "Ambient",
     EVENT: "Event",
+    INTENT: "Intent",
   };
   return labels[type];
 }
@@ -150,6 +152,7 @@ export function signalTypeColor(type: SignalType): string {
     BEHAVIORAL: "signal-behavioral",
     AMBIENT: "signal-ambient",
     EVENT: "signal-event",
+    INTENT: "signal-intent",
   };
   return colors[type];
 }
@@ -163,6 +166,7 @@ export function signalTypeHex(type: SignalType): string {
     BEHAVIORAL: "#F59E0B",
     AMBIENT: "#EC4899",
     EVENT: "#EF4444",
+    INTENT: "#14B8A6",
   };
   return hex[type];
 }
