@@ -11,7 +11,8 @@ export type SignalType =
   | "ENVIRONMENTAL"
   | "BEHAVIORAL"
   | "AMBIENT"
-  | "EVENT";
+  | "EVENT"
+  | "INTENT";
 
 export type Intent = "eat" | "drink" | "chill" | "scene" | "anything";
 
@@ -302,7 +303,7 @@ export interface AdaptiveState {
   isLoading: boolean;
   error: string | null;
   setGeo: (geo: { lat: number; lng: number }) => void;
-  setRadius: (radius_meters: number) => void;
+  setRadius: (radius_meters: number | ((prev: number) => number)) => void;
   emit: (type: SignalType, payload?: Partial<Signal>) => void;
   decide: (req?: Partial<DecideRequest>) => Promise<void>;
   pivot: (reason: string) => void;

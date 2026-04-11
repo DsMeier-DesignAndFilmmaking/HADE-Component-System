@@ -91,6 +91,16 @@ def _build_user_prompt(
         skip = ", ".join(e.venue_name for e in req.rejection_history)
         lines.append(f"SKIP: {skip}")
 
+    # High-strength signals — inject top 3 so the LLM can act on them
+    if req.signals:
+        strong = [s for s in req.signals if s.strength >= 0.6][:3]
+        if strong:
+            sig_parts = "; ".join(
+                f"{s.type}:{s.content or '?'}({s.strength:.1f})"
+                for s in strong
+            )
+            lines.append(f"SIGNALS: {sig_parts}")
+
     # Compact venue list — one line each
     lines.append("VENUES:")
     for i, v in enumerate(venues, 1):

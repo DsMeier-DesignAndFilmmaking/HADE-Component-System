@@ -9,6 +9,7 @@ import type {
   HadeResponse,
   HadeUX,
   UiState,
+  RejectionEntry,
   Signal,
   SignalType,
   DecideRequest,
@@ -92,8 +93,20 @@ export function useHadeEngine(config: HadeConfig = {}) {
   );
 
   const setRadius = useCallback(
-    (radius_meters: number) => updateContext({ radius_meters }),
-    [updateContext]
+    (radius_meters: number | ((prev: number) => number)) =>
+      setContext((prev) =>
+        buildContext(
+          {
+            ...prev,
+            radius_meters:
+              typeof radius_meters === "function"
+                ? radius_meters(prev.radius_meters)
+                : radius_meters,
+          },
+          config
+        )
+      ),
+    [config]
   );
 
   const setGeo = useCallback(
@@ -179,6 +192,7 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
   const { signals, emit } = useSignals();
   const [decision, setDecision] = useState<HadeDecision | null>(null);
   const [response, setResponse] = useState<HadeResponse | null>(null);
+  const [rejectionHistory, setRejectionHistory] = useState<RejectionEntry[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -212,7 +226,7 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
           radius_meters: req?.radius_meters ?? context.radius_meters,
           session_id: req?.session_id ?? context.session_id,
           signals: req?.signals ?? signals,
-          rejection_history: req?.rejection_history ?? context.rejection_history,
+          rejection_history: req?.rejection_history ?? rejectionHistory,
         };
 
         const res = await fetch(`${apiUrl}/hade/decide`, {
@@ -244,30 +258,34 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
         setIsLoading(false);
       }
     },
-    [context, config.api_url, signals] // Added signals to dependency array for accuracy
+    [context, config.api_url, signals, rejectionHistory]
   );
 
   const pivot = useCallback(
     (reason: string) => {
       if (!decision) return;
 
-      // Add the dismissed venue to rejection_history
-      updateContext({
-        rejection_history: [
-          ...(context.rejection_history ?? []),
-          {
-            venue_id: decision.id,
-            venue_name: decision.venue_name,
-            pivot_reason: reason,
-          },
-        ],
-      });
+      const currentRejection: RejectionEntry = {
+        venue_id: decision.id,
+        venue_name: decision.venue_name,
+        pivot_reason: reason,
+      };
+      const alreadyRejected = rejectionHistory.some((entry) => entry.venue_id === decision.id);
+      const nextRejectionHistory = alreadyRejected
+        ? rejectionHistory
+        : [...rejectionHistory, currentRejection];
 
-      // Clear current decision and request a new one
+      // Persist across calls in local session state.
+      setRejectionHistory((prev) =>
+        prev.some((entry) => entry.venue_id === decision.id) ? prev : [...prev, currentRejection]
+      );
+      updateContext({ rejection_history: nextRejectionHistory });
+
+      // Clear current decision and request a new one with explicit rejection history.
       setDecision(null);
-      decide();
+      void decide({ rejection_history: nextRejectionHistory });
     },
-    [context.rejection_history, decision, updateContext, decide]
+    [decision, rejectionHistory, updateContext, decide]
   );
 
   return {

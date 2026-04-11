@@ -157,28 +157,46 @@ async def decide(req: DecideRequest):
         lng=lng,
         radius_meters=req.radius_meters,
     )
-    logger.info("Decision pipeline: %d venues available (session=%s)", len(venues), session_id)
+    logger.info("Decision pipeline: %d venues fetched (session=%s)", len(venues), session_id)
+
+    # ── Rejection filtering: hard-remove rejected venues BEFORE scoring ──
+    pre_filter_count = len(venues)
+    if req.rejection_history:
+        rejected_names = {e.venue_name.strip().lower() for e in req.rejection_history}
+        venues = [v for v in venues if v.name.strip().lower() not in rejected_names]
+        logger.info(
+            "Rejection filter: %d → %d venues (%d rejected)",
+            pre_filter_count, len(venues), pre_filter_count - len(venues),
+        )
 
     if not venues:
-        logger.warning("No venues found — returning structured fallback (session=%s)", session_id)
+        # Distinguish "nothing nearby" from "everything rejected"
+        all_rejected = pre_filter_count > 0 and len(venues) == 0
+        basis = "all_rejected" if all_rejected else "no_venues"
+        rationale = (
+            "All nearby venues have been rejected. Try expanding your radius or adjusting your preferences."
+            if all_rejected
+            else "No open venues were found in your area right now."
+        )
+        logger.warning("No venues remain (basis=%s, session=%s)", basis, session_id)
         return {
             "decision": {
                 "id": "fallback_no_venues",
-                "venue_name": "No venues found nearby",
+                "venue_name": "No venues available",
                 "category": "venue",
                 "geo": {"lat": lat, "lng": lng},
                 "distance_meters": 0,
                 "eta_minutes": 0,
                 "neighborhood": "",
                 "confidence": 0.0,
-                "rationale": "No open venues were found in your area right now.",
+                "rationale": rationale,
                 "why_now": "Try expanding your search radius or checking back later.",
                 "situation_summary": summary,
             },
             "context_snapshot": {
                 "situation_summary": summary,
                 "interpreted_intent": req.situation.intent or "inferred",
-                "decision_basis": "no_venues",
+                "decision_basis": basis,
                 "candidates_evaluated": 0,
             },
             "session_id": session_id,

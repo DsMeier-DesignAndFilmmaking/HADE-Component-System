@@ -108,7 +108,7 @@ function DemoInner() {
   // medium: expand radius 50%, update context, re-decide
   const handleCtaMedium = async () => {
     const newRadius = Math.round(context.radius_meters * 1.5);
-    setRadius(newRadius);
+    setRadius((prev) => Math.round(prev * 1.5));
     await runDecide({
       radius_meters: newRadius,
       session_id: response?.session_id ?? undefined,
@@ -119,9 +119,11 @@ function DemoInner() {
   // low: open inline refine panel
   const handleCtaLow = () => setShowRefinePanel(true);
 
-  // refine panel confirm: emit BEHAVIORAL signal + re-decide with updated situation
+  // refine panel confirm: emit signals + re-decide with updated situation + state
   const handleRefineConfirm = async () => {
-    emit("BEHAVIORAL", {
+    // Capture returned signals — React setState is async, so `signals` in the
+    // closure won't include these until the next render. Pass them explicitly.
+    const behavioralSig = emit("BEHAVIORAL", {
       content: `Refined: ${refineIntent ?? "anything"} · urgency ${refineUrgency}`,
       strength: 0.9,
       geo: {
@@ -129,9 +131,24 @@ function DemoInner() {
         lng: resolvedGeo.lng + (Math.random() - 0.5) * 0.001,
       },
     });
+    const intentSig = emit("INTENT", {
+      content: refineIntent ?? "refine request",
+      strength: 0.7,
+      geo: { lat: resolvedGeo.lat, lng: resolvedGeo.lng },
+    });
+
+    // Map urgency → energy so HumanState actually changes in the payload
+    const energyFromUrgency: Record<typeof refineUrgency, "low" | "medium" | "high"> = {
+      low: "low",
+      medium: "medium",
+      high: "high",
+    };
+
     setShowRefinePanel(false);
     await runDecide({
       situation: { intent: refineIntent, urgency: refineUrgency },
+      state: { energy: energyFromUrgency[refineUrgency] },
+      signals: [...signals, behavioralSig, intentSig],
       session_id: response?.session_id ?? undefined,
       persona: activeAgent,
     });
