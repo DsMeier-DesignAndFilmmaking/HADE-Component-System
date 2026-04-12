@@ -19,7 +19,7 @@ class OpenAIProvider:
 
     def __init__(self) -> None:
         api_key = os.environ.get("OPENAI_API_KEY")
-        if not api_key or api_key == "your_key_here":
+        if not api_key or api_key.startswith("your_"):
             raise RuntimeError("OPENAI_API_KEY is not set or is a placeholder")
 
         _timeout = float(os.environ.get("HADE_LLM_TIMEOUT", _DEFAULT_LLM_TIMEOUT))

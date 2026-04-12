@@ -112,7 +112,7 @@ function DemoInner() {
     setRadius((prev) => Math.round(prev * 1.5));
     await runDecide({
       radius_meters: newRadius,
-      session_id: response?.session_id ?? undefined,
+      session_id: null,
       persona: activeAgent,
     });
   };
@@ -150,7 +150,7 @@ function DemoInner() {
       situation: { intent: refineIntent, urgency: refineUrgency },
       state: { energy: energyFromUrgency[refineUrgency] },
       signals: [...signals, behavioralSig, intentSig],
-      session_id: response?.session_id ?? undefined,
+      session_id: null,
       persona: activeAgent,
     });
   };

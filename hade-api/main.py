@@ -3,7 +3,7 @@ import logging
 import math
 import uuid
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, Any
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request, Response
@@ -96,7 +96,8 @@ class DecideRequest(BaseModel):
     radius_meters: float = 1500
     session_id: Optional[str] = None
     signals: List[Signal] = Field(default_factory=list)
-    rejection_history: List[RejectionEntry] = Field(default_factory=list)
+    rejection_history: List[Any] = Field(default_factory=list)
+    debug: bool = False
 
 # ─── Business Logic ──────────────────────────────────────────────────────────
 
@@ -127,6 +128,14 @@ def _haversine(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
     )
     return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
+def _venue_synthetic_id(name: str) -> str:
+    """Generate the deterministic venue ID from a venue name.
+
+    Must match the format used in the /hade/decide response so that
+    rejection_history entries can be matched back to venues.
+    """
+    return f"v_{name.strip().lower().replace(' ', '_')[:20]}"
+
 def _find_venue_by_name(venues: list[Venue], name: str) -> Venue:
     """Find a venue by name (case-insensitive). Falls back to first venue."""
     name_lower = name.strip().lower()
@@ -152,60 +161,56 @@ async def decide(req: DecideRequest):
         lng = -122.4194
 
     # ── Data Ingestion: fetch real-world venue candidates ──
-    venues = await get_nearby_venues(
+    candidates = await get_nearby_venues(
         lat=lat,
         lng=lng,
         radius_meters=req.radius_meters,
     )
-    logger.info("Decision pipeline: %d venues fetched (session=%s)", len(venues), session_id)
+    logger.info("Decision pipeline: %d venues fetched (session=%s)", len(candidates), session_id)
 
-    # ── Rejection filtering: hard-remove rejected venues BEFORE scoring ──
-    pre_filter_count = len(venues)
-    if req.rejection_history:
-        rejected_names = {e.venue_name.strip().lower() for e in req.rejection_history}
-        venues = [v for v in venues if v.name.strip().lower() not in rejected_names]
-        logger.info(
-            "Rejection filter: %d → %d venues (%d rejected)",
-            pre_filter_count, len(venues), pre_filter_count - len(venues),
-        )
+    # ── Rejection filtering: HARD filter before any ranking/scoring/LLM ──
+    rejection_history = req.rejection_history or []
+    rejected_ids = set(
+        r if isinstance(r, str) else r.get("venue_id")
+        for r in rejection_history
+        if r
+    )
+    rejected_ids = {rid for rid in rejected_ids if rid}
 
-    if not venues:
-        # Distinguish "nothing nearby" from "everything rejected"
-        all_rejected = pre_filter_count > 0 and len(venues) == 0
-        basis = "all_rejected" if all_rejected else "no_venues"
-        rationale = (
-            "All nearby venues have been rejected. Try expanding your radius or adjusting your preferences."
-            if all_rejected
-            else "No open venues were found in your area right now."
-        )
-        logger.warning("No venues remain (basis=%s, session=%s)", basis, session_id)
-        return {
-            "decision": {
-                "id": "fallback_no_venues",
-                "venue_name": "No venues available",
-                "category": "venue",
-                "geo": {"lat": lat, "lng": lng},
-                "distance_meters": 0,
-                "eta_minutes": 0,
-                "neighborhood": "",
-                "confidence": 0.0,
-                "rationale": rationale,
-                "why_now": "Try expanding your search radius or checking back later.",
-                "situation_summary": summary,
+    print("[HADE] rejected_ids:", rejected_ids)
+    print("[HADE] candidates_before:", len(candidates))
+    filtered_candidates = [
+        v for v in candidates
+        if v.id not in rejected_ids
+    ]
+    print("[HADE] candidates_after_filter:", len(filtered_candidates))
+
+    if not filtered_candidates:
+        logger.warning("No candidates remain after rejection filter (session=%s)", session_id)
+        response_payload = {
+            "decision": None,
+            "ux": {
+                "ui_state": "low",
+                "cta": "No more options nearby",
+                "alternatives": [],
             },
             "context_snapshot": {
                 "situation_summary": summary,
                 "interpreted_intent": req.situation.intent or "inferred",
-                "decision_basis": basis,
+                "decision_basis": "exhausted_candidates",
                 "candidates_evaluated": 0,
             },
             "session_id": session_id,
         }
+        if req.debug:
+            response_payload["debug"] = {"top_candidates": []}
+        return response_payload
 
     # ── LLM Orchestration: context-aware venue selection ──
-    decision = await run_hade_decision(req, venues, summary)
+    decision = await run_hade_decision(req, filtered_candidates, summary)
+    debug_top_candidates = decision.pop("debug_top_candidates", [])
 
-    selected = _find_venue_by_name(venues, decision["venue_name"])
+    selected = _find_venue_by_name(filtered_candidates, decision["venue_name"])
     distance = _haversine(lat, lng, selected.latitude, selected.longitude)
     eta = round(distance / 80)  # ~80 m/min walking pace
 
@@ -215,14 +220,14 @@ async def decide(req: DecideRequest):
         "situation_summary": summary,
         "interpreted_intent": req.situation.intent or "inferred",
         "decision_basis": "llm" if is_llm else "fallback",
-        "candidates_evaluated": len(venues),
+        "candidates_evaluated": len(filtered_candidates),
     }
     if not is_llm:
         context_snapshot["llm_failure_reason"] = decision.get("llm_failure_reason", "provider_error")
 
-    return {
+    response_payload = {
         "decision": {
-            "id": f"v_{selected.name.lower().replace(' ', '_')[:20]}",
+            "id": selected.id,
             "venue_name": selected.name,
             "category": selected.types[0] if selected.types else "venue",
             "geo": {"lat": selected.latitude, "lng": selected.longitude},
@@ -237,6 +242,9 @@ async def decide(req: DecideRequest):
         "context_snapshot": context_snapshot,
         "session_id": session_id,
     }
+    if req.debug:
+        response_payload["debug"] = {"top_candidates": debug_top_candidates}
+    return response_payload
 
 @app.get("/health")
 def health():

@@ -22,6 +22,7 @@ logger = logging.getLogger("hade.venues")
 PLACES_API_URL = "https://places.googleapis.com/v1/places:searchText"
 
 FIELD_MASK = ",".join([
+    "places.id",
     "places.displayName",
     "places.formattedAddress",
     "places.rating",
@@ -40,6 +41,7 @@ DEFAULT_INCLUDED_TYPES = ["restaurant", "bar", "cafe", "park"]
 class Venue(BaseModel):
     """Normalized venue representation for HADE decision pipeline."""
 
+    id: str
     name: str
     address: str
     rating: float | None = None
@@ -72,9 +74,12 @@ def _parse_venue(place: dict) -> Venue:
     """Map a Google Places API response object to HADE Venue."""
     display_name = place.get("displayName", {})
     location = place.get("location", {})
+    name = display_name.get("text", "Unknown")
+    venue_id = place.get("id") or f"v_{name.strip().lower().replace(' ', '_')[:20]}"
 
     return Venue(
-        name=display_name.get("text", "Unknown"),
+        id=venue_id,
+        name=name,
         address=place.get("formattedAddress", ""),
         rating=place.get("rating"),
         user_ratings_total=place.get("userRatingCount"),

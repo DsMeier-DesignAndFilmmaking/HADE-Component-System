@@ -229,10 +229,12 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
           rejection_history: req?.rejection_history ?? rejectionHistory,
         };
 
+        console.log("[HADE REQUEST PAYLOAD]", body);
         const res = await fetch(`${apiUrl}/hade/decide`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
+          cache: "no-store",
         });
 
         if (!res.ok) {
@@ -283,7 +285,7 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
 
       // Clear current decision and request a new one with explicit rejection history.
       setDecision(null);
-      void decide({ rejection_history: nextRejectionHistory });
+      void decide({ rejection_history: nextRejectionHistory, session_id: null });
     },
     [decision, rejectionHistory, updateContext, decide]
   );

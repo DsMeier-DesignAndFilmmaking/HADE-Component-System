@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("hade.providers.factory")
 
-DEFAULT_PROVIDER = "anthropic"
+DEFAULT_PROVIDER = "openai"
 
 _SUPPORTED_PROVIDERS = {"anthropic", "openai", "google"}
 
