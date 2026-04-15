@@ -17,6 +17,7 @@ import type {
   EnergyLevel,
   Openness,
   GroupType,
+  CommunitySignalsConfig,
 } from "@/types/hade";
 import { buildContext } from "./engine";
 import {
@@ -167,9 +168,18 @@ export function useSignals(initialTypes?: SignalType[]) {
 
 // ─── useAdaptive ──────────────────────────────────────────────────────────────
 
-function _deriveUX(decision: HadeDecision, basis: string): HadeUX {
+function _deriveUX(
+  decision: HadeDecision,
+  basis: string,
+  confidenceThreshold: number = 0,
+): HadeUX {
   const c = decision.confidence;
-  const ui_state: UiState = c >= 0.7 ? "high" : c >= 0.4 ? "medium" : "low";
+  // Shift tier boundaries upward based on user's confidence threshold setting.
+  // At threshold 0, bars are 0.7 / 0.4 (original). At threshold 0.5, they
+  // become 0.95 / 0.55 — making the system much pickier before showing "Go now".
+  const highBar = 0.7 + confidenceThreshold * 0.5;
+  const medBar  = 0.4 + confidenceThreshold * 0.3;
+  const ui_state: UiState = c >= highBar ? "high" : c >= medBar ? "medium" : "low";
   const cta =
     ui_state === "high" ? "Go now" :
     ui_state === "medium" ? "Explore nearby" :
@@ -195,6 +205,16 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
   const [rejectionHistory, setRejectionHistory] = useState<RejectionEntry[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // ── Community Signals (UGC) ──
+  const [communitySignals, setCommunitySignalsState] = useState<CommunitySignalsConfig>({
+    enabled: false,
+    shareCurrentSignal: false,
+  });
+
+  const setCommunitySignals = useCallback((enabled: boolean) => {
+    setCommunitySignalsState({ enabled, shareCurrentSignal: enabled });
+  }, []);
 
   const decide = useCallback(
     async (req?: Partial<DecideRequest>) => {
@@ -227,6 +247,7 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
           session_id: req?.session_id ?? context.session_id,
           signals: req?.signals ?? signals,
           rejection_history: req?.rejection_history ?? rejectionHistory,
+          settings: req?.settings,
         };
 
         console.log("[HADE REQUEST PAYLOAD]", body);
@@ -244,12 +265,17 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
         const data = await res.json();
         console.log("[HADE] full response:", data);
         const dec = data.decision as HadeDecision;
-        const ux = _deriveUX(dec, data.context_snapshot?.decision_basis ?? "llm");
+        const ux = _deriveUX(
+          dec,
+          data.context_snapshot?.decision_basis ?? "llm",
+          req?.settings?.confidence_threshold ?? 0,
+        );
         const shaped: HadeResponse = {
           decision: dec,
           ux,
           context_snapshot: data.context_snapshot,
           session_id: data.session_id,
+          debug: data.debug ?? undefined,
         };
         setDecision(dec);
         setResponse(shaped);
@@ -302,6 +328,8 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
     emit,
     decide,
     pivot,
+    communitySignals,
+    setCommunitySignals,
   };
 }
 

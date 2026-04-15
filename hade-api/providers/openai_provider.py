@@ -27,11 +27,14 @@ class OpenAIProvider:
         self._model = os.environ.get("HADE_OPENAI_MODEL", DEFAULT_MODEL)
         logger.info("OpenAI provider initialized (model=%s, timeout=%.1fs)", self._model, _timeout)
 
-    async def generate(self, system_prompt: str, user_content: str) -> str:
+    async def generate(
+        self, system_prompt: str, user_content: str, *, model_override: str | None = None
+    ) -> str:
         """Generate a response using OpenAI GPT."""
+        model = model_override or self._model
         try:
             response = await self._client.chat.completions.create(
-                model=self._model,
+                model=model,
                 response_format={"type": "json_object"},
                 messages=[
                     {"role": "system", "content": system_prompt},

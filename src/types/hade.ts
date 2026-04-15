@@ -16,6 +16,22 @@ export type SignalType =
 
 export type Intent = "eat" | "drink" | "chill" | "scene" | "anything";
 
+// ─── Signal Source Layer ─────────────────────────────────────────────────────
+
+/** Origin classification for trust scoring and display differentiation. */
+export type SignalSource = "system" | "partner" | "user";
+
+/** UGC signal categories — drives TTL, validation rules, and display. */
+export type UserSignalCategory = "activity" | "food" | "event" | "vibe" | "alert";
+
+/** Community signals configuration — controls UGC signal participation. */
+export interface CommunitySignalsConfig {
+  /** Whether the user has opted in to send/receive community signals. */
+  enabled: boolean;
+  /** Whether the current signal being composed should be shared. Default: true when enabled. */
+  shareCurrentSignal: boolean;
+}
+
 export type EnergyLevel = "low" | "medium" | "high";
 
 export type ComponentVariant = "primary" | "secondary" | "ghost";
@@ -165,6 +181,7 @@ export interface DecideRequest {
   session_id?: string | null;
   signals?: Signal[];
   rejection_history?: RejectionEntry[];
+  settings?: HadeSettings;
 }
 
 /**
@@ -232,6 +249,40 @@ export interface HadeResponse {
   ux?: HadeUX;
   context_snapshot: DecideResponse["context_snapshot"];
   session_id: string;
+  debug?: HadeDebugPayload;
+}
+
+// ─── Debug Payload ────────────────────────────────────────────────────────────
+
+/**
+ * A single candidate entry from the pre-LLM scoring stage.
+ * Present in debug.top_candidates and debug.scoring_breakdown.
+ */
+export interface HadeDebugCandidate {
+  venue_id: string;
+  venue_name: string;
+  category: string;
+  proximity_score: number;
+  context_score: number;
+  intent_score: number;
+  final_score: number;
+}
+
+/**
+ * Debug payload returned by POST /hade/decide when settings.debug is true.
+ * All fields are optional — never crash if a key is absent.
+ */
+export interface HadeDebugPayload {
+  top_candidates?: HadeDebugCandidate[];
+  scoring_breakdown?: HadeDebugCandidate[];
+  intent_probabilities?: Record<string, number>;
+  weight_profile?: string;
+  weights?: { proximity: number; context: number; intent: number };
+  exploration_temp?: number | null;
+  model_used?: string;
+  provider_used?: string;
+  strict_constraints_active?: boolean;
+  persona_id?: string | null;
 }
 
 // ─── Signals ──────────────────────────────────────────────────────────────────
@@ -247,6 +298,12 @@ export interface Signal {
   geo: GeoLocation;
   event_id?: string | null;
   source_user_id?: string | null;
+
+  // ── UGC signal fields (optional — present when source === "user") ──
+  source?: SignalSource;
+  category?: UserSignalCategory;
+  shareable?: boolean;
+  validation_status?: "pending" | "approved" | "flagged" | "expired";
 }
 
 export interface TrustAttribution {
@@ -307,6 +364,10 @@ export interface AdaptiveState {
   emit: (type: SignalType, payload?: Partial<Signal>) => Signal;
   decide: (req?: Partial<DecideRequest>) => Promise<void>;
   pivot: (reason: string) => void;
+
+  // ── Community Signals (UGC) ──
+  communitySignals: CommunitySignalsConfig;
+  setCommunitySignals: (enabled: boolean) => void;
 }
 
 // ─── Component Props ──────────────────────────────────────────────────────────
@@ -498,3 +559,39 @@ export interface AgentDefinitions {
   agents: AgentPersona[];
   validation_warnings: string[];
 }
+
+// ─── Settings ─────────────────────────────────────────────────────────────────
+
+/**
+ * User-controlled runtime settings. Persisted to localStorage.
+ * All fields optional — backend applies its own defaults for absent keys.
+ */
+export interface HadeSettings {
+  /** LLM model override. Null = use server default (env var). */
+  model_target?: ModelTarget | null;
+  /** Decision mode preset. Stored for Phase 3 behavioral wiring. */
+  mode?: "balanced" | "precise" | "explorative";
+  /** Exploration temperature override (0.0–1.0). Null = adaptive. */
+  exploration_temp?: number | null;
+  /** Minimum confidence to show a decision card (0.0–1.0). Default 0.0. */
+  confidence_threshold?: number;
+  /** Intent weight override (0.0–1.0). Null = adaptive. Stored for Phase 3 scoring wiring. */
+  intent_weight?: number | null;
+  /** Hard-enforce constraints vs soft-suggest. Default false. */
+  strict_constraints?: boolean;
+  /** Active persona ID. Null = use first available. */
+  persona_id?: string | null;
+  /** Echo full debug payload in API response. Default false. */
+  debug?: boolean;
+}
+
+export const DEFAULT_HADE_SETTINGS: HadeSettings = {
+  model_target: null,
+  mode: "balanced",
+  exploration_temp: null,
+  confidence_threshold: 0.0,
+  intent_weight: null,
+  strict_constraints: false,
+  persona_id: null,
+  debug: false,
+};

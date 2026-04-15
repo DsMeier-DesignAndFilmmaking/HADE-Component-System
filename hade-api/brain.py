@@ -18,6 +18,7 @@ import re
 from typing import TYPE_CHECKING
 
 from providers import get_llm_provider
+from providers.factory import resolve_model_target
 from venues import Venue
 
 if TYPE_CHECKING:
@@ -147,8 +148,14 @@ def map_venue_to_intent(category: str) -> str:
 def _resolve_weights(
     req: "DecideRequest",
     intent_probs: dict[str, float],
+    intent_weight_override: float | None = None,
 ) -> tuple[float, float, float, str]:
     """Compute intent clarity from the request and select a weight profile.
+
+    When intent_weight_override is provided, the intent dimension is pinned to
+    that value and proximity + context are re-scaled proportionally so all three
+    still sum to 1.0.  The relative ratio between proximity and context is
+    preserved from the selected profile.
 
     Returns (w_proximity, w_context, w_intent, profile_label).
     """
@@ -176,9 +183,30 @@ def _resolve_weights(
     clarity = min(1.0, clarity)
 
     if clarity >= 0.5:
-        return (*_W_HIGH, f"HIGH (clarity={clarity:.2f})")
+        w_prox, w_ctx, w_intent = _W_HIGH
+        label = f"HIGH (clarity={clarity:.2f})"
     else:
-        return (*_W_LOW, f"LOW (clarity={clarity:.2f})")
+        w_prox, w_ctx, w_intent = _W_LOW
+        label = f"LOW (clarity={clarity:.2f})"
+
+    # ── Settings override: intent_weight ──
+    # Pin intent to the user-provided value, redistribute remaining budget
+    # proportionally between proximity and context to preserve their ratio.
+    #   w_prox_new = (1 − w_intent_new) × w_prox_default / (w_prox_default + w_ctx_default)
+    #   w_ctx_new  = (1 − w_intent_new) × w_ctx_default  / (w_prox_default + w_ctx_default)
+    if intent_weight_override is not None:
+        w_intent = max(0.0, min(1.0, float(intent_weight_override)))
+        remaining = 1.0 - w_intent
+        old_sum = w_prox + w_ctx
+        if old_sum > 0:
+            w_prox = remaining * (w_prox / old_sum)
+            w_ctx  = remaining * (w_ctx / old_sum)
+        else:
+            w_prox = remaining / 2.0
+            w_ctx  = remaining / 2.0
+        label += f" [intent_override={w_intent:.2f}]"
+
+    return w_prox, w_ctx, w_intent, label
 
 
 # ── Per-Venue Scoring ────────────────────────────────────────────────────────
@@ -245,25 +273,30 @@ def _softmax_probs(scores: list[float], temperature: float) -> list[float]:
 
 # ── Ranking ──────────────────────────────────────────────────────────────────
 
-def _rank_candidates(venues: list[Venue], req: "DecideRequest") -> tuple[list[Venue], list[dict]]:
+def _rank_candidates(
+    venues: list[Venue],
+    req: "DecideRequest",
+    exploration_temp: float | None = None,
+    intent_weight: float | None = None,
+) -> tuple[list[Venue], list[dict], dict]:
     """Score, rank, and apply explore/exploit selection to venue candidates.
 
-    Exploitation (top_score ≥ 0.6):
-        Return venues in strict score order. The top-ranked venue is the
-        deterministic best pick.
+    Returns:
+        (ranked_venues, scored_dicts, debug_info)
 
-    Exploration (top_score < 0.6):
-        Use softmax sampling to probabilistically select a winner from the
-        top 3 candidates. Higher-scored venues are more likely to win, but
-        lower-scored venues have a non-zero chance — breaking the lock that
-        makes the same venue dominate every request.
+    Exploitation (top_score ≥ threshold AND no explicit exploration_temp):
+        Return venues in strict score order.
 
-    Temperature scales dynamically:
-        0.20 when the top score is just below the threshold (mild exploration)
-        0.50 when the top score is very low (aggressive exploration)
+    Exploration (top_score < threshold OR explicit exploration_temp > 0):
+        Use softmax sampling over top-5 candidates. When the user explicitly
+        sets exploration_temp via the Settings UI, exploration is forced even
+        if the top score exceeds the threshold — this makes the slider
+        meaningful at all score levels.
     """
     intent_probs = infer_intent_probabilities(req.signals)
-    w_prox, w_ctx, w_intent, profile = _resolve_weights(req, intent_probs)
+    w_prox, w_ctx, w_intent, profile = _resolve_weights(
+        req, intent_probs, intent_weight_override=intent_weight,
+    )
     weights = (w_prox, w_ctx, w_intent)
 
     print(f"[HADE] weight profile: {profile} "
@@ -284,11 +317,23 @@ def _rank_candidates(venues: list[Venue], req: "DecideRequest") -> tuple[list[Ve
     top_score = ranked[0]["final_score"] if ranked else 0.0
 
     # ── Explore / Exploit decision ──
-    if top_score < _EXPLORE_THRESHOLD and len(ranked) >= 2:
-        # Dynamic temperature: wider gap from threshold → more exploration
-        temperature = max(0.20, min(0.50, _EXPLORE_THRESHOLD - top_score))
+    # Force exploration when the user explicitly set a temperature > 0,
+    # even if the top score exceeds the threshold.
+    should_explore = (
+        len(ranked) >= 2
+        and (
+            top_score < _EXPLORE_THRESHOLD
+            or (exploration_temp is not None and exploration_temp > 0)
+        )
+    )
 
-        n_pool = min(len(ranked), 3)
+    if should_explore:
+        # Dynamic temperature: wider gap from threshold → more exploration
+        # exploration_temp (from settings) overrides the adaptive value when set
+        _adaptive = max(0.20, min(0.50, _EXPLORE_THRESHOLD - top_score))
+        temperature = float(exploration_temp) if exploration_temp is not None else _adaptive
+
+        n_pool = min(len(ranked), 5)
         pool = ranked[:n_pool]
         rest = ranked[n_pool:]
 
@@ -304,7 +349,7 @@ def _rank_candidates(venues: list[Venue], req: "DecideRequest") -> tuple[list[Ve
             f"{pool_scores[i]:.3f}→{probs[i]:.0%}"
             for i in range(len(probs))
         )
-        print(f"[HADE] selection: EXPLORE (top_score={top_score:.3f}, T={temperature:.2f})")
+        print(f"[HADE] selection: EXPLORE (top_score={top_score:.3f}, T={temperature:.2f}, forced={exploration_temp is not None})")
         print(f"[HADE] softmax pool: {prob_str}")
         print(f"[HADE] selected: {winner['venue_name']}")
     else:
@@ -332,7 +377,19 @@ def _rank_candidates(venues: list[Venue], req: "DecideRequest") -> tuple[list[Ve
         )
 
     ranked_venues = [venue_by_id[c["venue_id"]] for c in ranked if c["venue_id"] in venue_by_id]
-    return ranked_venues, ranked
+
+    # Debug info for settings.debug response enrichment
+    debug_info = {
+        "intent_probabilities": {k: round(v, 4) for k, v in intent_probs.items()},
+        "weight_profile": profile,
+        "weights": {
+            "proximity": round(w_prox, 4),
+            "context": round(w_ctx, 4),
+            "intent": round(w_intent, 4),
+        },
+    }
+
+    return ranked_venues, ranked, debug_info
 
 
 # ─── Prompt Construction ──────────────────────────────────────────────────────
@@ -522,6 +579,76 @@ def _fallback_decision(
     }
 
 
+# ─── Strict Constraint Filtering ─────────────────────────────────────────────
+
+def _apply_strict_constraints(
+    venues: list[Venue],
+    req: "DecideRequest",
+) -> list[Venue]:
+    """Hard-filter venues that violate explicit constraints.
+
+    Only applied when settings.strict_constraints is True.
+    Falls back to unfiltered list if filtering would leave zero candidates.
+    """
+    result = list(venues)
+    before = len(result)
+
+    # Distance tolerance
+    tol = (req.constraints.distance_tolerance or "").lower()
+    if tol == "walking":
+        result = [v for v in result
+                  if _distance_m(req.geo.lat, req.geo.lng, v.latitude, v.longitude) <= 1200]
+    elif tol == "short_drive":
+        result = [v for v in result
+                  if _distance_m(req.geo.lat, req.geo.lng, v.latitude, v.longitude) <= 5000]
+
+    # Budget (price_level from Google Places: 0–4)
+    budget_map = {"free": 0, "low": 1, "medium": 2, "high": 3, "unlimited": 4}
+    budget = (req.constraints.budget or "").lower()
+    if budget in budget_map and budget != "unlimited":
+        max_level = budget_map[budget]
+        result = [v for v in result
+                  if getattr(v, "price_level", None) is None
+                  or v.price_level <= max_level]
+
+    print(f"[HADE] strict_constraints: {before} → {len(result)} venues")
+    return result if result else venues  # never return empty
+
+
+# ─── Persona Prompt Augmentation ─────────────────────────────────────────────
+
+def _build_system_prompt(persona: dict | None) -> str:
+    """Build the HADE system prompt, optionally augmented with persona directives.
+
+    Persona fields injected:
+      - tone:       Communication style modifiers (e.g. "Concise, Technical")
+      - role:       One-sentence agent identity
+      - guardrails: Behavioral constraints added as RULE: lines
+    """
+    base = HADE_SYSTEM_PROMPT
+    if not persona:
+        return base
+
+    parts: list[str] = []
+
+    tone_tags = persona.get("tone", [])
+    if tone_tags:
+        parts.append(f"Communication style: {', '.join(tone_tags)}.")
+
+    role = persona.get("role")
+    if role:
+        parts.append(f"Agent role: {role}")
+
+    guardrails = persona.get("guardrails", [])
+    for g in guardrails:
+        parts.append(f"RULE: {g}")
+
+    if not parts:
+        return base
+
+    return base + "\n\n" + "\n".join(parts)
+
+
 # ─── Public API ───────────────────────────────────────────────────────────────
 
 async def run_hade_decision(
@@ -548,21 +675,64 @@ async def run_hade_decision(
             "confidence": 0.0,
         }
 
-    # Score, rank, and slice to top 3 candidates before sending to LLM.
-    # This ensures the LLM sees the most contextually relevant venues first
-    # and breaks the proximity-only lock from raw Google Places ordering.
-    ranked_venues, ranked_scores = _rank_candidates(venues, req)
+    # ── Settings extraction ──
+    _s = req.settings or {}
+    effective_debug    = _s.get("debug", False)
+    effective_temp     = _s.get("exploration_temp", None)
+    effective_model    = _s.get("model_target", None)
+    effective_mode     = _s.get("mode", "balanced")
+    effective_intent_w = _s.get("intent_weight", None)
+    strict             = _s.get("strict_constraints", False)
+    print(
+        f"[HADE] settings: debug={effective_debug}, temp={effective_temp}, "
+        f"model={effective_model}, mode={effective_mode}, "
+        f"intent_w={effective_intent_w}, strict={strict}"
+    )
+
+    # ── Mode → exploration floor ──
+    # "explorative" mode sets a temperature floor of 0.30 when no explicit
+    # exploration_temp is set, making decisions visibly more varied.
+    if effective_mode == "explorative" and effective_temp is None:
+        effective_temp = 0.30
+        print("[HADE] mode=explorative → exploration floor T=0.30")
+
+    # ── Strict constraint filtering ──
+    if strict:
+        venues = _apply_strict_constraints(venues, req)
+
+    # ── Score, rank, slice top 3 for LLM ──
+    ranked_venues, ranked_scores, ranking_debug = _rank_candidates(
+        venues, req,
+        exploration_temp=effective_temp,
+        intent_weight=effective_intent_w,
+    )
     candidates = ranked_venues[:3]
     top_candidates_debug = ranked_scores[:5]
+
+    # ── Persona-augmented system prompt ──
+    persona = getattr(req, "persona", None) or None
+    system_prompt = _build_system_prompt(persona)
+    if persona:
+        print(f"[HADE] persona injected: id={persona.get('id')}, tone={persona.get('tone')}")
+
     user_prompt = _build_user_prompt(req, candidates, situation_summary)
 
-    # Get provider and call LLM
+    # ── Model target resolution ──
+    provider_override, model_override = resolve_model_target(effective_model, effective_mode)
+
+    # ── LLM call ──
+    provider = get_llm_provider(provider_override)
     try:
-        provider = get_llm_provider()
-        print(f"[HADE] entering LLM path (provider={type(provider).__name__}, candidates={len(candidates)})")
+        print(
+            f"[HADE] entering LLM path "
+            f"(provider={type(provider).__name__}, model_override={model_override}, "
+            f"candidates={len(candidates)})"
+        )
         logger.info("Calling LLM for decision (%d candidates)", len(candidates))
 
-        raw_response = await provider.generate(HADE_SYSTEM_PROMPT, user_prompt)
+        raw_response = await provider.generate(
+            system_prompt, user_prompt, model_override=model_override,
+        )
         logger.debug("LLM raw response: %s", raw_response[:200])
 
         decision = _parse_llm_response(raw_response, candidates)
@@ -573,44 +743,41 @@ async def run_hade_decision(
             decision["venue_name"],
             decision["confidence"],
         )
-        return decision
 
     except asyncio.TimeoutError:
         print("[HADE] entering fallback path (reason=timeout)")
-        logger.warning(
-            "LLM decision failed — timeout (HADE_LLM_TIMEOUT exceeded)",
-            exc_info=True,
-        )
+        logger.warning("LLM timeout", exc_info=True)
         decision = _fallback_decision(candidates, req, failure_reason="timeout")
         decision["debug_top_candidates"] = top_candidates_debug
-        return decision
 
     except json.JSONDecodeError as exc:
         print(f"[HADE] entering fallback path (reason=parse_error): {exc}")
-        logger.warning(
-            "LLM decision failed — parse_error: %s", exc,
-            exc_info=True,
-        )
+        logger.warning("LLM parse_error: %s", exc, exc_info=True)
         decision = _fallback_decision(candidates, req, failure_reason="parse_error")
         decision["debug_top_candidates"] = top_candidates_debug
-        return decision
 
     except ValueError as exc:
         print(f"[HADE] entering fallback path (reason=validation_error): {exc}")
-        logger.warning(
-            "LLM decision failed — validation_error: %s", exc,
-            exc_info=True,
-        )
+        logger.warning("LLM validation_error: %s", exc, exc_info=True)
         decision = _fallback_decision(candidates, req, failure_reason="validation_error")
         decision["debug_top_candidates"] = top_candidates_debug
-        return decision
 
     except Exception as exc:
         print(f"[HADE] entering fallback path (reason=provider_error): {type(exc).__name__}: {exc}")
-        logger.warning(
-            "LLM decision failed — provider_error: %s", type(exc).__name__,
-            exc_info=True,
-        )
+        logger.warning("LLM provider_error: %s", type(exc).__name__, exc_info=True)
         decision = _fallback_decision(candidates, req, failure_reason="provider_error")
         decision["debug_top_candidates"] = top_candidates_debug
-        return decision
+
+    # ── Debug payload (enriched response when settings.debug is on) ──
+    if effective_debug:
+        decision["debug_payload"] = {
+            **ranking_debug,
+            "scoring_breakdown": ranked_scores[:10],
+            "exploration_temp": effective_temp,
+            "model_used": model_override or "server_default",
+            "provider_used": type(provider).__name__,
+            "strict_constraints_active": strict,
+            "persona_id": persona.get("id") if persona else None,
+        }
+
+    return decision

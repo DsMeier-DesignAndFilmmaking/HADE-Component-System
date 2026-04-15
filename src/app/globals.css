@@ -37,6 +37,46 @@
   }
 }
 
+/* ─── SettingsPanel range slider ─────────────────────────────────────────── */
+.hade-slider {
+  height: 6px;
+  cursor: pointer;
+  border-radius: 9999px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: #d8dce3;
+  outline: none;
+  transition: opacity 0.15s ease;
+}
+.hade-slider:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.hade-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 16px;
+  width: 16px;
+  border-radius: 9999px;
+  background: #316bff;
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgba(49, 107, 255, 0.35);
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+.hade-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.18);
+  box-shadow: 0 2px 8px rgba(49, 107, 255, 0.45);
+}
+.hade-slider::-moz-range-thumb {
+  height: 16px;
+  width: 16px;
+  border-radius: 9999px;
+  background: #316bff;
+  cursor: pointer;
+  border: none;
+  box-shadow: 0 1px 4px rgba(49, 107, 255, 0.35);
+}
+
 @layer utilities {
   .text-balance {
     text-wrap: balance;

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import type { SignalType, Intent, DecideRequest, UiState } from "@/types/hade";
 import { AdaptiveContainer } from "@/components/hade/adaptive/AdaptiveContainer";
 import { DecisionCard } from "@/components/hade/adaptive/DecisionCard";
@@ -11,8 +11,12 @@ import { HadeButton } from "@/components/hade/buttons/HadeButton";
 import { HadeHeading } from "@/components/hade/typography/HadeHeading";
 import { HadeText } from "@/components/hade/typography/HadeText";
 import { useHadeAdaptiveContext } from "@/lib/hade/hooks";
+import { HadeSettingsProvider, useHadeSettings } from "@/lib/hade/settings";
+import { SettingsPanel } from "@/components/hade/settings/SettingsPanel";
+import { DebugPanel } from "@/components/hade/debug/DebugPanel";
 import { Layout } from "@/components/layout";
 import { LocationHUD } from "@/components/hade/LocationHUD";
+import { CommunitySignalToggle } from "@/components/hade/community/CommunitySignalToggle";
 
 // Protocol Imports - Hardened Data from Notion Sync
 import agentData from "@/config/agent_definitions.json";
@@ -44,10 +48,19 @@ const SAMPLE_CONTENT: Record<SignalType, string[]> = {
 const DEFAULT_GEO = { lat: 39.7392, lng: -104.9903 };
 
 function DemoInner() {
-  const { signals, emit, response, context, isLoading, error, decide, setGeo, setRadius, pivot } = useHadeAdaptiveContext();
-  
-  // ─── Persona State (Notion-Driven) ─────────────────────────────────────────
-  const [activeAgent, setActiveAgent] = useState<AgentPersona>(agents[0]);
+  const { signals, emit, response, context, isLoading, error, decide, setGeo, setRadius, pivot, communitySignals, setCommunitySignals } = useHadeAdaptiveContext();
+  const { settings, updateSettings } = useHadeSettings();
+
+  // ─── Settings Panel ─────────────────────────────────────────────────────────
+  const [showSettings, setShowSettings] = useState(false);
+
+  // ─── Persona State (Notion-Driven, persisted via settings) ─────────────────
+  const activeAgent = useMemo<AgentPersona>(() => {
+    if (settings.persona_id) {
+      return agents.find((a) => a.id === settings.persona_id) ?? agents[0];
+    }
+    return agents[0];
+  }, [settings.persona_id]);
   const lastSync = new Date(definitions.synced_at).toLocaleString();
 
   const [selectedType, setSelectedType] = useState<SignalType>("PRESENCE");
@@ -114,6 +127,7 @@ function DemoInner() {
       radius_meters: newRadius,
       session_id: null,
       persona: activeAgent,
+      settings,
     });
   };
 
@@ -152,6 +166,7 @@ function DemoInner() {
       signals: [...signals, behavioralSig, intentSig],
       session_id: null,
       persona: activeAgent,
+      settings,
     });
   };
 
@@ -172,6 +187,11 @@ function DemoInner() {
         lat: resolvedGeo.lat + (Math.random() - 0.5) * 0.005,
         lng: resolvedGeo.lng + (Math.random() - 0.5) * 0.005,
       },
+      // Tag with community metadata when opted in
+      ...(communitySignals.enabled && {
+        source: "user" as const,
+        shareable: communitySignals.shareCurrentSignal,
+      }),
     });
   };
 
@@ -190,8 +210,50 @@ function DemoInner() {
             Test context-aware decisions using personas synced from your Strategic Command Center.
           </HadeText>
         </div>
-        <LocationHUD geo={userGeo} geoStatus={geoStatus} className="shrink-0 mt-1" />
+        <div className="flex items-center gap-2 shrink-0 mt-1">
+          <LocationHUD geo={userGeo} geoStatus={geoStatus} />
+          <button
+            type="button"
+            onClick={() => setShowSettings(true)}
+            aria-label="Open settings"
+            className={[
+              "h-9 w-9 flex items-center justify-center rounded-xl border transition-all duration-200",
+              showSettings
+                ? "border-accent/40 bg-accent/5 text-accent"
+                : "border-line bg-surface text-ink/40 hover:text-ink/80 hover:border-ink/20",
+            ].join(" ")}
+          >
+            <svg
+              width="15"
+              height="15"
+              viewBox="0 0 15 15"
+              fill="none"
+              aria-hidden="true"
+            >
+              <path
+                d="M7.5 9.5a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z"
+                stroke="currentColor"
+                strokeWidth="1.4"
+                strokeLinecap="round"
+              />
+              <path
+                d="M12.03 9.22a1 1 0 0 0 .2 1.1l.04.04a1.21 1.21 0 0 1-1.71 1.71l-.04-.04a1 1 0 0 0-1.1-.2 1 1 0 0 0-.6.91V13a1.21 1.21 0 0 1-2.42 0v-.06a1 1 0 0 0-.65-.91 1 1 0 0 0-1.1.2l-.04.04a1.21 1.21 0 0 1-1.71-1.71l.04-.04a1 1 0 0 0 .2-1.1 1 1 0 0 0-.91-.6H2a1.21 1.21 0 0 1 0-2.42h.06a1 1 0 0 0 .91-.65 1 1 0 0 0-.2-1.1l-.04-.04a1.21 1.21 0 0 1 1.71-1.71l.04.04a1 1 0 0 0 1.1.2h.05A1 1 0 0 0 6.22 2V2a1.21 1.21 0 0 1 2.42 0v.06a1 1 0 0 0 .6.91 1 1 0 0 0 1.1-.2l.04-.04a1.21 1.21 0 0 1 1.71 1.71l-.04.04a1 1 0 0 0-.2 1.1v.05a1 1 0 0 0 .91.6H13a1.21 1.21 0 0 1 0 2.42h-.06a1 1 0 0 0-.91.6Z"
+                stroke="currentColor"
+                strokeWidth="1.4"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
+        </div>
       </div>
+
+      {/* ── Community Signals Toggle ──────────────────────────────────────── */}
+      <CommunitySignalToggle
+        enabled={communitySignals.enabled}
+        onChange={setCommunitySignals}
+        className="mb-6"
+      />
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* ── 1. Persona Registry (Notion-Synced) ───────────────────────────── */}
@@ -207,7 +269,7 @@ function DemoInner() {
             {agents.map((agent) => (
               <button
                 key={agent.id}
-                onClick={() => setActiveAgent(agent)}
+                onClick={() => updateSettings({ persona_id: agent.id })}
                 className={`w-full text-left p-3 rounded-lg border transition-all ${
                   activeAgent.id === agent.id
                     ? "border-accent bg-accent/5 ring-1 ring-accent/20"
@@ -304,7 +366,7 @@ function DemoInner() {
               variant="secondary"
               size="sm"
               onClick={() => {
-                void runDecide({ persona: activeAgent });
+                void runDecide({ persona: activeAgent, settings });
               }} // Pass the Notion-synced object here 
               loading={isBusy}
               className="w-full"
@@ -341,6 +403,14 @@ function DemoInner() {
             onPivot={pivot}
             className="mt-6"
           />
+
+          {/* ── Debug Panel — visible only when settings.debug is enabled ──── */}
+          {settings.debug && response.debug && (
+            <DebugPanel
+              data={response.debug}
+              className="mt-3"
+            />
+          )}
 
           {/* ── Refine Panel — low state only ──────────────────────────────── */}
           {showRefinePanel && (
@@ -430,16 +500,23 @@ function DemoInner() {
           </p>
         </div>
       )}
+      {/* ── Settings Panel ─────────────────────────────────────────────────── */}
+      <SettingsPanel
+        open={showSettings}
+        onClose={() => setShowSettings(false)}
+      />
     </div>
   );
 }
 
 export default function DemoPage() {
   return (
-    <Layout>
-      <AdaptiveContainer config={{}}>
-        <DemoInner />
-      </AdaptiveContainer>
-    </Layout>
+    <HadeSettingsProvider>
+      <Layout>
+        <AdaptiveContainer config={{}}>
+          <DemoInner />
+        </AdaptiveContainer>
+      </Layout>
+    </HadeSettingsProvider>
   );
 }

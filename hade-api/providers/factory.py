@@ -19,6 +19,51 @@ DEFAULT_PROVIDER = "openai"
 
 _SUPPORTED_PROVIDERS = {"anthropic", "openai", "google"}
 
+# ── Model Target Resolution ─────────────────────────────────────────────────
+#
+# Maps frontend ModelTarget strings → (provider_name, actual API model ID).
+# Used by brain.py to route settings.model_target to the correct provider
+# and pass the right model string into provider.generate(model_override=...).
+
+MODEL_TARGET_MAP: dict[str, tuple[str, str]] = {
+    "gpt-4o":         ("openai",    "gpt-4o"),
+    "gpt-4o-mini":    ("openai",    "gpt-4o-mini"),
+    "claude-sonnet":  ("anthropic", "claude-sonnet-4-20250514"),
+    "claude-haiku":   ("anthropic", "claude-haiku-4-20250514"),
+    "gemini-flash":   ("google",    "gemini-1.5-flash"),
+    # Ollama targets intentionally omitted — require local runtime, not cloud API
+}
+
+# Mode presets: when no explicit model_target, mode selects a quality tier
+MODE_MODEL_MAP: dict[str, str] = {
+    "precise":     "gpt-4o",           # highest quality available
+    "balanced":    "",                  # empty → server default, no override
+    "explorative": "",                  # no model change, but affects exploration temp
+}
+
+
+def resolve_model_target(
+    model_target: str | None,
+    mode: str | None = None,
+) -> tuple[str | None, str | None]:
+    """Resolve a frontend ModelTarget (and optional mode) to provider + model overrides.
+
+    Returns:
+        (provider_name_override, model_string_override) — either or both may be None,
+        meaning "use the default".
+    """
+    # Explicit model_target takes priority over mode
+    if model_target and model_target in MODEL_TARGET_MAP:
+        return MODEL_TARGET_MAP[model_target]
+
+    # Mode-based fallback
+    if mode and mode in MODE_MODEL_MAP:
+        mode_model = MODE_MODEL_MAP[mode]
+        if mode_model and mode_model in MODEL_TARGET_MAP:
+            return MODEL_TARGET_MAP[mode_model]
+
+    return None, None
+
 
 def get_llm_provider(provider_name: str | None = None) -> LLMProvider:
     """Instantiate and return the configured LLM provider.

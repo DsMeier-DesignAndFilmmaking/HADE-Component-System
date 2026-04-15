@@ -98,6 +98,8 @@ class DecideRequest(BaseModel):
     signals: List[Signal] = Field(default_factory=list)
     rejection_history: List[Any] = Field(default_factory=list)
     debug: bool = False
+    persona: Optional[dict] = None     # AgentPersona from frontend (tone, guardrails, role)
+    settings: Optional[dict] = None
 
 # ─── Business Logic ──────────────────────────────────────────────────────────
 
@@ -202,13 +204,18 @@ async def decide(req: DecideRequest):
             },
             "session_id": session_id,
         }
-        if req.debug:
+        _should_debug = req.debug or bool((req.settings or {}).get("debug"))
+        if _should_debug:
             response_payload["debug"] = {"top_candidates": []}
         return response_payload
+
+    # ── Unified debug flag: top-level or settings.debug ──
+    should_debug = req.debug or bool((req.settings or {}).get("debug"))
 
     # ── LLM Orchestration: context-aware venue selection ──
     decision = await run_hade_decision(req, filtered_candidates, summary)
     debug_top_candidates = decision.pop("debug_top_candidates", [])
+    debug_payload = decision.pop("debug_payload", {})
 
     selected = _find_venue_by_name(filtered_candidates, decision["venue_name"])
     distance = _haversine(lat, lng, selected.latitude, selected.longitude)
@@ -242,8 +249,11 @@ async def decide(req: DecideRequest):
         "context_snapshot": context_snapshot,
         "session_id": session_id,
     }
-    if req.debug:
-        response_payload["debug"] = {"top_candidates": debug_top_candidates}
+    if should_debug:
+        response_payload["debug"] = {
+            "top_candidates": debug_top_candidates,
+            **debug_payload,
+        }
     return response_payload
 
 @app.get("/health")

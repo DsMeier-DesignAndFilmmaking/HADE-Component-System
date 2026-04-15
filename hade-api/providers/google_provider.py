@@ -26,14 +26,16 @@ class GoogleProvider:
         self._model_name = os.environ.get("HADE_GOOGLE_MODEL", DEFAULT_MODEL)
         logger.info("Google provider initialized (model=%s)", self._model_name)
 
-    async def generate(self, system_prompt: str, user_content: str) -> str:
+    async def generate(
+        self, system_prompt: str, user_content: str, *, model_override: str | None = None
+    ) -> str:
         """Generate a response using Google Gemini.
 
         The google-generativeai SDK is synchronous, so we wrap in
         asyncio.to_thread() to keep the event loop non-blocking.
         """
         model = genai.GenerativeModel(
-            model_name=self._model_name,
+            model_name=model_override or self._model_name,
             system_instruction=system_prompt,
             generation_config=genai.GenerationConfig(
                 response_mime_type="application/json",

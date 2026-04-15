@@ -27,11 +27,14 @@ class AnthropicProvider:
         self._model = os.environ.get("HADE_ANTHROPIC_MODEL", DEFAULT_MODEL)
         logger.info("Anthropic provider initialized (model=%s, timeout=%.1fs)", self._model, _timeout)
 
-    async def generate(self, system_prompt: str, user_content: str) -> str:
+    async def generate(
+        self, system_prompt: str, user_content: str, *, model_override: str | None = None
+    ) -> str:
         """Generate a response using Anthropic Claude."""
+        model = model_override or self._model
         try:
             response = await self._client.messages.create(
-                model=self._model,
+                model=model,
                 max_tokens=512,
                 system=system_prompt,
                 messages=[{"role": "user", "content": user_content}],
