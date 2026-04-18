@@ -18,6 +18,8 @@ import type {
   Openness,
   GroupType,
   CommunitySignalsConfig,
+  AgentPersona,
+  GeoLocation,
 } from "@/types/hade";
 import { buildContext } from "./engine";
 import {
@@ -41,6 +43,13 @@ export function useHadeEngine(config: HadeConfig = {}) {
     buildContext({}, config)
   );
 
+  // Ref-ify config so updateContext and all setters have stable identities.
+  // Config only carries defaults (api_url, default_radius) that don't change
+  // at runtime — but the object reference changes every render when passed
+  // as a literal `{}`, which would cascade into unstable callbacks.
+  const configRef = useRef(config);
+  configRef.current = config;
+
   const updateContext = useCallback(
     (patch: Partial<HadeContext>) => {
       setContext((prev) =>
@@ -54,11 +63,12 @@ export function useHadeEngine(config: HadeConfig = {}) {
             social: { ...prev.social, ...patch.social },
             constraints: { ...prev.constraints, ...patch.constraints },
           },
-          config
+          configRef.current
         )
       );
     },
-    [config]
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    []
   );
 
   // Typed setters — preferred over raw updateContext for common mutations
@@ -104,10 +114,11 @@ export function useHadeEngine(config: HadeConfig = {}) {
                 ? radius_meters(prev.radius_meters)
                 : radius_meters,
           },
-          config
+          configRef.current
         )
       ),
-    [config]
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    []
   );
 
   const setGeo = useCallback(
@@ -184,7 +195,60 @@ function _deriveUX(
     ui_state === "high" ? "Go now" :
     ui_state === "medium" ? "Explore nearby" :
     "Help me refine";
-  return { ui_state, cta, badges: [], alternatives: [] };
+  return { ui_state, cta, badges: [] };
+}
+
+// ─── Payload Validation ──────────────────────────────────────────────────────
+
+/**
+ * Pre-validation shape — geo may be null before geolocation resolves.
+ * All other fields from DecideRequest are preserved as-is.
+ */
+type DecidePayloadCandidate = Omit<DecideRequest, "geo"> & {
+  geo: GeoLocation | null;
+};
+
+/**
+ * A DecideRequest whose required runtime fields have been verified.
+ * TypeScript narrows DecidePayloadCandidate → ValidatedDecidePayload after
+ * the guard passes, guaranteeing persona and geo before the fetch fires.
+ */
+type ValidatedDecidePayload = DecideRequest & {
+  persona: AgentPersona;
+};
+
+/**
+ * Runtime type guard — checks persona and geo before any side effects.
+ * Logs a descriptive warning on the first violation and returns false
+ * so the caller can bail without touching loading or abort state.
+ */
+function validateDecidePayload(
+  body: DecidePayloadCandidate,
+): body is ValidatedDecidePayload {
+  if (
+    !body.geo ||
+    typeof body.geo.lat !== "number" ||
+    typeof body.geo.lng !== "number" ||
+    !Number.isFinite(body.geo.lat) ||
+    !Number.isFinite(body.geo.lng)
+  ) {
+    console.warn(
+      "[HADE] decide aborted — geo is missing or contains non-finite coordinates.",
+      { geo: body.geo ?? null },
+    );
+    return false;
+  }
+
+  if (!body.persona?.id || !body.persona?.role) {
+    console.warn(
+      "[HADE] decide aborted — persona is undefined or incomplete. " +
+        "This usually means agent definitions have not loaded yet.",
+      { persona: body.persona ?? null },
+    );
+    return false;
+  }
+
+  return true;
 }
 
 /**
@@ -216,39 +280,64 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
     setCommunitySignalsState({ enabled, shareCurrentSignal: enabled });
   }, []);
 
+  // Ref-ify mutable state so decide() has a stable identity.
+  // Without this, every context/signal/rejectionHistory change recreates
+  // decide(), which cascades into consumer effects and causes 4+ API calls.
+  const contextRef = useRef(context);
+  contextRef.current = context;
+  const signalsRef = useRef(signals);
+  signalsRef.current = signals;
+  const rejectionHistoryRef = useRef(rejectionHistory);
+  rejectionHistoryRef.current = rejectionHistory;
+
+  const abortRef = useRef<AbortController | null>(null);
+  const configRef = useRef(config);
+  configRef.current = config;
+  // Retains the persona from the last successful decide call so pivot(),
+  // which has no access to the active agent, can inherit it automatically.
+  const lastPersonaRef = useRef<AgentPersona | null>(null);
+
   const decide = useCallback(
     async (req?: Partial<DecideRequest>) => {
-      // 1. Check for location
-      if (!context.geo && !req?.geo) {
-        setError("Location is required to generate a decision.");
-        return;
-      }
+      const ctx = contextRef.current;
+      const sigs = signalsRef.current;
+      const rejHistory = rejectionHistoryRef.current;
+
+      // 1. Assemble candidate payload — persona falls back to lastPersonaRef
+      //    so pivot() inherits it automatically. geo drops the `!` assertion
+      //    and stays GeoLocation | null until the guard below validates it.
+      const body: DecidePayloadCandidate = {
+        persona:           req?.persona ?? lastPersonaRef.current ?? undefined,
+        geo:               req?.geo ?? ctx.geo,
+        situation:         req?.situation ?? ctx.situation,
+        state:             req?.state ?? ctx.state,
+        social:            req?.social ?? ctx.social,
+        constraints:       req?.constraints ?? ctx.constraints,
+        time_of_day:       req?.time_of_day ?? ctx.time_of_day,
+        day_type:          req?.day_type ?? ctx.day_type,
+        radius_meters:     req?.radius_meters ?? ctx.radius_meters,
+        session_id:        req?.session_id ?? ctx.session_id,
+        signals:           req?.signals ?? sigs,
+        rejection_history: req?.rejection_history ?? rejHistory,
+        settings:          req?.settings,
+      };
+
+      // 2. Validate before any side effects. Logs a specific warning for the
+      //    first missing field and returns false so we exit cleanly.
+      //    After this point body is narrowed to ValidatedDecidePayload —
+      //    body.persona: AgentPersona and body.geo: GeoLocation are guaranteed.
+      if (!validateDecidePayload(body)) return;
+
+      // Abort any in-flight request before starting a new one
+      abortRef.current?.abort();
+      const controller = new AbortController();
+      abortRef.current = controller;
 
       setIsLoading(true);
       setError(null);
 
       try {
-        const apiUrl = config.api_url ?? process.env.NEXT_PUBLIC_HADE_API_URL ?? "/api";
-
-        // 2. Build the body with the Persona
-        const body: DecideRequest = {
-          // Pass the persona explicitly if provided in the call, 
-          // or fallback to whatever logic you prefer
-          persona: req?.persona, 
-          
-          geo: req?.geo ?? context.geo!,
-          situation: req?.situation ?? context.situation,
-          state: req?.state ?? context.state,
-          social: req?.social ?? context.social,
-          constraints: req?.constraints ?? context.constraints,
-          time_of_day: req?.time_of_day ?? context.time_of_day,
-          day_type: req?.day_type ?? context.day_type,
-          radius_meters: req?.radius_meters ?? context.radius_meters,
-          session_id: req?.session_id ?? context.session_id,
-          signals: req?.signals ?? signals,
-          rejection_history: req?.rejection_history ?? rejectionHistory,
-          settings: req?.settings,
-        };
+        const apiUrl = configRef.current.api_url ?? process.env.NEXT_PUBLIC_HADE_API_URL ?? "/api";
 
         console.log("[HADE REQUEST PAYLOAD]", body);
         const res = await fetch(`${apiUrl}/hade/decide`, {
@@ -256,6 +345,7 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
           cache: "no-store",
+          signal: controller.signal,
         });
 
         if (!res.ok) {
@@ -279,14 +369,24 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
         };
         setDecision(dec);
         setResponse(shaped);
-        updateContext({ session_id: data.session_id });
+        lastPersonaRef.current = body.persona; // cache for subsequent pivot() calls
+        updateContext({
+          session_id: data.session_id,
+          ...(req?.situation && { situation: req.situation as HadeContext["situation"] }),
+          ...(req?.state && { state: req.state as HadeContext["state"] }),
+          ...(req?.social && { social: req.social as HadeContext["social"] }),
+          ...(req?.constraints && { constraints: req.constraints }),
+        });
       } catch (err) {
+        // Silently ignore aborted requests — a newer request replaced this one
+        if (err instanceof DOMException && err.name === "AbortError") return;
         setError(err instanceof Error ? err.message : "Unknown error");
       } finally {
         setIsLoading(false);
       }
     },
-    [context, config.api_url, signals, rejectionHistory]
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [updateContext]
   );
 
   const pivot = useCallback(

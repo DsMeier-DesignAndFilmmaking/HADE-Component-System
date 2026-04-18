@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { Suspense, useState, useEffect, useMemo } from "react";
+import { useSearchParams } from "next/navigation";
 import type { SignalType, Intent, DecideRequest, UiState } from "@/types/hade";
 import { AdaptiveContainer } from "@/components/hade/adaptive/AdaptiveContainer";
 import { DecisionCard } from "@/components/hade/adaptive/DecisionCard";
@@ -17,6 +18,8 @@ import { DebugPanel } from "@/components/hade/debug/DebugPanel";
 import { Layout } from "@/components/layout";
 import { LocationHUD } from "@/components/hade/LocationHUD";
 import { CommunitySignalToggle } from "@/components/hade/community/CommunitySignalToggle";
+import { DecisionScreen } from "@/components/hade/mobile/DecisionScreen";
+import { LoadingState } from "@/components/hade/mobile/LoadingState";
 
 // Protocol Imports - Hardened Data from Notion Sync
 import agentData from "@/config/agent_definitions.json";
@@ -47,7 +50,7 @@ const SAMPLE_CONTENT: Record<SignalType, string[]> = {
 
 const DEFAULT_GEO = { lat: 39.7392, lng: -104.9903 };
 
-function DemoInner() {
+function DesktopDebugDemo() {
   const { signals, emit, response, context, isLoading, error, decide, setGeo, setRadius, pivot, communitySignals, setCommunitySignals } = useHadeAdaptiveContext();
   const { settings, updateSettings } = useHadeSettings();
 
@@ -509,14 +512,27 @@ function DemoInner() {
   );
 }
 
+function DemoRouter() {
+  const params = useSearchParams();
+  const debug = params.get("debug") === "1";
+  const scenarioId = params.get("scenario");
+  return debug ? (
+    <Layout>
+      <DesktopDebugDemo />
+    </Layout>
+  ) : (
+    <DecisionScreen scenarioId={scenarioId} />
+  );
+}
+
 export default function DemoPage() {
   return (
     <HadeSettingsProvider>
-      <Layout>
-        <AdaptiveContainer config={{}}>
-          <DemoInner />
-        </AdaptiveContainer>
-      </Layout>
+      <AdaptiveContainer config={{}}>
+        <Suspense fallback={<LoadingState />}>
+          <DemoRouter />
+        </Suspense>
+      </AdaptiveContainer>
     </HadeSettingsProvider>
   );
 }

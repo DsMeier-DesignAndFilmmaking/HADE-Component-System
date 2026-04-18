@@ -78,6 +78,14 @@
 }
 
 @layer utilities {
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  .pb-safe-floor {
+    padding-bottom: max(24px, env(safe-area-inset-bottom, 24px));
+  }
+
   .text-balance {
     text-wrap: balance;
   }

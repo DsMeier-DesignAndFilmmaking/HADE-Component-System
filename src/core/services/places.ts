@@ -1,0 +1,409 @@
+/**
+ * GroundedPlacesService
+ *
+ * Fetches real, open-now venue candidates from Google Places (New API v1) and
+ * normalises them into PlaceOption — the shape the HADE orchestrator uses to
+ * anchor decisions to physical locations.
+ *
+ * Contract guarantees:
+ *   • fetchNearbyGrounded always returns PlaceOption[] — never throws.
+ *   • An empty array on any error prevents orchestrator crashes.
+ *   • Only "open now" venues are returned by default (configurable).
+ *
+ * ── Swap to Mapbox ────────────────────────────────────────────────────────────
+ * Replace callGooglePlaces() with a Mapbox POI search using:
+ *   GET https://api.mapbox.com/geocoding/v5/mapbox.places/{category}.json
+ *     ?proximity={lng},{lat}&limit=20&access_token={token}
+ * Map the GeoJSON Feature array into the same GooglePlace shape or write a
+ * parallel toPlaceOptionFromMapbox() converter. fetchNearbyGrounded() is
+ * provider-agnostic above that boundary.
+ */
+
+import "server-only";
+
+import { serverEnv } from "@/lib/env/server";
+import type { GeoLocation, Intent, PlaceOption, FetchNearbyOptions } from "@/types/hade";
+
+// PlaceOption and FetchNearbyOptions are defined in src/types/hade.ts.
+// Re-export so callers can import from either location.
+export type { PlaceOption, FetchNearbyOptions };
+
+// ─── Intent → Google place types ─────────────────────────────────────────────
+
+/**
+ * Maps HADE intent to includedTypes sent to Google Places (New API).
+ * Keys cover the most common venue categories per intent.
+ * "anything" intentionally has no entry → request omits includedTypes.
+ */
+const INTENT_TYPES: Partial<Record<Intent, string[]>> = {
+  eat: [
+    "restaurant",
+    "fast_food_restaurant",
+    "food_court",
+    "sandwich_shop",
+    "bakery",
+    "pizza_restaurant",
+    "sushi_restaurant",
+    "ramen_restaurant",
+    "american_restaurant",
+    "mexican_restaurant",
+    "japanese_restaurant",
+    "thai_restaurant",
+    "italian_restaurant",
+    "indian_restaurant",
+  ],
+  drink: [
+    "cafe",
+    "coffee_shop",
+    "bar",
+    "wine_bar",
+    "cocktail_bar",
+    "sports_bar",
+    "juice_shop",
+  ],
+  chill: [
+    "cafe",
+    "coffee_shop",
+    "park",
+    "national_park",
+    "city_park",
+    "spa",
+    "book_store",
+    "library",
+  ],
+  scene: [
+    "bar",
+    "nightclub",
+    "live_music_venue",
+    "comedy_club",
+    "event_venue",
+    "wine_bar",
+    "cocktail_bar",
+  ],
+  // "anything": no entry → broadest search
+};
+
+// ─── Category normalisation ───────────────────────────────────────────────────
+
+/**
+ * Maps the first matching Google place type → a HADE category token.
+ * Lookup is ordered: specific types before generic ones.
+ */
+const CATEGORY_MAP: Record<string, string> = {
+  // Food
+  restaurant: "restaurant",
+  fast_food_restaurant: "restaurant",
+  food_court: "restaurant",
+  sandwich_shop: "restaurant",
+  pizza_restaurant: "restaurant",
+  sushi_restaurant: "restaurant",
+  ramen_restaurant: "restaurant",
+  american_restaurant: "restaurant",
+  mexican_restaurant: "restaurant",
+  japanese_restaurant: "restaurant",
+  thai_restaurant: "restaurant",
+  italian_restaurant: "restaurant",
+  indian_restaurant: "restaurant",
+  bakery: "bakery",
+  // Coffee + casual
+  cafe: "cafe",
+  coffee_shop: "cafe",
+  juice_shop: "cafe",
+  // Drinks
+  bar: "bar",
+  wine_bar: "bar",
+  cocktail_bar: "bar",
+  sports_bar: "bar",
+  // Night
+  night_club: "nightclub",
+  nightclub: "nightclub",
+  // Venues
+  live_music_venue: "venue",
+  comedy_club: "venue",
+  event_venue: "venue",
+  tourist_attraction: "venue",
+  // Outdoors
+  park: "park",
+  national_park: "park",
+  city_park: "park",
+  campground: "park",
+  aquarium: "museum",
+  // Wellness
+  spa: "spa",
+  gym: "gym",
+  fitness_center: "gym",
+  yoga_studio: "gym",
+  // Culture
+  book_store: "bookstore",
+  bookstore: "bookstore",
+  library: "library",
+  museum: "museum",
+  art_gallery: "gallery",
+  movie_theater: "theater",
+  // Retail
+  shopping_mall: "mall",
+  supermarket: "grocery",
+  grocery_store: "grocery",
+};
+
+/** Maps each normalised HADE category to a single evocative vibe word. */
+const VIBE_MAP: Record<string, string> = {
+  restaurant: "vibrant",
+  bakery: "warm",
+  cafe: "cozy",
+  bar: "lively",
+  nightclub: "electric",
+  venue: "buzzing",
+  park: "fresh",
+  spa: "calm",
+  gym: "energized",
+  bookstore: "curious",
+  library: "quiet",
+  museum: "inspiring",
+  gallery: "creative",
+  theater: "immersive",
+  mall: "browsable",
+  grocery: "practical",
+};
+
+const DEFAULT_VIBE = "local";
+
+// ─── Google Places (New API) internal types ───────────────────────────────────
+
+interface GoogleDisplayName {
+  text: string;
+  languageCode?: string;
+}
+
+interface GoogleLatLng {
+  latitude: number;
+  longitude: number;
+}
+
+interface GoogleOpeningHours {
+  openNow?: boolean;
+}
+
+interface GooglePlace {
+  id: string;
+  displayName?: GoogleDisplayName;
+  types?: string[];
+  location?: GoogleLatLng;
+  currentOpeningHours?: GoogleOpeningHours;
+  rating?: number;
+  priceLevel?: string;
+  shortFormattedAddress?: string;
+}
+
+interface GooglePlacesResponse {
+  places?: GooglePlace[];
+}
+
+interface NearbySearchBody {
+  locationRestriction: {
+    circle: {
+      center: { latitude: number; longitude: number };
+      radius: number;
+    };
+  };
+  includedTypes?: string[];
+  maxResultCount: number;
+  rankPreference: "DISTANCE" | "POPULARITY";
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/** Straight-line distance between two coordinates in metres (haversine formula). */
+function haversineMeters(a: GeoLocation, b: GeoLocation): number {
+  const R = 6_371_000; // Earth mean radius, metres
+  const φ1 = (a.lat * Math.PI) / 180;
+  const φ2 = (b.lat * Math.PI) / 180;
+  const Δφ = ((b.lat - a.lat) * Math.PI) / 180;
+  const Δλ = ((b.lng - a.lng) * Math.PI) / 180;
+  const sinΔφ = Math.sin(Δφ / 2);
+  const sinΔλ = Math.sin(Δλ / 2);
+  const a2 =
+    sinΔφ * sinΔφ + Math.cos(φ1) * Math.cos(φ2) * sinΔλ * sinΔλ;
+  return R * 2 * Math.atan2(Math.sqrt(a2), Math.sqrt(1 - a2));
+}
+
+/** Returns the first HADE category that matches a Google type array. */
+function normalizeCategory(types: string[]): string {
+  for (const t of types) {
+    const mapped = CATEGORY_MAP[t];
+    if (mapped) return mapped;
+  }
+  // Last-resort: clean up the first raw type
+  return types[0]?.replace(/_/g, " ") ?? "venue";
+}
+
+const PRICE_LEVEL_MAP: Record<string, number> = {
+  PRICE_LEVEL_FREE: 0,
+  PRICE_LEVEL_INEXPENSIVE: 1,
+  PRICE_LEVEL_MODERATE: 2,
+  PRICE_LEVEL_EXPENSIVE: 3,
+  PRICE_LEVEL_VERY_EXPENSIVE: 4,
+};
+
+/**
+ * Converts a raw Google Place into a PlaceOption.
+ * Returns null if required fields (id, name, location) are absent, or if the
+ * place is closed and openNowFilter is active.
+ */
+function toPlaceOption(
+  place: GooglePlace,
+  origin: GeoLocation,
+  openNowFilter: boolean,
+): PlaceOption | null {
+  if (!place.id || !place.displayName?.text || !place.location) return null;
+
+  // Honour open_now filter. Places without hours data are included (openNow = undefined → treat as open).
+  if (openNowFilter && place.currentOpeningHours?.openNow === false) return null;
+
+  const placeGeo: GeoLocation = {
+    lat: place.location.latitude,
+    lng: place.location.longitude,
+  };
+
+  const category = normalizeCategory(place.types ?? []);
+  const vibe = VIBE_MAP[category] ?? DEFAULT_VIBE;
+
+  return {
+    id: place.id,
+    name: place.displayName.text,
+    category,
+    vibe,
+    geo: placeGeo,
+    distance_meters: Math.round(haversineMeters(origin, placeGeo)),
+    is_open: place.currentOpeningHours?.openNow ?? true,
+    address: place.shortFormattedAddress,
+    rating: place.rating,
+    price_level:
+      place.priceLevel !== undefined
+        ? PRICE_LEVEL_MAP[place.priceLevel]
+        : undefined,
+  };
+}
+
+// ─── API configuration ────────────────────────────────────────────────────────
+
+const PLACES_API_URL =
+  "https://places.googleapis.com/v1/places:searchNearby";
+
+/** Only request the fields we actually use — keeps response size minimal. */
+const FIELD_MASK = [
+  "places.id",
+  "places.displayName",
+  "places.types",
+  "places.location",
+  "places.currentOpeningHours.openNow",
+  "places.rating",
+  "places.priceLevel",
+  "places.shortFormattedAddress",
+].join(",");
+
+const DEFAULT_RADIUS_M = 800;
+const DEFAULT_MAX_RESULTS = 20;
+const REQUEST_TIMEOUT_MS = 6_000;
+
+// ─── Main export ──────────────────────────────────────────────────────────────
+
+/**
+ * Fetches nearby, open-now venues from Google Places (New API) and returns
+ * them as normalised PlaceOption records ready for the HADE orchestrator.
+ *
+ * @returns PlaceOption[] — always resolves; returns [] on any error.
+ *
+ * @example
+ * const candidates = await fetchNearbyGrounded({
+ *   geo: { lat: 39.7392, lng: -104.9903 },
+ *   intent: "eat",
+ *   radius_meters: 1000,
+ * });
+ */
+export async function fetchNearbyGrounded(
+  opts: FetchNearbyOptions,
+): Promise<PlaceOption[]> {
+  const apiKey = serverEnv.googlePlacesApiKey;
+
+  if (!apiKey) {
+    console.warn(
+      "[places] GOOGLE_PLACES_API_KEY not configured — skipping Places fetch",
+    );
+    return [];
+  }
+
+  const {
+    geo,
+    radius_meters = DEFAULT_RADIUS_M,
+    intent,
+    target_categories,
+    open_now = true,
+    max_results = DEFAULT_MAX_RESULTS,
+  } = opts;
+
+  const requestBody: NearbySearchBody = {
+    locationRestriction: {
+      circle: {
+        center: { latitude: geo.lat, longitude: geo.lng },
+        radius: Math.min(radius_meters, 50_000), // Google hard cap
+      },
+    },
+    maxResultCount: Math.min(max_results, 20), // per-page API limit
+    rankPreference: "DISTANCE",
+  };
+
+  // Only apply type filter when intent maps to a known type list.
+  // "anything" has no entry → broadest possible search.
+  const includedTypes =
+    target_categories && target_categories.length > 0
+      ? target_categories
+      : intent
+        ? INTENT_TYPES[intent]
+        : undefined;
+  if (includedTypes?.length) {
+    requestBody.includedTypes = includedTypes;
+  }
+
+  try {
+    const response = await fetch(PLACES_API_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Goog-Api-Key": apiKey,
+        "X-Goog-FieldMask": FIELD_MASK,
+      },
+      body: JSON.stringify(requestBody),
+      cache: "no-store",
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+
+    if (!response.ok) {
+      const errText = await response.text().catch(() => "(unreadable)");
+      console.warn(
+        `[places] Google Places API ${response.status}: ${errText.slice(0, 200)}`,
+      );
+      return [];
+    }
+
+    const data = (await response.json()) as GooglePlacesResponse;
+    const rawPlaces = data.places ?? [];
+
+    const candidates: PlaceOption[] = rawPlaces
+      .map((p) => toPlaceOption(p, geo, open_now))
+      .filter((p): p is PlaceOption => p !== null);
+
+    console.log(
+      `[places] ${rawPlaces.length} raw → ${candidates.length} usable` +
+        (intent ? ` (intent=${intent})` : "") +
+        (target_categories?.length ? ` (types=${target_categories.join(",")})` : "") +
+        ` (geo=${geo.lat.toFixed(2)},${geo.lng.toFixed(2)})`,
+    );
+
+    return candidates;
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    console.warn(`[places] fetchNearbyGrounded failed: ${detail}`);
+    return [];
+  }
+}

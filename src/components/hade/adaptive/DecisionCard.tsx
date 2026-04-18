@@ -43,7 +43,6 @@ export function DecisionCard({
       ? "Expand search"
       : "Go now";
   const badges = Array.isArray(response.ux?.badges) ? response.ux.badges : [];
-  const alternatives = Array.isArray(response.ux?.alternatives) ? response.ux.alternatives : [];
   const isFallback = context_snapshot.decision_basis === "fallback";
 
   return (
@@ -111,32 +110,6 @@ export function DecisionCard({
                 {badge}
               </span>
             ))}
-          </div>
-        )}
-
-        {/* ── Alternatives — MEDIUM only ─────────────────────────────────────── */}
-        {state === "medium" && alternatives.length > 0 && (
-          <div className="mt-4">
-            <p className="text-[10px] font-mono uppercase tracking-widest text-ink/30 mb-2">
-              Also Nearby
-            </p>
-            <div className="space-y-2">
-              {alternatives.map((alt: any, i: number) => (
-                <div
-                  key={i}
-                  className="flex items-center justify-between rounded-xl border border-line px-3 py-2.5"
-                >
-                  <HadeText variant="caption" color="muted">
-                    {typeof alt === "string" ? alt : (alt.venue_name ?? "—")}
-                  </HadeText>
-                  {typeof alt === "object" && alt.confidence != null && (
-                    <span className="font-mono text-[10px] text-ink/40">
-                      {Math.round(alt.confidence * 100)}%
-                    </span>
-                  )}
-                </div>
-              ))}
-            </div>
           </div>
         )}
 

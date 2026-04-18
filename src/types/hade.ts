@@ -223,6 +223,19 @@ export interface DecideResponse {
     llm_failure_reason?: "timeout" | "parse_error" | "validation_error" | "provider_error";
   };
   session_id: string;
+  /**
+   * Which tier produced this response.
+   * - "llm"            — upstream engine responded successfully
+   * - "synthetic"      — upstream failed; decision built from real Places API candidates
+   * - "static_fallback"— Places API unavailable or returned nothing; hardcoded stub
+   * Absent on upstream responses that predate this field.
+   */
+  source?: "llm" | "synthetic" | "static_fallback";
+  /**
+   * Real nearby venues fetched during Tier 2. Populated only when source === "synthetic".
+   * Empty array for llm and static_fallback paths.
+   */
+  fallback_places?: PlaceOption[];
 }
 
 // ─── UX Layer ─────────────────────────────────────────────────────────────────
@@ -237,7 +250,32 @@ export interface HadeUX {
   ui_state: UiState;
   cta: string;
   badges: string[];
-  alternatives: any[];
+}
+
+// ── External API Contract ─────────────────────────────────────────────
+
+export interface HadeAPIDecision {
+  id: string;
+  title: string;
+  category: string;
+  neighborhood?: string;
+  distance: string;
+  eta?: string;
+  geo: GeoLocation;
+}
+
+export interface HadeAPIMeta {
+  contextType: string;
+  timestamp: string;
+}
+
+export interface HadeAPIResponse {
+  status: "idle" | "loading" | "ready" | "error";
+  decision: HadeAPIDecision | null;
+  reasoning: string[];
+  confidence: number;
+  error: string | null;
+  meta: HadeAPIMeta | null;
 }
 
 /**
@@ -595,3 +633,43 @@ export const DEFAULT_HADE_SETTINGS: HadeSettings = {
   persona_id: null,
   debug: false,
 };
+
+// ─── Places ───────────────────────────────────────────────────────────────────
+
+/**
+ * A single venue candidate returned by the GroundedPlacesService.
+ * Used as the source material for Tier 2 (synthetic) decisions and
+ * surfaced to the client via DecideResponse.fallback_places.
+ */
+export interface PlaceOption {
+  /** Google Place ID — stable for deduplication and rejection history */
+  id: string;
+  name: string;
+  /** Normalised HADE category token, e.g. "cafe" | "bar" | "restaurant" | "park" */
+  category: string;
+  /** 1-word evocative vibe, e.g. "cozy" | "lively" | "fresh" | "electric" */
+  vibe: string;
+  geo: GeoLocation;
+  /** Straight-line haversine distance from the request origin */
+  distance_meters: number;
+  is_open: boolean;
+  address?: string;
+  /** Google star rating 1–5 */
+  rating?: number;
+  /** Normalised price level: 0 (free) – 4 (very expensive) */
+  price_level?: number;
+}
+
+export interface FetchNearbyOptions {
+  geo: GeoLocation;
+  /** Search radius in metres. Default 800 m. Capped at 50 000 m by Google. */
+  radius_meters?: number;
+  /** Restricts to place types matching the intent. Omit for broadest search. */
+  intent?: Intent;
+  /** Explicit Google Places types to search against. Overrides legacy intent mapping when present. */
+  target_categories?: string[];
+  /** Only return currently open places. Default true. */
+  open_now?: boolean;
+  /** Max results. Default 20. Hard-capped at 20 per API page. */
+  max_results?: number;
+}
