@@ -20,6 +20,8 @@ import type {
   CommunitySignalsConfig,
   AgentPersona,
   GeoLocation,
+  VibeSignal,
+  VibeTag,
 } from "@/types/hade";
 import { buildContext } from "./engine";
 import {
@@ -28,6 +30,7 @@ import {
   filterExpiredSignals,
   sortSignals,
 } from "./signals";
+import { SignalQueue } from "./queue";
 
 // ─── useHadeEngine ────────────────────────────────────────────────────────────
 
@@ -297,6 +300,28 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
   // which has no access to the active agent, can inherit it automatically.
   const lastPersonaRef = useRef<AgentPersona | null>(null);
 
+  // ── Vibe Signal / UGC queue ──────────────────────────────────────────────
+  // A Set of venue IDs that have received VibeSignal updates since the last
+  // decide() call. Passed as node_hints so the route fetches fresh weights.
+  const pendingNodeHints = useRef<Set<string>>(new Set());
+
+  const signalQueue = useRef<SignalQueue>(
+    new SignalQueue({
+      onFlush: (res) => {
+        // Update session ID for future flushes
+        signalQueue.current.setSessionId(
+          contextRef.current.session_id ?? null,
+        );
+        if (process.env.NODE_ENV === "development") {
+          console.debug("[HADE SignalQueue] flush accepted:", res.accepted, res.node_versions);
+        }
+      },
+      onError: (err, dropped) => {
+        console.warn("[HADE SignalQueue] dropped", dropped.length, "signals after retries:", err.message);
+      },
+    }),
+  );
+
   const decide = useCallback(
     async (req?: Partial<DecideRequest>) => {
       const ctx = contextRef.current;
@@ -306,6 +331,10 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
       // 1. Assemble candidate payload — persona falls back to lastPersonaRef
       //    so pivot() inherits it automatically. geo drops the `!` assertion
       //    and stays GeoLocation | null until the guard below validates it.
+      // Snapshot and clear pending node hints so this decide() includes them
+      const nodeHints = [...pendingNodeHints.current];
+      pendingNodeHints.current.clear();
+
       const body: DecidePayloadCandidate = {
         persona:           req?.persona ?? lastPersonaRef.current ?? undefined,
         geo:               req?.geo ?? ctx.geo,
@@ -320,6 +349,7 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
         signals:           req?.signals ?? sigs,
         rejection_history: req?.rejection_history ?? rejHistory,
         settings:          req?.settings,
+        node_hints:        nodeHints.length > 0 ? nodeHints : undefined,
       };
 
       // 2. Validate before any side effects. Logs a specific warning for the
@@ -410,10 +440,71 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
       updateContext({ rejection_history: nextRejectionHistory });
 
       // Clear current decision and request a new one with explicit rejection history.
+      // flushAsync() ensures any VibeSignal emitted in the same tick (e.g. from
+      // handlePivotReasonSelect) reaches POST /api/hade/signal before decide() fires,
+      // so LocationNode weights are updated before enrichWithNodeWeights() runs.
       setDecision(null);
-      void decide({ rejection_history: nextRejectionHistory, session_id: null });
+      void signalQueue.current.flushAsync().then(() =>
+        decide({ rejection_history: nextRejectionHistory, session_id: null })
+      );
     },
-    [decision, rejectionHistory, updateContext, decide]
+    [decision, rejectionHistory, updateContext, decide, signalQueue]
+  );
+
+  /**
+   * Emit a VibeSignal for a specific venue.
+   *
+   * Non-blocking: enqueues immediately and returns the VibeSignal.
+   * The queue flushes to POST /api/hade/signal on the next idle frame.
+   * The venue ID is added to pendingNodeHints so the next decide() call
+   * fetches fresh weights from the LocationNode registry.
+   */
+  const emitVibeSignal = useCallback(
+    (
+      venueId:   string,
+      tags:      VibeTag[],
+      sentiment: VibeSignal["sentiment"],
+      strength:  number = 0.7,
+    ): VibeSignal => {
+      const now     = new Date();
+      // VIBE TTL: 4 hours (matches AMBIENT in the signal_ttl_map)
+      const expires = new Date(now.getTime() + 14_400_000);
+
+      const vibeSignal: VibeSignal = {
+        id:               `vsig_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        type:             "AMBIENT",   // closest base type; route handler marks as "vibe" category
+        venue_id:         venueId,
+        location_node_id: venueId,
+        content:          tags.join(", "),
+        strength:         Math.max(0, Math.min(1, strength)),
+        emitted_at:       now.toISOString(),
+        expires_at:       expires.toISOString(),
+        geo:              contextRef.current.geo ?? { lat: 0, lng: 0 },
+        source:           "user",
+        category:         "vibe",
+        shareable:        communitySignals.enabled,
+        validation_status: "pending",
+        vibe_tags:        tags,
+        sentiment,
+      };
+
+      // Only track real venue IDs (Google Place IDs) in node_hints.
+      // LLM and static fallback decisions return synthetic IDs like "fallback-abc123"
+      // or "offline-abc123" that will never match a Place in a future Tier 2 response.
+      // Creating LocationNodes for those IDs pollutes the registry.
+      const isFallbackId = venueId.startsWith("fallback-") || venueId.startsWith("offline-");
+      if (!isFallbackId) {
+        pendingNodeHints.current.add(venueId);
+      }
+
+      // Enqueue for idle-frame flush — never blocks the render cycle
+      signalQueue.current.setSessionId(context.session_id ?? null);
+      signalQueue.current.enqueue(vibeSignal);
+
+      return vibeSignal;
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [communitySignals.enabled],
   );
 
   return {
@@ -430,6 +521,7 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
     pivot,
     communitySignals,
     setCommunitySignals,
+    emitVibeSignal,
   };
 }
 

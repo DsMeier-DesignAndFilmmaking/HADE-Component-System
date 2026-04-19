@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import type { HadeResponse, UiState } from "@/types/hade";
+import type { HadeResponse, LocationNode, UiState, VibeTag } from "@/types/hade";
 import { HadeCard } from "@/components/hade/layout/HadeCard";
 import { HadeButton } from "@/components/hade/buttons/HadeButton";
 import { HadeHeading } from "@/components/hade/typography/HadeHeading";
@@ -9,6 +9,7 @@ import { HadeText } from "@/components/hade/typography/HadeText";
 
 interface DecisionCardProps {
   response: HadeResponse;
+  locationNode?: LocationNode;
   agentId?: string;
   onCta?: () => void;
   onPivot?: (reason: string) => void;
@@ -21,8 +22,57 @@ const glowByState: Record<UiState, boolean | "blue" | "lime"> = {
   low: false,
 };
 
+function formatVibeTag(tag: string): { label: string; icon: string } {
+  switch (tag) {
+    case "perfect_vibe":
+    case "good_energy":
+      return { label: "Good energy", icon: "🔥" };
+    case "too_crowded":
+      return { label: "Crowded", icon: "⚠️" };
+    case "quiet":
+      return { label: "Chill", icon: "😌" };
+    case "dead":
+      return { label: "Low energy", icon: "😐" };
+    default:
+      return { label: tag, icon: "•" };
+  }
+}
+
+function deriveVibeChips(locationNode?: LocationNode): Array<{ key: string; label: string; icon: string }> {
+  if (!locationNode) return [];
+  if (locationNode.signal_count <= 1) return [];
+
+  const updatedAt = new Date(locationNode.last_updated).getTime();
+  if (!Number.isFinite(updatedAt)) return [];
+  if (Date.now() - updatedAt >= 2 * 60 * 60 * 1000) return [];
+
+  const entries = Object.entries(locationNode.weight_map) as Array<[VibeTag, number]>;
+  if (entries.length === 0) return [];
+
+  const positive = [...entries]
+    .filter(([, weight]) => weight > 0.6)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 2);
+
+  const negative = [...entries]
+    .filter(([, weight]) => weight < 0.4)
+    .sort((a, b) => a[1] - b[1])
+    .slice(0, 1);
+
+  const selected = [...positive, ...negative].slice(0, 3);
+  return selected.map(([tag]) => {
+    const formatted = formatVibeTag(tag);
+    return {
+      key: tag,
+      label: formatted.label,
+      icon: formatted.icon,
+    };
+  });
+}
+
 export function DecisionCard({
   response,
+  locationNode,
   agentId,
   onCta,
   onPivot,
@@ -44,6 +94,7 @@ export function DecisionCard({
       : "Go now";
   const badges = Array.isArray(response.ux?.badges) ? response.ux.badges : [];
   const isFallback = context_snapshot.decision_basis === "fallback";
+  const vibeChips = deriveVibeChips(locationNode);
 
   return (
     <motion.div
@@ -91,6 +142,21 @@ export function DecisionCard({
         <HadeText variant="body" color="ink" className="italic">
           &quot;{decision.rationale}&quot;
         </HadeText>
+
+        {/* ── UGC vibe chips ─────────────────────────────────────────────────── */}
+        {vibeChips.length > 0 && (
+          <div className="mt-3 flex flex-nowrap items-center gap-2 overflow-hidden">
+            {vibeChips.map((chip) => (
+              <span
+                key={chip.key}
+                className="inline-flex shrink-0 items-center gap-1 rounded-full border border-line bg-surface px-2.5 py-1 text-[11px] font-medium text-ink/70"
+              >
+                <span aria-hidden="true">{chip.icon}</span>
+                <span>{chip.label}</span>
+              </span>
+            ))}
+          </div>
+        )}
 
         {/* ── Why Now — MEDIUM + LOW only ────────────────────────────────────── */}
         {state !== "high" && decision.why_now && (

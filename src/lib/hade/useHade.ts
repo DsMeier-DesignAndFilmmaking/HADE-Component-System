@@ -16,7 +16,6 @@ import { getScenario } from "./scenarios";
 import { formatDistance, formatEta } from "./format";
 import agentData from "@/config/agent_definitions.json";
 
-const DEFAULT_GEO = { lat: 39.7392, lng: -104.9903 };
 const definitions = agentData as AgentDefinitions;
 const agents = definitions.agents;
 
@@ -74,7 +73,8 @@ export function useHade(config?: UseHadeConfig): UseHadeReturn {
   useEffect(() => {
     let cancelled = false;
     if (!navigator.geolocation) {
-      setGeo(DEFAULT_GEO);
+      // Geolocation API unavailable (e.g., insecure context) — mark ready with null geo.
+      // The decide() effect guard checks context.geo and will not fire without it.
       setGeoReady(true);
       return;
     }
@@ -87,8 +87,10 @@ export function useHade(config?: UseHadeConfig): UseHadeReturn {
         setGeoReady(true);
       },
       () => {
+        // Geo denied or unavailable — do NOT fall back to a hardcoded coordinate.
+        // Passing a fake location produces LocationNodes anchored to the wrong city.
+        // The decide() guard on context.geo will prevent a stale request from firing.
         if (cancelled) return;
-        setGeo(DEFAULT_GEO);
         setGeoReady(true);
       },
       { timeout: 8000, maximumAge: 60_000 },
@@ -164,7 +166,7 @@ export function useHade(config?: UseHadeConfig): UseHadeReturn {
 
   const refine = useCallback(
     async (input: { intent?: Intent | null; urgency?: Urgency }) => {
-      const resolvedGeo = userGeo ?? DEFAULT_GEO;
+      const resolvedGeo = userGeo ?? { lat: 0, lng: 0 };
       const urgency = input.urgency ?? "medium";
 
       const behavioralSig = emit("BEHAVIORAL", {

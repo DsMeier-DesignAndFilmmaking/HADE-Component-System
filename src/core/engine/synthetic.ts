@@ -21,6 +21,7 @@ import {
   generateSituationSummary,
   inferIntentFromTime,
 } from "@/lib/hade/engine";
+import { getNodeVibeScore } from "@/lib/hade/weights";
 import type {
   GeoLocation,
   HadeContext,
@@ -132,13 +133,49 @@ function normalizeMappedCategory(category: string): string {
 // ─── Place scoring ────────────────────────────────────────────────────────────
 
 /**
- * Composite score that balances closeness with quality.
- * Inverse distance (capped at 3000 m) weighted 60 %, rating 40 %.
+ * Clamps a value to [min, max].
+ * Defined here so scorePlaceOption has no external utility dependency.
  */
-function scorePlaceOption(p: PlaceOption): number {
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+/**
+ * Composite score that balances closeness, quality, and real-time UGC sentiment.
+ *
+ * Components:
+ *   proximity_score  — inverse linear decay over 3000 m (weight: 0.60)
+ *   rating_score     — Google star rating normalised 1–5 → 0–1 (weight: 0.40)
+ *   vibe_delta       — UGC LocationNode sentiment overlay (±0.10 max)
+ *
+ * UGC integration:
+ *   getNodeVibeScore() reads the LocationNode registry for this venue and
+ *   returns an aggregate sentiment value in [0, 1] where 0.5 is neutral.
+ *   Venues with no UGC history return exactly 0.5, so vibe_delta = 0 and
+ *   the score is identical to the pre-UGC baseline — no crash, no bias.
+ *
+ *   A venue tagged "perfect_vibe" + "worth_it" might score 0.72 → +0.044
+ *   A venue tagged "too_crowded" + "skip_it" might score 0.28 → -0.044
+ *   Maximum possible swing: ±0.10 (when vibe_score is 0.0 or 1.0)
+ *
+ * Final score is clamped to [0, 1] — safe to use in any downstream ranking.
+ */
+async function scorePlaceOption(p: PlaceOption): Promise<number> {
+  // ── Base score (unchanged behaviour when no UGC exists) ──────────────────
   const proximityScore = Math.max(0, 1 - p.distance_meters / 3000);
-  const ratingScore = ((p.rating ?? 3.5) - 1) / 4; // normalise 1–5 → 0–1
-  return proximityScore * 0.6 + ratingScore * 0.4;
+  const ratingScore    = ((p.rating ?? 3.5) - 1) / 4; // normalise 1–5 → 0–1
+  const baseScore      = proximityScore * 0.6 + ratingScore * 0.4;
+
+  // ── UGC vibe overlay ─────────────────────────────────────────────────────
+  // getNodeVibeScore() returns 0.5 (neutral) when:
+  //   • The venue has no LocationNode entry (never received a VibeSignal)
+  //   • All accumulated signals have expired and been filtered out
+  //   • The LocationNode signal_count is 0
+  // In all three cases vibe_delta = 0 and final_score === baseScore exactly.
+  const vibeScore = await getNodeVibeScore(p.id); // p.id is the Google Place ID / venue_id
+  const vibeDelta = (vibeScore - 0.5) * 0.2; // range: −0.10 to +0.10
+
+  return clamp(baseScore + vibeDelta, 0, 1);
 }
 
 // ─── Main export ──────────────────────────────────────────────────────────────
@@ -197,8 +234,14 @@ export async function generateSyntheticDecision(
     }
 
     // ── Pick best place ───────────────────────────────────────────────────────
-    const sorted = [...relevantPlaces].sort((a, b) => scorePlaceOption(b) - scorePlaceOption(a));
-    const best = sorted[0];
+    const scoredPlaces = await Promise.all(
+      relevantPlaces.map(async (place) => ({
+        place,
+        score: await scorePlaceOption(place),
+      })),
+    );
+    const sorted = scoredPlaces.sort((a, b) => b.score - a.score);
+    const best = sorted[0].place;
 
     // ── Resolve display intent (infer from time if absent) ────────────────────
     const resolvedIntent: Intent =

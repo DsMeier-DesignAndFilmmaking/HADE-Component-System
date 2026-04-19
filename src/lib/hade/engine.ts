@@ -8,7 +8,19 @@ import type {
   DayType,
   GeoLocation,
   Signal,
+  ScoringWeights,
 } from "@/types/hade";
+import { DEFAULT_SCORING_WEIGHTS } from "@/types/hade";
+
+// ─── Config-driven maps (loaded once at module init) ─────────────────────────
+
+// Inline JSON imports so the maps are available in both Node (API routes)
+// and Edge/browser (hooks) without dynamic import() race conditions.
+import intentAffinityMap  from "@/config/intent_affinity_map.json";
+import timeIntentDefaults from "@/config/time_intent_defaults.json";
+
+const _affinityMap = intentAffinityMap  as unknown as Record<string, string[]>;
+const _timeIntents = timeIntentDefaults as unknown as Record<string, string | null>;
 
 // ─── Default Config ───────────────────────────────────────────────────────────
 
@@ -37,23 +49,56 @@ export function getTimeOfDay(): TimeOfDay {
 
 /**
  * Derives DayType with 5-bucket resolution.
- * weekend_prime = Friday/Saturday evening — the highest social energy window.
+ * weekend_prime = the highest social energy window of the locale's week.
+ *
+ * @param locale - Optional IETF BCP-47 locale tag. Defaults to "en-US".
+ *   The locale's week structure determines which days are "prime" (the
+ *   culturally significant high-energy evening, typically Fri–Sat in US/EU).
+ *   Pass "en-AE" for a Fri–Sat work week, "en-IL" for Sun–Thu, etc.
+ *
+ *   Currently uses a simplified prime-day map; a full locale-aware
+ *   implementation can replace primeDays without changing the signature.
  */
-export function getDayType(): DayType {
+export function getDayType(locale: string = "en-US"): DayType {
   const now = new Date();
   const day = now.getDay(); // 0=Sun, 1=Mon, ..., 5=Fri, 6=Sat
-  const h = now.getHours();
+  const h   = now.getHours();
 
-  // Friday or Saturday after 18:00 = weekend prime
-  if ((day === 5 || day === 6) && h >= 18) return "weekend_prime";
+  // Locale-aware prime days: the two highest-energy evenings of the week
+  const primeDays = getPrimeDays(locale);
 
-  // Saturday or Sunday daytime
-  if (day === 0 || day === 6) return "weekend";
+  // Prime evening: after 18:00 on a prime day
+  if (primeDays.has(day) && h >= 18) return "weekend_prime";
+
+  // Weekend daytime — Sat or Sun in most locales
+  const weekendDays = getWeekendDays(locale);
+  if (weekendDays.has(day)) return "weekend";
 
   // Weekday after 18:00
   if (h >= 18) return "weekday_evening";
 
   return "weekday";
+}
+
+/** Returns the set of JS day indices (0=Sun…6=Sat) that are "prime" evenings. */
+function getPrimeDays(locale: string): Set<number> {
+  // Middle East work week (Fri–Sat off): Thu/Fri evenings are prime
+  if (locale.endsWith("-AE") || locale.endsWith("-SA") || locale.endsWith("-QA")) {
+    return new Set([4, 5]); // Thu, Fri
+  }
+  // Israel (Sun–Thu work week): Fri/Sat evenings prime
+  if (locale.endsWith("-IL")) return new Set([5, 6]); // Fri, Sat
+  // Default (US/EU Fri–Sat)
+  return new Set([5, 6]); // Fri, Sat
+}
+
+/** Returns the set of JS day indices that are the weekend rest days. */
+function getWeekendDays(locale: string): Set<number> {
+  if (locale.endsWith("-AE") || locale.endsWith("-SA") || locale.endsWith("-QA")) {
+    return new Set([5, 6]); // Fri, Sat
+  }
+  if (locale.endsWith("-IL")) return new Set([5, 6]); // Fri, Sat
+  return new Set([0, 6]); // Sun, Sat (default)
 }
 
 // ─── buildContext ─────────────────────────────────────────────────────────────
@@ -238,38 +283,32 @@ function formatConstraintsPart(constraints: HadeContext["constraints"]): string[
 
 /**
  * When intent is null or "anything", infer the most likely intent
- * from the time of day. Used in situation summary and backend scoring.
+ * from the time of day. Driven by config/time_intent_defaults.json —
+ * edit that file to change inference rules for a new domain or locale.
  */
 export function inferIntentFromTime(time: TimeOfDay): Intent | null {
-  switch (time) {
-    case "morning":
-    case "midday":
-      return "eat";
-    case "afternoon":
-      return "chill";
-    case "early_evening":
-    case "evening":
-      return "eat";
-    case "late_night":
-      return "drink";
-    default:
-      return null;
-  }
+  const raw = _timeIntents[time];
+  if (!raw) return null;
+  return raw as Intent;
 }
 
 // ─── scoreOpportunity ─────────────────────────────────────────────────────────
 
 /**
  * Computes a composite 0–1 score for a candidate venue given the current context.
- * Weights: proximity (40%), signal strength (35%), intent alignment (25%).
+ *
+ * Weights are configurable via the `weights` parameter (defaults to
+ * DEFAULT_SCORING_WEIGHTS: proximity 0.4, signal 0.35, intent 0.25).
+ * Override via HadeSettings.scoring_weights for per-user or per-domain tuning.
  *
  * Used to pre-filter venue candidates before the LLM call.
  * The LLM may override this ranking — this is a pre-filter, not the decision.
  */
 export function scoreOpportunity(
-  opp: Opportunity,
-  ctx: HadeContext,
-  maxRadiusMeters?: number
+  opp:             Opportunity,
+  ctx:             HadeContext,
+  maxRadiusMeters?: number,
+  weights:         ScoringWeights = DEFAULT_SCORING_WEIGHTS,
 ): number {
   const radius = maxRadiusMeters ?? ctx.radius_meters;
 
@@ -293,19 +332,20 @@ export function scoreOpportunity(
     ? getIntentAlignmentScore(opp.category, resolvedIntent)
     : 0.5;
 
-  return proximityScore * 0.4 + signalScore * 0.35 + intentScore * 0.25;
+  return (
+    proximityScore * weights.proximity +
+    signalScore    * weights.signal    +
+    intentScore    * weights.intent
+  );
 }
 
+/**
+ * Returns an alignment score [0, 1] for a venue category given an intent.
+ * Uses the config-driven intent_affinity_map.json — edit that file to add
+ * new verticals without touching this function.
+ */
 function getIntentAlignmentScore(category: string, intent: Intent): number {
-  const affinityMap: Record<Intent, string[]> = {
-    eat: ["restaurant", "cafe", "food", "dining", "brunch", "bistro", "brasserie"],
-    drink: ["bar", "cocktail", "wine", "brewery", "lounge", "pub", "tavern"],
-    chill: ["park", "coffee", "bookstore", "gallery", "spa", "museum", "garden"],
-    scene: ["club", "rooftop", "lounge", "event", "popup", "venue", "nightlife"],
-    anything: [],
-  };
-
-  const keywords = affinityMap[intent] ?? [];
+  const keywords: string[] = _affinityMap[intent] ?? [];
   const cat = category.toLowerCase();
   return keywords.some((k) => cat.includes(k)) ? 1.0 : 0.2;
 }

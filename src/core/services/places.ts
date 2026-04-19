@@ -23,6 +23,8 @@ import "server-only";
 
 import { serverEnv } from "@/lib/env/server";
 import type { GeoLocation, Intent, PlaceOption, FetchNearbyOptions } from "@/types/hade";
+import placesTypeMapJson from "@/config/places_type_map.json";
+import vibeWordMapJson   from "@/config/vibe_word_map.json";
 
 // PlaceOption and FetchNearbyOptions are defined in src/types/hade.ts.
 // Re-export so callers can import from either location.
@@ -32,62 +34,20 @@ export type { PlaceOption, FetchNearbyOptions };
 
 /**
  * Maps HADE intent to includedTypes sent to Google Places (New API).
- * Keys cover the most common venue categories per intent.
- * "anything" intentionally has no entry → request omits includedTypes.
+ * Loaded from config/places_type_map.json — edit that file to add new verticals
+ * (concerts, fitness, museums, etc.) without touching this service.
+ *
+ * "anything" has no entry → request omits includedTypes (broadest search).
  */
-const INTENT_TYPES: Partial<Record<Intent, string[]>> = {
-  eat: [
-    "restaurant",
-    "fast_food_restaurant",
-    "food_court",
-    "sandwich_shop",
-    "bakery",
-    "pizza_restaurant",
-    "sushi_restaurant",
-    "ramen_restaurant",
-    "american_restaurant",
-    "mexican_restaurant",
-    "japanese_restaurant",
-    "thai_restaurant",
-    "italian_restaurant",
-    "indian_restaurant",
-  ],
-  drink: [
-    "cafe",
-    "coffee_shop",
-    "bar",
-    "wine_bar",
-    "cocktail_bar",
-    "sports_bar",
-    "juice_shop",
-  ],
-  chill: [
-    "cafe",
-    "coffee_shop",
-    "park",
-    "national_park",
-    "city_park",
-    "spa",
-    "book_store",
-    "library",
-  ],
-  scene: [
-    "bar",
-    "nightclub",
-    "live_music_venue",
-    "comedy_club",
-    "event_venue",
-    "wine_bar",
-    "cocktail_bar",
-  ],
-  // "anything": no entry → broadest search
-};
+const INTENT_TYPES = placesTypeMapJson as Partial<Record<Intent, string[]>>;
 
 // ─── Category normalisation ───────────────────────────────────────────────────
 
 /**
  * Maps the first matching Google place type → a HADE category token.
  * Lookup is ordered: specific types before generic ones.
+ * Hardcoded here because this is a structural mapping (Google type → HADE token)
+ * rather than domain logic — it changes only when the Google API changes.
  */
 const CATEGORY_MAP: Record<string, string> = {
   // Food
@@ -146,27 +106,13 @@ const CATEGORY_MAP: Record<string, string> = {
   grocery_store: "grocery",
 };
 
-/** Maps each normalised HADE category to a single evocative vibe word. */
-const VIBE_MAP: Record<string, string> = {
-  restaurant: "vibrant",
-  bakery: "warm",
-  cafe: "cozy",
-  bar: "lively",
-  nightclub: "electric",
-  venue: "buzzing",
-  park: "fresh",
-  spa: "calm",
-  gym: "energized",
-  bookstore: "curious",
-  library: "quiet",
-  museum: "inspiring",
-  gallery: "creative",
-  theater: "immersive",
-  mall: "browsable",
-  grocery: "practical",
-};
-
-const DEFAULT_VIBE = "local";
+/**
+ * Maps HADE category tokens to evocative vibe words.
+ * Loaded from config/vibe_word_map.json — edit that file to change vibe
+ * vocabulary for a new domain without touching this service.
+ */
+const VIBE_MAP = vibeWordMapJson as Record<string, string>;
+const DEFAULT_VIBE = VIBE_MAP["default"] ?? "local";
 
 // ─── Google Places (New API) internal types ───────────────────────────────────
 

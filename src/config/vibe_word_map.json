@@ -1,0 +1,19 @@
+{
+  "_comment": "HADE category token → 1-word evocative vibe label used in PlaceOption.vibe. Extend for new categories.",
+  "cafe":       "cozy",
+  "restaurant": "vibrant",
+  "bar":        "lively",
+  "nightclub":  "electric",
+  "venue":      "dynamic",
+  "park":       "fresh",
+  "spa":        "serene",
+  "gym":        "energized",
+  "bookstore":  "quiet",
+  "library":    "focused",
+  "museum":     "curious",
+  "gallery":    "inspired",
+  "theater":    "captivating",
+  "mall":       "busy",
+  "grocery":    "practical",
+  "default":    "nearby"
+}

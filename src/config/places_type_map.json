@@ -1,0 +1,22 @@
+{
+  "_comment": "HADE Intent → Google Places API v1 place types. Controls what venues are fetched per intent. Extend for new verticals.",
+  "eat": [
+    "restaurant", "fast_food_restaurant", "food_court", "sandwich_shop",
+    "bakery", "pizza_restaurant", "sushi_restaurant", "ramen_restaurant",
+    "american_restaurant", "mexican_restaurant", "japanese_restaurant",
+    "thai_restaurant", "italian_restaurant", "indian_restaurant"
+  ],
+  "drink": [
+    "cafe", "coffee_shop", "bar", "wine_bar", "cocktail_bar",
+    "sports_bar", "juice_shop", "pub"
+  ],
+  "chill": [
+    "cafe", "coffee_shop", "park", "national_park", "city_park",
+    "spa", "book_store", "library"
+  ],
+  "scene": [
+    "bar", "night_club", "live_music_venue", "comedy_club",
+    "event_venue", "wine_bar", "cocktail_bar", "performing_arts_theater"
+  ],
+  "anything": []
+}

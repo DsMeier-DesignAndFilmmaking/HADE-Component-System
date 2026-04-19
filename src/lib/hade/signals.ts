@@ -1,4 +1,7 @@
 import type { Signal, SignalType, GeoLocation } from "@/types/hade";
+import signalTtlMap from "@/config/signal_ttl_map.json";
+
+const _ttlMap = signalTtlMap as unknown as Record<string, number>;
 
 // ─── Emit ─────────────────────────────────────────────────────────────────────
 
@@ -28,17 +31,13 @@ export function emitSignal(
   };
 }
 
-function getDefaultTTL(type: SignalType): number {
-  const ttlMap: Record<SignalType, number> = {
-    PRESENCE: 30 * 60 * 1000,        // 30 min
-    SOCIAL_RELAY: 2 * 60 * 60 * 1000, // 2 hr
-    ENVIRONMENTAL: 1 * 60 * 60 * 1000, // 1 hr
-    BEHAVIORAL: 2 * 60 * 60 * 1000,   // 2 hr
-    AMBIENT: 4 * 60 * 60 * 1000,      // 4 hr
-    EVENT: 24 * 60 * 60 * 1000,       // 24 hr
-    INTENT: 2 * 60 * 60 * 1000,       // 2 hr
-  };
-  return ttlMap[type];
+/**
+ * Returns the TTL for a signal type in milliseconds.
+ * Driven by config/signal_ttl_map.json — edit that file to adjust decay windows
+ * without touching this function. Unknown types fall back to 2 hours.
+ */
+function getDefaultTTL(type: SignalType | string): number {
+  return _ttlMap[type] ?? 7_200_000; // 2 hr fallback
 }
 
 // ─── Aggregate ───────────────────────────────────────────────────────────────

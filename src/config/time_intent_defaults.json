@@ -1,0 +1,9 @@
+{
+  "_comment": "Time-of-day → inferred default intent when user has not expressed a preference. Null = no inference. Edit freely.",
+  "morning": "eat",
+  "midday": "eat",
+  "afternoon": "chill",
+  "early_evening": "eat",
+  "evening": "eat",
+  "late_night": "drink"
+}

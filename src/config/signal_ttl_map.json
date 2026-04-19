@@ -1,0 +1,11 @@
+{
+  "_comment": "Signal type → time-to-live in milliseconds. Governs when a Signal's expires_at is set on emit.",
+  "PRESENCE":     1800000,
+  "SOCIAL_RELAY": 7200000,
+  "ENVIRONMENTAL":3600000,
+  "BEHAVIORAL":   7200000,
+  "AMBIENT":      14400000,
+  "EVENT":        86400000,
+  "INTENT":       7200000,
+  "VIBE":         14400000
+}

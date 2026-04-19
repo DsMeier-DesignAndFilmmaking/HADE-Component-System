@@ -1,14 +1,17 @@
 import { NextRequest } from "next/server";
 import { serverEnv } from "@/lib/env/server";
 import { generateSyntheticDecision } from "@/core/engine/synthetic";
-import type { GeoLocation } from "@/types/hade";
+import type { GeoLocation, PlaceOption } from "@/types/hade";
+import { getLocationWeights } from "@/lib/hade/weights";
+import { setOfflineCache, getValidCache } from "@/lib/hade/cache";
+import type { CacheEntry, CachedVenue, CachedLocationNode } from "@/lib/hade/cache";
+import { haversineDistanceMeters } from "@/lib/hade/engine";
 
 export const runtime = "nodejs";
 
 // ─── Configuration ───────────────────────────────────────────────────────────
 
 const UPSTREAM_TIMEOUT_MS = 8000;
-const DEFAULT_GEO: GeoLocation = { lat: 39.7392, lng: -104.9903 }; // Denver
 
 // ─── Stage result types ──────────────────────────────────────────────────────
 
@@ -51,8 +54,11 @@ export async function POST(request: NextRequest) {
       return fallbackResponse(reqId, "validation_error", validated.error, geoHint);
     }
 
-    // Stage 3+4: Generate the decision (upstream call + success/fallback routing)
-    return await generateDecision(parsed.body, reqId, geoHint, startedAt);
+    // Stage 3: Inject LocationNode weights for any node_hints in the body
+    const enrichedBody = await enrichWithNodeWeights(parsed.body, reqId);
+
+    // Stage 4+5: Generate the decision (upstream call + success/fallback routing)
+    return await generateDecision(enrichedBody, reqId, geoHint, startedAt);
   } catch (err) {
     // Belt-and-braces — should be unreachable because every stage catches its own errors.
     const detail = err instanceof Error ? err.message : String(err);
@@ -113,6 +119,9 @@ async function generateDecision(
           ` — ${synthetic.places.length} place(s)`,
       );
 
+      // ── Tier 2.5: Write offline cache (fire-and-forget, non-blocking) ────────
+      void writeCacheFromSynthetic(synthetic.places, body);
+
       return new Response(JSON.stringify(synthetic.data), {
         status: 200,
         headers: {
@@ -122,7 +131,20 @@ async function generateDecision(
       });
     }
 
-    console.warn(`[hade-decide ${reqId}] ↓ Tier 2 failed, falling to Tier 3 (static)`);
+    console.warn(`[hade-decide ${reqId}] ↓ Tier 2 failed, trying Tier 2.5 (offline cache)`);
+
+    // ── Tier 2.5: Serve from offline cache ───────────────────────────────────
+    const cached = await getValidCache();
+    if (cached && cached.venues.length > 0 && geoHint) {
+      const offlineResponse = buildOfflineResponse(cached, geoHint, reqId);
+      if (offlineResponse) {
+        const elapsed = Date.now() - startedAt;
+        console.log(`[hade-decide ${reqId}] ✓ Tier 2.5 (offline_cache) ok in ${elapsed}ms`);
+        return offlineResponse;
+      }
+    }
+
+    console.warn(`[hade-decide ${reqId}] ↓ Tier 2.5 failed, falling to Tier 3 (static)`);
 
     // ── Tier 3: Static fallback ───────────────────────────────────────────────
     return fallbackResponse(reqId, upstream.reason, upstream.detail, geoHint);
@@ -131,6 +153,35 @@ async function generateDecision(
     console.error(`[hade-decide ${reqId}] ✗ generateDecision threw: ${detail}`);
     return fallbackResponse(reqId, "decision_error", detail, geoHint);
   }
+}
+
+// ─── Stage 3: Enrich with LocationNode weights ───────────────────────────────
+
+/**
+ * Reads node_hints from the request body and fetches any known LocationNode
+ * weights from the in-process registry. Injects them as `location_nodes` so
+ * the upstream LLM (or Tier 2 synthetic engine) can apply vibe-weighted scoring.
+ *
+ * No-ops silently if node_hints is absent or empty.
+ */
+async function enrichWithNodeWeights(
+  body:  Record<string, unknown>,
+  reqId: string,
+): Promise<Record<string, unknown>> {
+  const hints = (body as { node_hints?: unknown }).node_hints;
+  if (!Array.isArray(hints) || hints.length === 0) return body;
+
+  const venueIds = hints.filter((h): h is string => typeof h === "string");
+  if (venueIds.length === 0) return body;
+
+  const nodes = await getLocationWeights(venueIds);
+  if (nodes.length === 0) return body;
+
+  console.log(
+    `[hade-decide ${reqId}]   ↗ injecting ${nodes.length} LocationNode(s) from hints: ${venueIds.join(",")}`,
+  );
+
+  return { ...body, location_nodes: nodes };
 }
 
 // ─── Stage 1: Parse body ─────────────────────────────────────────────────────
@@ -261,19 +312,21 @@ function fallbackResponse(
   detail: string,
   geoHint: GeoLocation | null,
 ): Response {
-  const geo = geoHint ?? DEFAULT_GEO;
+  // Use caller's geo if available. A null geo here means even geo validation
+  // failed — use a zero-point sentinel rather than a hardcoded city coordinate.
+  const geo: GeoLocation = geoHint ?? { lat: 0, lng: 0 };
 
   const body = {
     decision: {
       id: `fallback-${reqId}`,
-      venue_name: "Try a nearby coffee shop",
-      category: "cafe",
+      venue_name: "A spot nearby",
+      category: "venue",
       geo,
-      distance_meters: 140,
-      eta_minutes: 2,
-      rationale: "A familiar cafe within easy walking distance.",
-      why_now: "Good time for a break",
-      confidence: 0.5,
+      distance_meters: 0,
+      eta_minutes: 0,
+      rationale: "The decision engine is temporarily unavailable — try again in a moment.",
+      why_now: "Engine offline",
+      confidence: 0.1,
       situation_summary: "Fallback decision — upstream engine unavailable",
     },
     context_snapshot: {
@@ -298,6 +351,115 @@ function fallbackResponse(
       "x-hade-fallback-reason": reason,
     },
   });
+}
+
+// ─── Tier 2.5 helpers ────────────────────────────────────────────────────────
+
+/**
+ * Extracts venues and LocationNode weights from a Tier 2 result and writes
+ * them to the offline cache. Fire-and-forget — called with `void`, never awaited
+ * on the critical path.
+ */
+function writeCacheFromSynthetic(
+  places: PlaceOption[],
+  body: Record<string, unknown>,
+): Promise<void> {
+  if (places.length === 0) return Promise.resolve();
+
+  const venues: CachedVenue[] = places.map((p) => ({
+    id: p.id,
+    name: p.name,
+    geo: p.geo,
+    rating: p.rating,
+  }));
+
+  const rawNodes = (body as { location_nodes?: unknown }).location_nodes;
+  const nodes: CachedLocationNode[] = Array.isArray(rawNodes)
+    ? rawNodes
+        .filter((n): n is Record<string, unknown> => typeof n === "object" && n !== null)
+        .map((n) => ({
+          venue_id: String(n["venue_id"] ?? ""),
+          weight_map: (n["weight_map"] as Record<string, number>) ?? {},
+          signal_count: Number(n["signal_count"] ?? 0),
+          last_updated: String(n["last_updated"] ?? new Date().toISOString()),
+        }))
+        .filter((n) => n.venue_id.length > 0)
+    : [];
+
+  return setOfflineCache(venues, nodes);
+}
+
+/**
+ * Scores cached venues by proximity + rating + UGC vibe overlay, picks the
+ * best, and returns a Response shaped like a normal DecideResponse.
+ *
+ * Returns null if scoring produces no valid candidates (e.g. empty input).
+ * Wrapped in try/catch — never throws past this boundary.
+ */
+function buildOfflineResponse(
+  cache: CacheEntry,
+  geoHint: GeoLocation,
+  reqId: string,
+): Response | null {
+  try {
+    const scored = cache.venues.map((venue) => {
+      const dist = haversineDistanceMeters(geoHint, venue.geo);
+      const proximityScore = Math.max(0, 1 - dist / 3000);
+      const ratingScore = ((venue.rating ?? 3.5) - 1) / 4; // 1–5 → 0–1
+      const baseScore = proximityScore * 0.6 + ratingScore * 0.4;
+
+      // UGC overlay — matches the vibe scoring formula in synthetic.ts
+      const node = cache.nodes.find((n) => n.venue_id === venue.id);
+      const wValues = node ? Object.values(node.weight_map) : [];
+      const vibeScore =
+        wValues.length > 0
+          ? wValues.reduce((s, v) => s + v, 0) / wValues.length
+          : 0.5; // neutral when no UGC history
+      const vibeDelta = (vibeScore - 0.5) * 0.2; // ±0.10 max
+
+      const score = Math.max(0, Math.min(1, baseScore + vibeDelta));
+      return { venue, dist, score };
+    });
+
+    scored.sort((a, b) => b.score - a.score);
+    const best = scored[0];
+    if (!best) return null;
+
+    const body = {
+      decision: {
+        id: best.venue.id,
+        venue_name: best.venue.name,
+        category: "venue",
+        geo: best.venue.geo,
+        distance_meters: Math.round(best.dist),
+        eta_minutes: Math.max(1, Math.ceil(best.dist / 80)), // 80 m/min walking
+        rationale: "Based on a recent nearby suggestion.",
+        why_now: "Cached from a recent session — showing the best nearby option.",
+        confidence: 0.55,
+        situation_summary: "Offline cache decision",
+      },
+      context_snapshot: {
+        situation_summary: "Offline cache decision",
+        interpreted_intent: "anything",
+        decision_basis: "fallback" as const,
+        candidates_evaluated: cache.venues.length,
+        llm_failure_reason: "provider_error" as const,
+      },
+      session_id: `offline-${reqId}`,
+      source: "offline_cache",
+      fallback_places: cache.venues,
+    };
+
+    return new Response(JSON.stringify(body), {
+      status: 200,
+      headers: {
+        "Content-Type": "application/json",
+        "x-hade-source": "offline_cache",
+      },
+    });
+  } catch {
+    return null;
+  }
 }
 
 // ─── Logging helpers ─────────────────────────────────────────────────────────

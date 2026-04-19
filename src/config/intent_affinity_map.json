@@ -1,0 +1,8 @@
+{
+  "_comment": "Intent → category keyword affinity map. 1.0 = strong match, 0.2 = weak/no match. Edit freely without code changes.",
+  "eat": ["restaurant", "cafe", "food", "dining", "brunch", "bistro", "brasserie", "bakery", "deli", "pizzeria"],
+  "drink": ["bar", "cocktail", "wine", "brewery", "lounge", "pub", "tavern", "taproom", "distillery"],
+  "chill": ["park", "coffee", "bookstore", "gallery", "spa", "museum", "garden", "library", "cafe"],
+  "scene": ["club", "rooftop", "lounge", "event", "popup", "venue", "nightlife", "theater", "comedy"],
+  "anything": []
+}

@@ -2,7 +2,8 @@
 
 import { useCallback, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import type { Intent } from "@/types/hade";
+import type { Intent, VibeTag } from "@/types/hade";
+import { useHadeAdaptiveContext } from "@/lib/hade/hooks";
 import { useHade } from "@/lib/hade/useHade";
 import { HeroDecisionCard } from "./HeroDecisionCard";
 import { PrimaryAction } from "./PrimaryAction";
@@ -11,12 +12,51 @@ import { RefineSheet } from "./RefineSheet";
 import { LoadingState } from "./LoadingState";
 
 type Urgency = "low" | "medium" | "high";
+type PivotReason = "Too crowded" | "Wrong vibe" | "Too far" | "Overpriced";
+
+const PIVOT_REASONS: PivotReason[] = [
+  "Too crowded",
+  "Wrong vibe",
+  "Too far",
+  "Overpriced",
+];
+
+function mapReasonToTags(reason: string): string[] {
+  switch (reason) {
+    case "Too crowded":
+      return ["too_crowded"];
+    case "Wrong vibe":
+      return ["dead", "skip_it"];
+    case "Overpriced":
+      return ["overpriced"];
+    default:
+      return [];
+  }
+}
+
+function toVibeTags(tags: string[]): VibeTag[] {
+  const validTags: VibeTag[] = [
+    "too_crowded",
+    "perfect_vibe",
+    "overpriced",
+    "hidden_gem",
+    "loud",
+    "quiet",
+    "good_energy",
+    "dead",
+    "worth_it",
+    "skip_it",
+  ];
+  const allowed = new Set(validTags);
+  return tags.filter((tag): tag is VibeTag => allowed.has(tag as VibeTag));
+}
 
 interface DecisionScreenProps {
   scenarioId?: string | null;
 }
 
 export function DecisionScreen({ scenarioId }: DecisionScreenProps) {
+  const { emitVibeSignal, pivot } = useHadeAdaptiveContext();
   const {
     decision,
     reasoning,
@@ -27,6 +67,7 @@ export function DecisionScreen({ scenarioId }: DecisionScreenProps) {
   } = useHade({ scenarioId });
 
   const [refineOpen, setRefineOpen] = useState(false);
+  const [showPivotReasons, setShowPivotReasons] = useState(false);
 
   const handleGo = useCallback(() => {
     if (!decision) return;
@@ -39,6 +80,27 @@ export function DecisionScreen({ scenarioId }: DecisionScreenProps) {
       await refine({ intent, urgency });
     },
     [refine],
+  );
+
+  const handleNotThis = useCallback(() => {
+    setShowPivotReasons(true);
+  }, []);
+
+  const handlePivotReasonSelect = useCallback(
+    (reason: PivotReason) => {
+      setShowPivotReasons(false);
+
+      const currentVenue = decision;
+      if (currentVenue) {
+        const tags = toVibeTags(mapReasonToTags(reason));
+        if (tags.length > 0) {
+          emitVibeSignal(currentVenue.id, tags, "negative");
+        }
+      }
+
+      pivot("user_requested_alternative");
+    },
+    [decision, emitVibeSignal, pivot],
   );
 
   if (status === "error") {
@@ -81,9 +143,23 @@ export function DecisionScreen({ scenarioId }: DecisionScreenProps) {
       </AnimatePresence>
 
       <div className="mt-auto flex flex-col gap-4 pt-4">
+        {showPivotReasons ? (
+          <div className="grid grid-cols-2 gap-2">
+            {PIVOT_REASONS.map((reason) => (
+              <button
+                key={reason}
+                type="button"
+                onClick={() => handlePivotReasonSelect(reason)}
+                className="min-h-[42px] rounded-xl border border-line bg-white/60 px-3 text-xs font-medium text-ink/70 transition-colors active:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
+              >
+                {reason}
+              </button>
+            ))}
+          </div>
+        ) : null}
         <PrimaryAction onPress={handleGo} disabled={status !== "ready"} />
         <SecondaryActions
-          onAlternatives={regenerate}
+          onAlternatives={handleNotThis}
           onRefine={() => setRefineOpen(true)}
           disabled={status !== "ready"}
         />

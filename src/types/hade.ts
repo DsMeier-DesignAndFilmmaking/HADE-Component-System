@@ -182,6 +182,11 @@ export interface DecideRequest {
   signals?: Signal[];
   rejection_history?: RejectionEntry[];
   settings?: HadeSettings;
+  /**
+   * Venue IDs the client knows have recent LocationNode weight updates.
+   * The decide handler uses these to fetch fresh weights before scoring.
+   */
+  node_hints?: string[];
 }
 
 /**
@@ -406,6 +411,18 @@ export interface AdaptiveState {
   // ── Community Signals (UGC) ──
   communitySignals: CommunitySignalsConfig;
   setCommunitySignals: (enabled: boolean) => void;
+
+  // ── Vibe Signal (UGC feedback loop) ──
+  /**
+   * Emit a VibeSignal for a specific venue. Non-blocking — enqueues immediately
+   * and flushes to POST /api/hade/signal on the next idle frame.
+   */
+  emitVibeSignal: (
+    venueId: string,
+    tags: VibeTag[],
+    sentiment: VibeSignal["sentiment"],
+    strength?: number,
+  ) => VibeSignal;
 }
 
 // ─── Component Props ──────────────────────────────────────────────────────────
@@ -621,6 +638,11 @@ export interface HadeSettings {
   persona_id?: string | null;
   /** Echo full debug payload in API response. Default false. */
   debug?: boolean;
+  /**
+   * Override composite scoring weights for this session.
+   * Null = use server defaults (proximity 0.4 / signal 0.35 / intent 0.25).
+   */
+  scoring_weights?: ScoringWeights | null;
 }
 
 export const DEFAULT_HADE_SETTINGS: HadeSettings = {
@@ -672,4 +694,117 @@ export interface FetchNearbyOptions {
   open_now?: boolean;
   /** Max results. Default 20. Hard-capped at 20 per API page. */
   max_results?: number;
+}
+
+// ─── Scoring Weights ─────────────────────────────────────────────────────────
+
+/**
+ * Configurable composite scoring weights for scoreOpportunity().
+ * Values should sum to 1.0. Defaults: proximity 0.4, signal 0.35, intent 0.25.
+ * Stored in HadeSettings to allow per-user and per-domain tuning.
+ */
+export interface ScoringWeights {
+  proximity: number; // 0–1
+  signal:    number; // 0–1
+  intent:    number; // 0–1
+}
+
+export const DEFAULT_SCORING_WEIGHTS: ScoringWeights = {
+  proximity: 0.4,
+  signal:    0.35,
+  intent:    0.25,
+};
+
+// ─── UGC Vibe Signal Layer ───────────────────────────────────────────────────
+
+/**
+ * Controlled vocabulary for qualitative vibe feedback.
+ * Each tag maps to a positive or negative sentiment that adjusts
+ * the LocationNode's probabilistic weight for that dimension.
+ */
+export type VibeTag =
+  | "too_crowded"
+  | "perfect_vibe"
+  | "overpriced"
+  | "hidden_gem"
+  | "loud"
+  | "quiet"
+  | "good_energy"
+  | "dead"
+  | "worth_it"
+  | "skip_it";
+
+/** Sentiment polarity for a VibeTag — determines sign of the weight delta. */
+export const VIBE_TAG_SENTIMENT: Record<VibeTag, "positive" | "negative"> = {
+  too_crowded:  "negative",
+  perfect_vibe: "positive",
+  overpriced:   "negative",
+  hidden_gem:   "positive",
+  loud:         "negative",
+  quiet:        "positive",
+  good_energy:  "positive",
+  dead:         "negative",
+  worth_it:     "positive",
+  skip_it:      "negative",
+};
+
+/**
+ * A UGC feedback signal submitted by a user about a specific venue.
+ * Extends Signal with vibe-specific fields. The weight_delta is
+ * computed server-side by the /api/hade/signal handler.
+ */
+export interface VibeSignal extends Signal {
+  /** One or more qualitative vibe tags for this venue. */
+  vibe_tags: VibeTag[];
+  /** The venue being rated — mirrors venue_id but required for VibeSignal. */
+  location_node_id: string;
+  /** Server-computed weight adjustment magnitude (0–1). Read-only from client. */
+  weight_delta?: number;
+  /** Aggregate sentiment direction for this signal. */
+  sentiment: "positive" | "negative" | "neutral";
+}
+
+// ─── Location Node (Probabilistic Weight Registry) ───────────────────────────
+
+/**
+ * Persisted weight state for a single venue location.
+ * weight_map accumulates UGC VibeSignal deltas over time.
+ * Used by scoreOpportunity() as an overlay on top of base scoring.
+ */
+export interface LocationNode {
+  venue_id:     string;
+  /** Per-tag weight: 0 (strongly negative) → 1 (strongly positive). Default 0.5 (neutral). */
+  weight_map:   Record<VibeTag, number>;
+  /** Aggregate trust score across all contributing signals (0–1). */
+  trust_score:  number;
+  /** Total number of VibeSignals that have contributed to this node. */
+  signal_count: number;
+  /** ISO timestamp of the most recent weight update. */
+  last_updated: string;
+  /** Monotonically incrementing version for optimistic concurrency. */
+  version:      number;
+}
+
+// ─── Signal Ingest API ────────────────────────────────────────────────────────
+
+/**
+ * Request body for POST /api/hade/signal.
+ * Accepts a batch of VibeSignals from the client's idle-flush queue.
+ */
+export interface SignalIngestRequest {
+  signals:          VibeSignal[];
+  session_id?:      string;
+  source_user_id?:  string;
+}
+
+/**
+ * Response from POST /api/hade/signal.
+ * Returns per-signal IDs and updated LocationNode versions for client-side reconciliation.
+ */
+export interface SignalIngestResponse {
+  accepted:      number;
+  rejected:      number;
+  signal_ids:    string[];
+  /** Maps venue_id → new LocationNode version number after update. */
+  node_versions: Record<string, number>;
 }

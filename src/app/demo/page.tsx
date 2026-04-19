@@ -48,10 +48,10 @@ const SAMPLE_CONTENT: Record<SignalType, string[]> = {
   INTENT: ["Craving a quick bite", "Want a low-key drink", "Open to anything nearby"],
 };
 
-const DEFAULT_GEO = { lat: 39.7392, lng: -104.9903 };
+// DEFAULT_GEO removed — passing fake Denver coords is worse than passing null
 
 function DesktopDebugDemo() {
-  const { signals, emit, response, context, isLoading, error, decide, setGeo, setRadius, pivot, communitySignals, setCommunitySignals } = useHadeAdaptiveContext();
+  const { signals, emit, response, context, isLoading, error, decide, setGeo, setRadius, pivot, communitySignals, setCommunitySignals, emitVibeSignal } = useHadeAdaptiveContext();
   const { settings, updateSettings } = useHadeSettings();
 
   // ─── Settings Panel ─────────────────────────────────────────────────────────
@@ -81,7 +81,6 @@ function DesktopDebugDemo() {
 
   useEffect(() => {
     if (!navigator.geolocation) {
-      setGeo(DEFAULT_GEO);
       setGeoStatus("denied");
       return;
     }
@@ -94,14 +93,13 @@ function DesktopDebugDemo() {
         setGeoStatus("idle");
       },
       () => {
-        setGeo(DEFAULT_GEO);
         setGeoStatus("denied");
       },
       { timeout: 8000, maximumAge: 60_000 }
     );
   }, [setGeo]);
 
-  const resolvedGeo = userGeo ?? DEFAULT_GEO;
+  const resolvedGeo = userGeo;
   const isBusy = isLoading || loading;
 
   const runDecide = async (request?: Partial<DecideRequest>) => {
@@ -141,18 +139,19 @@ function DesktopDebugDemo() {
   const handleRefineConfirm = async () => {
     // Capture returned signals — React setState is async, so `signals` in the
     // closure won't include these until the next render. Pass them explicitly.
+    const geoBase = resolvedGeo ?? { lat: 0, lng: 0 };
     const behavioralSig = emit("BEHAVIORAL", {
       content: `Refined: ${refineIntent ?? "anything"} · urgency ${refineUrgency}`,
       strength: 0.9,
       geo: {
-        lat: resolvedGeo.lat + (Math.random() - 0.5) * 0.001,
-        lng: resolvedGeo.lng + (Math.random() - 0.5) * 0.001,
+        lat: geoBase.lat + (Math.random() - 0.5) * 0.001,
+        lng: geoBase.lng + (Math.random() - 0.5) * 0.001,
       },
     });
     const intentSig = emit("INTENT", {
       content: refineIntent ?? "refine request",
       strength: 0.7,
-      geo: { lat: resolvedGeo.lat, lng: resolvedGeo.lng },
+      geo: { lat: geoBase.lat, lng: geoBase.lng },
     });
 
     // Map urgency → energy so HumanState actually changes in the payload
@@ -183,12 +182,13 @@ function DesktopDebugDemo() {
   const handleEmit = () => {
     const contents = SAMPLE_CONTENT[selectedType];
     const content = contents[Math.floor(Math.random() * contents.length)];
+    const emitGeoBase = resolvedGeo ?? { lat: 0, lng: 0 };
     emit(selectedType, {
       content,
       strength,
       geo: {
-        lat: resolvedGeo.lat + (Math.random() - 0.5) * 0.005,
-        lng: resolvedGeo.lng + (Math.random() - 0.5) * 0.005,
+        lat: emitGeoBase.lat + (Math.random() - 0.5) * 0.005,
+        lng: emitGeoBase.lng + (Math.random() - 0.5) * 0.005,
       },
       // Tag with community metadata when opted in
       ...(communitySignals.enabled && {
@@ -256,6 +256,13 @@ function DesktopDebugDemo() {
         enabled={communitySignals.enabled}
         onChange={setCommunitySignals}
         className="mb-6"
+        venueId={response?.decision?.id}
+        venueName={response?.decision?.venue_name}
+        onVibeSignal={(tags, sentiment) => {
+          if (response?.decision?.id) {
+            emitVibeSignal(response.decision.id, tags, sentiment);
+          }
+        }}
       />
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
