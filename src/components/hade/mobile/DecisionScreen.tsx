@@ -57,7 +57,7 @@ interface DecisionScreenProps {
 }
 
 export function DecisionScreen({ scenarioId }: DecisionScreenProps) {
-  const { emitVibeSignal, pivot } = useHadeAdaptiveContext();
+  const { context, decide, emitVibeSignal } = useHadeAdaptiveContext();
   const {
     decision,
     reasoning,
@@ -119,21 +119,36 @@ export function DecisionScreen({ scenarioId }: DecisionScreenProps) {
     setShowPivotReasons(true);
   }, []);
 
-  const handlePivotReasonSelect = useCallback(
+  const handleReject = useCallback(
     (reason: PivotReason) => {
-      setShowPivotReasons(false);
-
       const currentVenue = decision;
-      if (currentVenue) {
-        const tags = toVibeTags(mapReasonToTags(reason));
-        if (tags.length > 0) {
-          emitVibeSignal(currentVenue.id, tags, "negative");
-        }
+      if (!currentVenue) return;
+
+      const tags = toVibeTags(mapReasonToTags(reason));
+      if (tags.length > 0) {
+        emitVibeSignal(currentVenue.id, tags, "negative");
       }
 
-      pivot("user_requested_alternative");
+      const nextRejectionHistory = [
+        ...(context.rejection_history ?? []),
+        {
+          venue_id: currentVenue.id,
+          venue_name: currentVenue.title,
+          pivot_reason: reason,
+          reason,
+        },
+      ];
+
+      console.log("[HADE] Reject triggered", { venueId: currentVenue.id, reason });
+
+      void decide({
+        rejection_history: nextRejectionHistory,
+        session_id: null,
+      });
+
+      setShowPivotReasons(false);
     },
-    [decision, emitVibeSignal, pivot],
+    [context.rejection_history, decision, decide, emitVibeSignal],
   );
 
   // Dismiss without emitting — spec: no signal, no API call
@@ -197,7 +212,7 @@ export function DecisionScreen({ scenarioId }: DecisionScreenProps) {
           <button
             key={reason}
             type="button"
-            onClick={() => handlePivotReasonSelect(reason)}
+            onClick={() => handleReject(reason)}
             className="min-h-[42px] rounded-xl border border-line bg-white/60 px-3 text-xs font-medium text-ink/70 transition-colors active:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
           >
             {reason}
