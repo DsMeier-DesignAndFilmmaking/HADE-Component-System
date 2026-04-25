@@ -249,9 +249,52 @@ export async function generateSyntheticDecision(
       return { ok: false };
     }
 
+    // ── HARD EXCLUSION of rejected venues ─────────────────────────────────────
+    // "Not This" must guarantee a rejected venue is NEVER returned again in the
+    // same session. Filter BEFORE scoring so a rejected venue cannot be ranked,
+    // tied, or surfaced as fallback_places. Schema is RejectionEntry[] (objects
+    // with venue_id); accept raw string[] defensively for forward-compat.
+    const rawRejections = (body as { rejection_history?: unknown }).rejection_history;
+    const rejected = new Set<string>(
+      Array.isArray(rawRejections)
+        ? rawRejections
+            .map((entry) => {
+              if (typeof entry === "string") return entry;
+              if (entry && typeof entry === "object" && "venue_id" in entry) {
+                const id = (entry as { venue_id: unknown }).venue_id;
+                return typeof id === "string" ? id : null;
+              }
+              return null;
+            })
+            .filter((id): id is string => typeof id === "string" && id.length > 0)
+        : [],
+    );
+
+    const filteredPlaces = rejected.size > 0
+      ? relevantPlaces.filter((place) => !rejected.has(place.id))
+      : relevantPlaces;
+
+    if (filteredPlaces.length === 0) {
+      console.warn(
+        `[hade-synthetic ${reqId}] all ${relevantPlaces.length} candidate(s) rejected` +
+          ` (rejection_history size=${rejected.size}) — falling through to Tier 3`,
+      );
+      return { ok: false };
+    }
+
+    if (rejected.size > 0) {
+      const excluded = relevantPlaces.length - filteredPlaces.length;
+      if (excluded > 0) {
+        console.log(
+          `[hade-synthetic ${reqId}] excluded ${excluded} rejected venue(s)` +
+            ` — ${filteredPlaces.length} candidate(s) remain`,
+        );
+      }
+    }
+
     // ── Pick best place ───────────────────────────────────────────────────────
     const scoredPlaces = await Promise.all(
-      relevantPlaces.map(async (place) => ({
+      filteredPlaces.map(async (place) => ({
         place,
         score: scorePlaceOption(
           place,
@@ -292,20 +335,20 @@ export async function generateSyntheticDecision(
         situation_summary: situationSummary,
         interpreted_intent: resolvedIntent,
         decision_basis: "fallback",
-        candidates_evaluated: relevantPlaces.length,
+        candidates_evaluated: filteredPlaces.length,
         llm_failure_reason: "provider_error",
       },
       session_id: `synthetic-${reqId}`,
       source: "synthetic",
-      fallback_places: relevantPlaces,
+      fallback_places: filteredPlaces,
     };
 
     console.log(
       `[hade-synthetic ${reqId}] ✓ built synthetic decision` +
-        ` — "${best.name}" (${best.distance_meters}m, ${relevantPlaces.length} candidate(s))`,
+        ` — "${best.name}" (${best.distance_meters}m, ${filteredPlaces.length} candidate(s))`,
     );
 
-    return { ok: true, data, places: relevantPlaces };
+    return { ok: true, data, places: filteredPlaces };
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
     console.warn(`[hade-synthetic ${reqId}] ✗ threw unexpectedly: ${detail}`);
