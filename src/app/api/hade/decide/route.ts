@@ -6,6 +6,7 @@ import { getLocationWeights, locationNodeExists, createLocationNode } from "@/li
 import { setOfflineCache, getValidCache } from "@/lib/hade/cache";
 import type { CacheEntry, CachedVenue, CachedLocationNode } from "@/lib/hade/cache";
 import { haversineDistanceMeters } from "@/lib/hade/engine";
+import { getRedisMode } from "@/lib/hade/redis";
 
 export const runtime = "nodejs";
 
@@ -40,6 +41,28 @@ type UpstreamResult =
 async function getDecisionNode(venueId: string): Promise<LocationNode | null> {
   const [node] = await getLocationWeights([venueId]);
   return node ?? null;
+}
+
+// ─── Degraded-state observability ────────────────────────────────────────────
+//
+// Wraps a JSON response body + init with the degraded contract:
+//   • body.degraded            — boolean flag added to the JSON payload
+//   • header x-hade-degraded   — "1" / "0" mirror for non-JSON consumers
+//
+// Pure observability — does not influence ranking, tier selection, or any
+// decision-engine output. Captures the current process-level Redis state at
+// the moment the Response is constructed via getRedisMode().
+function withDegradedSignal(
+  body: Record<string, unknown>,
+  init: ResponseInit,
+): Response {
+  const degraded = getRedisMode() !== "FULL";
+  const enriched = { ...body, degraded };
+  const headers: Record<string, string> = {
+    ...((init.headers as Record<string, string> | undefined) ?? {}),
+    "x-hade-degraded": degraded ? "1" : "0",
+  };
+  return new Response(JSON.stringify(enriched), { ...init, headers });
 }
 
 // ─── POST handler ────────────────────────────────────────────────────────────
@@ -108,7 +131,7 @@ async function generateDecision(
         typeof decisionId === "string" ? await getDecisionNode(decisionId) : null;
       const enriched = { ...data, source: "llm", fallback_places: [], decision_node: decisionNode };
 
-      return new Response(JSON.stringify(enriched), {
+      return withDegradedSignal(enriched, {
         status: 200,
         headers: {
           "Content-Type": "application/json",
@@ -137,7 +160,7 @@ async function generateDecision(
       // ── Tier 2.5: Write offline cache (fire-and-forget, non-blocking) ────────
       void writeCacheFromSynthetic(synthetic.places, body);
 
-      return new Response(JSON.stringify(enrichedSyntheticData), {
+      return withDegradedSignal(enrichedSyntheticData, {
         status: 200,
         headers: {
           "Content-Type": "application/json",
@@ -359,7 +382,7 @@ function fallbackResponse(
 
   console.warn(`[hade-decide ${reqId}] ⚠ fallback (${reason}): ${detail}`);
 
-  return new Response(JSON.stringify(body), {
+  return withDegradedSignal(body, {
     status: 200,
     headers: {
       "Content-Type": "application/json",
@@ -502,7 +525,7 @@ function buildOfflineResponse(
       decision_node: decisionNode,
     };
 
-    return new Response(JSON.stringify(responseBody), {
+    return withDegradedSignal(responseBody, {
       status: 200,
       headers: {
         "Content-Type": "application/json",

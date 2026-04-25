@@ -27,7 +27,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { randomUUID }                from "crypto";
 import type {
   SignalIngestRequest,
-  SignalIngestResponse,
   VibeSignal,
 } from "@/types/hade";
 import { VIBE_TAG_SENTIMENT }        from "@/types/hade";
@@ -35,11 +34,12 @@ import {
   computeWeightDelta,
   upsertLocationNode,
 }                                    from "@/lib/hade/weights";
+import { preloadDeviceTrust }        from "@/lib/hade/trust";
 import {
   aggregateSignals,
   filterExpiredSignals,
 }                                    from "@/lib/hade/signals";
-import { hasRedis, markRedisDegraded, redis } from "@/lib/hade/redis";
+import { getRedisMode, handleRedisFailure, hasRedis, redis } from "@/lib/hade/redis";
 
 // ─── Rate limit constants ─────────────────────────────────────────────────────
 
@@ -92,12 +92,17 @@ async function incrementAndCheck(
       if (count === 1) await redis.expire(key, windowSecs);
       return { limited: count > limit, count };
     } catch (error) {
-      console.error("[HADE_NO_REDIS] Redis operation failed", error);
-      markRedisDegraded();
+      // Always log [HADE_NO_REDIS] with the specific key and operation so the
+      // silent degradation from cluster-wide → per-process rate limiting is
+      // visible in observability. Fallback behaviour is preserved below.
+      handleRedisFailure(
+        { operation: "rateLimit.incrementAndCheck", key, limit, windowSecs },
+        error,
+      );
     }
   }
 
-  // ── In-memory (dev / staging without Redis) ────────────────────────────────
+  // ── In-memory (dev / staging without Redis OR fall-through after failure) ──
   const now     = Date.now();
   const windowMs = windowSecs * 1000;
   const existing = memRateLimiter.get(key);
@@ -207,12 +212,24 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const { signals: rawSignals, session_id } = body;
 
   if (rawSignals.length === 0) {
-    return NextResponse.json<SignalIngestResponse>({
-      accepted:      0,
-      rejected:      0,
-      signal_ids:    [],
-      node_versions: {},
-    });
+    // Vacuously persisted — nothing to write. Still surface current degraded
+    // state so a client polling with empty batches can observe outage status.
+    const emptyDegraded = getRedisMode() === "DEGRADED";
+    return NextResponse.json(
+      {
+        ok:            true,
+        accepted:      0,
+        rejected:      0,
+        signal_ids:    [],
+        node_versions: {},
+        persisted:     !emptyDegraded,
+        degraded:      emptyDegraded,
+      },
+      {
+        status:  202,
+        headers: { "x-hade-degraded": emptyDegraded ? "1" : "0" },
+      },
+    );
   }
 
   // ── Pre-process: deduplicate + strip expired ────────────────────────────────
@@ -226,7 +243,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   // ── Validate + apply each signal ───────────────────────────────────────────
   const accepted:     string[] = [];
-  const nodeVersions: Record<string, number> = {};
+  // Per-signal node version. `null` indicates the upsert ran but the
+  // persistence layer dropped the write (Redis degraded). Clients MUST treat
+  // null as non-durable — version numbers are not faked under failure.
+  const nodeVersions: Record<string, number | null> = {};
+
+  // Tracks whether any signal in this batch failed to persist. Combined with
+  // the post-loop getRedisMode() check, drives the top-level `persisted` flag.
+  let anyUnpersisted = false;
 
   // Rejected tally: dupes and expired signals dropped in pre-processing.
   // Dampened signals are counted here too — clients get no hint about which
@@ -242,6 +266,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
 
     const clean = result.signal;
+    await preloadDeviceTrust(clean.source_user_id ?? "");
 
     // ── Layer 3: Per-venue impact dampening (max 3 / device / venue / 10 min) ─
     //
@@ -263,29 +288,72 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const delta = computeWeightDelta(clean);
     const node  = await upsertLocationNode(clean.location_node_id, clean, delta);
 
+    // Detect persistence success via Redis degraded state. `persistNode` does
+    // not throw — it logs [HADE_NO_REDIS] and silently no-ops. The only
+    // available signal to the route is `getRedisMode()` which flips to
+    // "DEGRADED" the first time `markRedisDegraded()` is invoked in production.
+    // In dev `getRedisMode()` always returns "FULL"` because local fallback
+    // storage is explicitly allowed there. Production must never infer
+    // durability from process memory.
+    const signalPersisted = getRedisMode() !== "DEGRADED";
+
     accepted.push(clean.id);
-    nodeVersions[clean.location_node_id] = node.version;
+    if (signalPersisted) {
+      nodeVersions[clean.location_node_id] = node.version;
+    } else {
+      // Do NOT report a fake version increment — next read will rebuild from
+      // version 0. Null tells the client this signal was received but not
+      // durably persisted.
+      nodeVersions[clean.location_node_id] = null;
+      anyUnpersisted = true;
+    }
 
     console.log(
       `[hade-signal ${reqId}]   accepted ${clean.id}` +
-      ` venue=${clean.location_node_id} Δw=${delta.toFixed(3)} node.v=${node.version}`,
+      ` venue=${clean.location_node_id} Δw=${delta.toFixed(3)}` +
+      ` node.v=${signalPersisted ? node.version : "null(degraded)"}`,
     );
   }
 
   const ms = Date.now() - t0;
+
+  // Whole-batch durability flag: true only if every accepted signal persisted
+  // AND the process is not currently in the sticky degraded state. If any
+  // call during this request flipped the flag, `persisted` reports false.
+  const persisted = !anyUnpersisted && getRedisMode() !== "DEGRADED";
+  const degraded  = !persisted;
+
   console.log(
     `[hade-signal ${reqId}] → done in ${ms}ms` +
-    ` accepted=${accepted.length} rejected=${rejectedCount}`,
+    ` accepted=${accepted.length} rejected=${rejectedCount}` +
+    ` persisted=${persisted} degraded=${degraded}`,
   );
 
-  return NextResponse.json<SignalIngestResponse>(
+  // Response shape extends SignalIngestResponse with the durability contract.
+  // Status remains 202 in every case — the request was received and processed;
+  // the `persisted`/`degraded`/`x-hade-degraded` fields communicate whether
+  // the write reached durable storage. Clients MUST inspect these before
+  // assuming the signal influenced future decide() calls.
+  //
+  // Note: `node_versions` widens to `Record<string, number | null>` to carry
+  // the per-signal durability sentinel — null entries indicate the upsert ran
+  // but the persistence layer dropped the write. The base SignalIngestResponse
+  // type is intentionally not used as a constraint here; the shape is a
+  // strict superset.
+  return NextResponse.json(
     {
+      ok:            true,
       accepted:      accepted.length,
       rejected:      rejectedCount,
       signal_ids:    accepted,
       node_versions: nodeVersions,
+      persisted,
+      degraded,
     },
-    { status: 202 },
+    {
+      status:  202,
+      headers: { "x-hade-degraded": degraded ? "1" : "0" },
+    },
   );
 }
 

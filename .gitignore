@@ -37,3 +37,8 @@ Thumbs.db
 *.swo
 
 .claude/
+
+# Serwist build output (generated from src/app/sw.ts)
+public/sw.js
+public/sw.js.map
+public/swe-worker-*.js

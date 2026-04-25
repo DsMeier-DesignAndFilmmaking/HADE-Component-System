@@ -7,7 +7,7 @@
  *
  * Storage strategy (dual-environment, mirrors weights.ts pattern):
  *   • Browser  — idb-keyval (IndexedDB), persists across page loads
- *   • Node.js  — globalThis.__hadeOfflineCache (in-process singleton)
+ *   • Node.js  — globalThis.__hadeOfflineCache (DEV / CI only)
  *
  * Contract:
  *   • setOfflineCache — always resolves, never throws
@@ -48,8 +48,8 @@ const TTL = 6 * 60 * 60 * 1000; // 6 hours in milliseconds
 
 // ─── Server-side singleton ────────────────────────────────────────────────────
 
-// Mirrors the globalThis.__hadeNodeRegistry pattern in weights.ts.
-// Survives Next.js hot-reloads in the same process.
+// DEV ONLY. Survives Next.js hot-reloads in the same process during local work.
+// Production must not rely on process memory as offline persistence.
 const g = globalThis as typeof globalThis & {
   __hadeOfflineCache?: CacheEntry | null;
 };
@@ -77,15 +77,23 @@ export async function setOfflineCache(
       const { set } = await import("idb-keyval");
       await set(CACHE_KEY, entry);
     } else {
-      // Server path: in-process singleton
+      // Server path: in-process singleton (DEV ONLY)
       if (canUseGlobalFallbackStorage()) {
         g.__hadeOfflineCache = entry;
       } else {
-        handleRedisFailure(new Error("Offline cache fallback disabled in production"));
+        handleRedisFailure(
+          { operation: "setOfflineCache", venueCount: venues.length, reason: "fallback_disabled_in_production" },
+          new Error("Offline cache fallback disabled in production"),
+        );
       }
     }
-  } catch {
-    // Silently swallow — cache writes must never break the happy path
+  } catch (error) {
+    // Cache writes must never break the happy path — but the failure is
+    // surfaced via [HADE_NO_REDIS] so a swallowed write is observable.
+    handleRedisFailure(
+      { operation: "setOfflineCache", venueCount: venues.length },
+      error,
+    );
   }
 }
 
@@ -107,11 +115,14 @@ export async function getValidCache(): Promise<CacheEntry | null> {
       const { get } = await import("idb-keyval");
       entry = await get<CacheEntry>(CACHE_KEY);
     } else {
-      // Server path
+      // Server path (DEV ONLY)
       if (canUseGlobalFallbackStorage()) {
         entry = g.__hadeOfflineCache ?? null;
       } else {
-        handleRedisFailure(new Error("Offline cache fallback disabled in production"));
+        handleRedisFailure(
+          { operation: "getValidCache", reason: "fallback_disabled_in_production" },
+          new Error("Offline cache fallback disabled in production"),
+        );
         entry = null;
       }
     }
@@ -131,7 +142,10 @@ export async function getValidCache(): Promise<CacheEntry | null> {
     }
 
     return entry;
-  } catch {
+  } catch (error) {
+    // Read failure is surfaced via [HADE_NO_REDIS] so it is distinguishable
+    // from a legitimate cache miss in observability.
+    handleRedisFailure({ operation: "getValidCache" }, error);
     return null;
   }
 }

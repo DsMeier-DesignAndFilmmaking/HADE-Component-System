@@ -170,7 +170,7 @@ export function DecisionScreen({ scenarioId }: DecisionScreenProps) {
   }
 
   return (
-    <div className="flex h-[100dvh] w-full flex-col bg-background px-5 pt-6 pb-safe-floor">
+    <div className="mx-auto flex h-[100dvh] w-full max-w-[430px] flex-col bg-background px-5 pt-6 pb-safe-floor">
       <AnimatePresence mode="wait">
         <motion.div
           key={decision.id}
@@ -188,28 +188,33 @@ export function DecisionScreen({ scenarioId }: DecisionScreenProps) {
         </motion.div>
       </AnimatePresence>
 
-      <div className="mt-auto flex flex-col gap-4 pt-4">
-        {showPivotReasons ? (
-          <div className="grid grid-cols-2 gap-2">
-            {PIVOT_REASONS.map((reason) => (
-              <button
-                key={reason}
-                type="button"
-                onClick={() => handlePivotReasonSelect(reason)}
-                className="min-h-[42px] rounded-xl border border-line bg-white/60 px-3 text-xs font-medium text-ink/70 transition-colors active:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
-              >
-                {reason}
-              </button>
-            ))}
-          </div>
-        ) : null}
-        <PrimaryAction onPress={handleGo} disabled={status !== "ready"} />
-        <SecondaryActions
-          onAlternatives={handleNotThis}
-          onRefine={() => setRefineOpen(true)}
-          disabled={status !== "ready"}
-        />
+      {/* Pinned Action Container */}
+<div className="fixed bottom-0 left-0 right-0 z-10 mx-auto w-full max-w-[430px] border-t border-line/10 bg-background/80 px-5 pb-safe-floor pt-4 backdrop-blur-md">
+  <div className="flex flex-col gap-4">
+    {showPivotReasons ? (
+      <div className="grid grid-cols-2 gap-2">
+        {PIVOT_REASONS.map((reason) => (
+          <button
+            key={reason}
+            type="button"
+            onClick={() => handlePivotReasonSelect(reason)}
+            className="min-h-[42px] rounded-xl border border-line bg-white/60 px-3 text-xs font-medium text-ink/70 transition-colors active:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
+          >
+            {reason}
+          </button>
+        ))}
       </div>
+    ) : null}
+    
+    <PrimaryAction onPress={handleGo} disabled={status !== "ready"} />
+    
+    <SecondaryActions
+      onAlternatives={handleNotThis}
+      onRefine={() => setRefineOpen(true)}
+      disabled={status !== "ready"}
+    />
+  </div>
+</div>
 
       <RefineSheet
         open={refineOpen}

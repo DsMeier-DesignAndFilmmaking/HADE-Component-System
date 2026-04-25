@@ -3,7 +3,7 @@
  *
  * Storage strategy:
  *   • Redis (Upstash) when env vars are configured
- *   • In-memory Map fallback for local dev or Redis failures
+ *   • In-memory Map fallback for local dev / CI only
  */
 
 import type { VibeSignal, VibeTag, LocationNode } from "@/types/hade";
@@ -14,7 +14,11 @@ import {
   hasRedis,
   redis,
 } from "@/lib/hade/redis";
-import { safeGetTrustMultiplier, updateDeviceTrust } from "@/lib/hade/trust";
+import {
+  preloadDeviceTrust,
+  safeGetTrustMultiplier,
+  updateDeviceTrust,
+} from "@/lib/hade/trust";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -30,15 +34,17 @@ const NEUTRAL_WEIGHT = 0.5;
 /** Redis key TTL (7 days). */
 const NODE_TTL_SECONDS = 60 * 60 * 24 * 7;
 
-// ─── In-process fallback registry ────────────────────────────────────────────
-
+// ─── In-process fallback registry — DEV ONLY ─────────────────────────────────
+//
+// globalThis.__hadeNodeRegistry is DEV ONLY. In production this module uses a
+// process-local Map strictly as a hot cache; correctness and persistence must
+// come from Redis, never from globalThis.
 const g = globalThis as typeof globalThis & {
   __hadeNodeRegistry?: Map<string, LocationNode>;
 };
-if (!g.__hadeNodeRegistry) {
-  g.__hadeNodeRegistry = new Map<string, LocationNode>();
-}
-const nodeRegistry = g.__hadeNodeRegistry;
+const nodeRegistry = canUseGlobalFallbackStorage()
+  ? (g.__hadeNodeRegistry ??= new Map<string, LocationNode>())
+  : new Map<string, LocationNode>();
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
@@ -61,50 +67,80 @@ export function computeWeightDelta(signal: VibeSignal): number {
  * Upserts a LocationNode entry with the weight delta from a VibeSignal.
  * Creates a neutral node if one doesn't yet exist for this venue.
  *
- * Redis-first with in-memory fallback. Never throws.
+ * Redis-first. Never throws.
+ *
+ * ── Version integrity contract ───────────────────────────────────────────────
+ * The returned node's `version` (and every other mutated field) reflects the
+ * post-write state ONLY when persistNode confirmed durability. On persistence
+ * failure the unchanged base state is returned — no optimistic increments, no
+ * phantom versions, no client desync. The base node mirrors what a subsequent
+ * getStoredNode() call would observe; the two are guaranteed consistent.
  */
 export async function upsertLocationNode(
   venueId: string,
   signal: VibeSignal,
   weightDelta: number,
 ): Promise<LocationNode> {
-  let node = await getStoredNode(venueId);
-  if (!node) {
-    node = createNeutralNode(venueId);
-  }
+  const existing = await getStoredNode(venueId);
+  const base = existing ?? createNeutralNode(venueId);
+
+  await preloadDeviceTrust(signal.source_user_id ?? "");
 
   // ── Device trust — synchronous read, zero network cost ────────────────────
   // preMean captures the venue's weight direction BEFORE this signal so the
   // alignment check below reflects genuine agreement/conflict with prior state.
-  const existingVals = Object.values(node.weight_map) as number[];
+  const existingVals = Object.values(base.weight_map) as number[];
   const preMean = existingVals.length > 0
     ? existingVals.reduce((s, v) => s + v, 0) / existingVals.length
     : NEUTRAL_WEIGHT;
   const trust = safeGetTrustMultiplier(signal.source_user_id ?? undefined);
 
+  // ── Build candidate node — DOES NOT mutate base ───────────────────────────
+  // All field updates land on `candidate` so a failed persist leaves the
+  // base node and any cached references untouched. Only on confirmed durable
+  // write do these mutations become observable to callers.
+  const candidate: LocationNode = deepCloneNode(base);
+
   for (const tag of signal.vibe_tags) {
     const sentimentPolarity = VIBE_TAG_SENTIMENT[tag];
     const sign = sentimentPolarity === "positive" ? 1 : -1;
-    const currentWeight = node.weight_map[tag] ?? NEUTRAL_WEIGHT;
-    node.weight_map[tag] = clamp(currentWeight + sign * weightDelta * trust, 0.1, 0.9);
+    const currentWeight = candidate.weight_map[tag] ?? NEUTRAL_WEIGHT;
+    candidate.weight_map[tag] = clamp(currentWeight + sign * weightDelta * trust, 0.1, 0.9);
   }
 
   // ── Update device trust (fire-and-forget — must not block) ─────────────────
   // Aligned = signal polarity matches the venue's existing weight direction.
   // New venues (preMean === 0.5) treat all first signals as aligned so
   // early contributors aren't penalised for pioneering a venue.
+  // Trust deltas are an independent durability concern (handled inside
+  // updateDeviceTrust) and are NOT gated on node persistence success.
   const sentimentPositive = signal.sentiment === "positive";
   const aligned = sentimentPositive ? preMean >= NEUTRAL_WEIGHT : preMean <= NEUTRAL_WEIGHT;
   void updateDeviceTrust(signal.source_user_id ?? "", aligned ? 0.05 : -0.05);
 
-  const n = node.signal_count;
-  node.trust_score = clamp((node.trust_score * n + signal.strength) / (n + 1), 0, 1);
-  node.signal_count = n + 1;
-  node.last_updated = new Date().toISOString();
-  node.version += 1;
+  const n = candidate.signal_count;
+  candidate.trust_score  = clamp((candidate.trust_score * n + signal.strength) / (n + 1), 0, 1);
+  candidate.signal_count = n + 1;
+  candidate.last_updated = new Date().toISOString();
+  candidate.version      = base.version + 1;
 
-  await persistNode(venueId, node);
-  return deepCloneNode(node);
+  // ── Write gate ─────────────────────────────────────────────────────────────
+  // persistNode now reports both `success` (write occurred — Redis or memory
+  // fallback) and `durable` (Redis confirmed). On `success` we return the
+  // candidate so the in-process state and the returned node agree with the
+  // registry. On total failure (`!success`) we return base — neither store
+  // accepted the write, so the candidate is discarded.
+  //
+  // Cross-instance durability is the route layer's concern — it inspects
+  // getRedisMode() / persistNode results to surface `x-hade-degraded` and
+  // null out client-facing version fields. The client can therefore
+  // distinguish a durably-bumped version from a memory-only one without
+  // this function having to lie about its in-memory state.
+  const { success } = await persistNode(venueId, candidate);
+  if (success) {
+    return deepCloneNode(candidate);
+  }
+  return deepCloneNode(base);
 }
 
 /**
@@ -116,7 +152,10 @@ export async function getLocationWeights(venueIds: string[]): Promise<LocationNo
 
   if (!hasRedis || !redis) {
     if (!canUseGlobalFallbackStorage()) {
-      handleRedisFailure(new Error("Redis unavailable in production"));
+      handleRedisFailure(
+        { operation: "getLocationWeights", venueIds, reason: "redis_unavailable" },
+        new Error("Redis unavailable in production"),
+      );
       return [];
     }
     return venueIds
@@ -129,7 +168,10 @@ export async function getLocationWeights(venueIds: string[]): Promise<LocationNo
     const nodes = await Promise.all(venueIds.map((id) => getStoredNode(id)));
     return nodes.filter((n): n is LocationNode => n !== null).map(deepCloneNode);
   } catch (error) {
-    handleRedisFailure(error);
+    handleRedisFailure(
+      { operation: "getLocationWeights", venueIds, count: venueIds.length },
+      error,
+    );
 
     if (!canUseGlobalFallbackStorage()) {
       return [];
@@ -155,7 +197,8 @@ export async function getLocationWeights(venueIds: string[]): Promise<LocationNo
  * Returns 0.5 (neutral) if: no signals exist, weight_map is empty, or
  * last_updated is missing or unparseable.
  *
- * Never throws — Redis failures fall back to in-memory, then neutral.
+ * Never throws — Redis failures surface explicitly; production returns neutral
+ * while dev / CI may consult the in-process cache.
  */
 export async function getNodeVibeScore(venueId: string): Promise<number> {
   try {
@@ -176,7 +219,7 @@ export async function getNodeVibeScore(venueId: string): Promise<number> {
     const score = 0.5 + (rawMean - 0.5) * recencyFactor;
     return Math.min(1, Math.max(0, score));
   } catch (error) {
-    handleRedisFailure(error);
+    handleRedisFailure({ operation: "getNodeVibeScore", venueId }, error);
 
     if (!canUseGlobalFallbackStorage()) {
       return NEUTRAL_WEIGHT;
@@ -203,15 +246,23 @@ export async function getNodeVibeScore(venueId: string): Promise<number> {
 
 /**
  * Returns true if a LocationNode already exists for this venue.
- * Redis-first with in-memory fallback. Never throws.
+ * Redis-first with DEV-only in-memory fallback. Never throws — but failure is ALWAYS
+ * surfaced via [HADE_NO_REDIS] so a swallowed `false` cannot masquerade as a
+ * legitimate "not found".
  */
 export async function locationNodeExists(venueId: string): Promise<boolean> {
   try {
     const node = await getStoredNode(venueId);
     return node !== null;
-  } catch {
-    // getStoredNode already catches internally; this is a belt-and-braces guard.
-    // Returning false on failure is safe: the worst case is a redundant seed write.
+  } catch (error) {
+    // getStoredNode already logs internally; this guard handles any unexpected
+    // throw from outside that path (e.g. sanitization). Failure is logged so it
+    // is distinguishable from a legitimate "not found" (which returns false
+    // without throwing).
+    handleRedisFailure(
+      { operation: "locationNodeExists", venueId, outcome: "swallowed_false" },
+      error,
+    );
     return false;
   }
 }
@@ -220,13 +271,18 @@ export async function locationNodeExists(venueId: string): Promise<boolean> {
  * Persists a pre-constructed LocationNode without modifying any existing node.
  * Intended for cold-start trust seeding only — the caller is responsible for
  * the existence guard (see locationNodeExists). Never throws.
+ *
+ * Failure is upgraded from console.warn to [HADE_NO_REDIS] so it is captured
+ * by the same observability path as every other Redis fault.
  */
 export async function createLocationNode(node: LocationNode): Promise<void> {
   try {
     await persistNode(node.venue_id, node);
   } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error);
-    console.warn(`[weights] createLocationNode failed for ${node.venue_id}: ${detail}`);
+    handleRedisFailure(
+      { operation: "createLocationNode", venueId: node.venue_id },
+      error,
+    );
   }
 }
 
@@ -237,9 +293,14 @@ function getNodeKey(venueId: string): string {
 }
 
 async function getStoredNode(venueId: string): Promise<LocationNode | null> {
+  const key = getNodeKey(venueId);
+
   if (!hasRedis || !redis) {
     if (!canUseGlobalFallbackStorage()) {
-      handleRedisFailure(new Error("Redis unavailable in production"));
+      handleRedisFailure(
+        { operation: "getStoredNode", venueId, key, reason: "redis_unavailable" },
+        new Error("Redis unavailable in production"),
+      );
       return null;
     }
     const local = nodeRegistry.get(venueId);
@@ -247,17 +308,16 @@ async function getStoredNode(venueId: string): Promise<LocationNode | null> {
   }
 
   try {
-    const raw = await redis.get<LocationNode>(getNodeKey(venueId));
+    const raw = await redis.get<LocationNode>(key);
     if (!raw) {
-      const local = nodeRegistry.get(venueId);
-      return local ? deepCloneNode(local) : null;
+      return null;
     }
 
     const parsed = sanitizeNode(raw, venueId);
     nodeRegistry.set(venueId, parsed);
     return deepCloneNode(parsed);
   } catch (error) {
-    handleRedisFailure(error);
+    handleRedisFailure({ operation: "getStoredNode", venueId, key }, error);
 
     if (!canUseGlobalFallbackStorage()) {
       return null;
@@ -268,22 +328,83 @@ async function getStoredNode(venueId: string): Promise<LocationNode | null> {
   }
 }
 
-async function persistNode(venueId: string, node: LocationNode): Promise<void> {
-  if (canUseGlobalFallbackStorage()) {
-    nodeRegistry.set(venueId, deepCloneNode(node));
-  }
+/**
+ * Result of a persistNode call.
+ *
+ * `success` — the node was written to at least one store (Redis or the
+ *             in-process nodeRegistry). When false, the write was fully
+ *             dropped and the caller MUST surface the failure upstream.
+ * `durable` — the Redis write succeeded. When false, the node lives only
+ *             in the in-process registry and will be lost on process exit
+ *             or be invisible to other instances.
+ */
+export interface PersistResult {
+  success: boolean;
+  durable: boolean;
+}
 
-  if (!hasRedis || !redis) {
-    if (!canUseGlobalFallbackStorage()) {
-      handleRedisFailure(new Error("Redis unavailable in production"));
+/**
+ * Persists `node` and reports both write occurrence and durability.
+ *
+ * Behavior matrix:
+ *   Case A — Redis OK                      → { success: true,  durable: true  } (+ memory mirror)
+ *   Case B — Redis FAIL in dev / CI        → { success: true,  durable: false } (memory fallback)
+ *   Case C — Redis FAIL in production      → { success: false, durable: false }
+ *   Case D — Memory mirror ALSO fails      → { success: durable, durable }
+ *
+ * globalThis-backed storage is DEV ONLY. In production, Redis failure is an
+ * explicit dropped-write path surfaced via [HADE_NO_REDIS]; process memory is
+ * never treated as durable or cross-request-correct storage.
+ *
+ * Never throws.
+ */
+async function persistNode(venueId: string, node: LocationNode): Promise<PersistResult> {
+  const key = getNodeKey(venueId);
+
+  // ── Step 1: Attempt durable Redis write ────────────────────────────────────
+  let durable = false;
+
+  if (hasRedis && redis) {
+    try {
+      await redis.set(key, node, { ex: NODE_TTL_SECONDS });
+      durable = true;
+    } catch (error) {
+      // Redis configured but the write threw. Logged loudly so the silent
+      // memory-only fallback below is observable in production telemetry.
+      handleRedisFailure({ operation: "persistNode", venueId, key }, error);
     }
-    return;
+  } else if (!canUseGlobalFallbackStorage()) {
+    // Production with no Redis configured — surface the misconfiguration.
+    // No non-durable fallback is allowed to make this look successful.
+    handleRedisFailure(
+      { operation: "persistNode", venueId, key, reason: "redis_unavailable" },
+      new Error("Redis unavailable in production"),
+    );
   }
 
+  if (!durable && !canUseGlobalFallbackStorage()) {
+    return { success: false, durable: false };
+  }
+
+  // ── Step 2: Mirror to the in-process registry ─────────────────────────────
+  // DEV ONLY fallback when Redis is absent or degraded. In production this
+  // runs only as a hot-cache mirror after a durable Redis write.
   try {
-    await redis.set(getNodeKey(venueId), node, { ex: NODE_TTL_SECONDS });
+    nodeRegistry.set(venueId, deepCloneNode(node));
+    return { success: true, durable };
   } catch (error) {
-    handleRedisFailure(error);
+    handleRedisFailure(
+      {
+        operation: "persistNode.memoryFallback",
+        venueId,
+        key,
+        reason: durable
+          ? "memory_mirror_failed_but_redis_durable"
+          : "dev_memory_fallback_failed",
+      },
+      error,
+    );
+    return { success: durable, durable };
   }
 }
 

@@ -47,11 +47,11 @@ export default function HomePage() {
                 Human-Aware Decision Engine
               </p>
               <h1 className="mb-6 text-balance text-4xl font-bold tracking-tight text-textPrimary sm:text-5xl">
-                Adaptive UX, <span className="text-accentPrimary">context-first.</span>
+              Contextual Co-Pilot <span className="text-accentPrimary">for Spontaneous Exploration</span>
               </h1>
               <p className="mb-8 max-w-xl text-base leading-relaxed text-textMuted">
-                HADE reads live environmental and behavioral signals, weights them by trust,
-                and orchestrates adaptive component experiences that match user intent in real time.
+              <strong>Technology with a pulse. </strong> 
+              Most systems react to data; HADE anticipates intent. By synthesizing environmental and behavioral signals through a trust-weighting framework, HADE orchestrates seamless, adaptive experiences that evolve with the user’s context in real time.
               </p>
               <div className="flex flex-wrap gap-3">
                 <HadeButton href="/demo" variant="primary" size="default">

@@ -34,6 +34,7 @@ const SIGNAL_TYPES: SignalType[] = [
   "EVENT",
 ];
 
+
 // Cast synced JSON to our strict TypeScript interfaces
 const definitions = agentData as AgentDefinitions;
 const agents = definitions.agents;
@@ -523,12 +524,19 @@ function DemoRouter() {
   const params = useSearchParams();
   const debug = params.get("debug") === "1";
   const scenarioId = params.get("scenario");
-  return debug ? (
+
+  if (debug) {
+    return (
+      <Layout>
+        <DesktopDebugDemo />
+      </Layout>
+    );
+  }
+
+  return (
     <Layout>
-      <DesktopDebugDemo />
+      <DecisionScreen scenarioId={scenarioId} />
     </Layout>
-  ) : (
-    <DecisionScreen scenarioId={scenarioId} />
   );
 }
 
