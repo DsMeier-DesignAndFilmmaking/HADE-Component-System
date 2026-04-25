@@ -4,6 +4,12 @@ import { useEffect } from "react";
 
 const SYNC_TAG = "hade-signals";
 
+type SyncCapableSW = ServiceWorkerRegistration & {
+  sync?: {
+    register: (tag: string) => Promise<void>;
+  };
+};
+
 export function PwaServiceWorker() {
   useEffect(() => {
     if (!("serviceWorker" in navigator)) return;
@@ -13,15 +19,17 @@ export function PwaServiceWorker() {
     const register = async () => {
       try {
         const registration = await navigator.serviceWorker.register("/sw.js");
-        if ("sync" in registration) {
-          await registration.sync.register(SYNC_TAG).catch(() => undefined);
+        const syncManager = (registration as SyncCapableSW).sync;
+        if (syncManager) {
+          await syncManager.register(SYNC_TAG).catch(() => undefined);
         }
 
         onlineHandler = () => {
           navigator.serviceWorker.ready
             .then((reg) => {
-              if ("sync" in reg) {
-                return reg.sync.register(SYNC_TAG).catch(() => undefined);
+              const sm = (reg as SyncCapableSW).sync;
+              if (sm) {
+                return sm.register(SYNC_TAG).catch(() => undefined);
               }
               return undefined;
             })
