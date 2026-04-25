@@ -29,6 +29,11 @@ import type { VibeSignal, SignalIngestResponse } from "@/types/hade";
 import { getDeviceId } from "@/lib/hade/deviceId";
 import { get, set, del } from "idb-keyval";
 
+// Background Sync is not yet in the standard lib types.
+type SyncCapableSW = ServiceWorkerRegistration & {
+  sync?: { register: (tag: string) => Promise<void> };
+};
+
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const MAX_RETRIES    = 3;
@@ -167,8 +172,9 @@ export class SignalQueue {
       }
       // Best-effort Background Sync registration
       const reg = await navigator.serviceWorker?.ready;
-      if (reg?.sync) {
-        await reg.sync.register("hade-signals");
+      const syncManager = (reg as SyncCapableSW | undefined)?.sync;
+      if (syncManager) {
+        await syncManager.register("hade-signals");
       }
     } catch {
       // Best-effort — signals are dropped on close if persistence fails
