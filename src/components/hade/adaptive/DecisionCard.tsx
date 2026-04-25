@@ -10,6 +10,8 @@ import { HadeText } from "@/components/hade/typography/HadeText";
 interface DecisionCardProps {
   response: HadeResponse;
   locationNode?: LocationNode;
+  confidence?: number;
+  explanation?: string[];
   agentId?: string;
   onCta?: () => void;
   onPivot?: (reason: string) => void;
@@ -70,9 +72,17 @@ function deriveVibeChips(locationNode?: LocationNode): Array<{ key: string; labe
   });
 }
 
+function getConfidenceLabel(confidence: number) {
+  if (confidence > 0.75) return "🔥 Strong pick";
+  if (confidence > 0.55) return "👍 Solid option";
+  return "🤔 Worth a try";
+}
+
 export function DecisionCard({
   response,
   locationNode,
+  confidence,
+  explanation,
   agentId,
   onCta,
   onPivot,
@@ -95,6 +105,18 @@ export function DecisionCard({
   const badges = Array.isArray(response.ux?.badges) ? response.ux.badges : [];
   const isFallback = context_snapshot.decision_basis === "fallback";
   const vibeChips = deriveVibeChips(locationNode);
+  const effectiveConfidence =
+    typeof confidence === "number"
+      ? confidence
+      : typeof decision.confidence === "number"
+      ? decision.confidence
+      : undefined;
+  const decisionExplanation = (decision as { explanation?: unknown }).explanation;
+  const explanationChips = (
+    Array.isArray(explanation) ? explanation : Array.isArray(decisionExplanation) ? decisionExplanation : []
+  )
+    .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+    .slice(0, 4);
 
   return (
     <motion.div
@@ -112,7 +134,14 @@ export function DecisionCard({
               {agentId ? `${agentId} · ` : ""}
               {isFallback ? "Best Match" : "AI Decision"}
             </p>
-            <HadeHeading level={3}>{decision.venue_name}</HadeHeading>
+            <div className="flex items-center gap-2">
+              <HadeHeading level={3}>{decision.venue_name}</HadeHeading>
+              {typeof effectiveConfidence === "number" && (
+                <span className="rounded-full bg-accentSoft px-2 py-0.5 font-mono text-[10px] font-semibold text-accent">
+                  {getConfidenceLabel(effectiveConfidence)}
+                </span>
+              )}
+            </div>
             <HadeText variant="caption" color="muted">
               {decision.category}
               {decision.neighborhood ? ` · ${decision.neighborhood}` : ""}
@@ -122,7 +151,7 @@ export function DecisionCard({
 
           <div className="flex flex-col items-end gap-1.5 shrink-0">
             <span className="rounded-lg bg-accentSoft px-3 py-1.5 font-mono text-xs font-bold text-accent">
-              {Math.round(decision.confidence * 100)}% confidence
+              {Math.round((effectiveConfidence ?? decision.confidence) * 100)}% confidence
             </span>
             <span
               className={`rounded px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider font-semibold ${
@@ -143,19 +172,39 @@ export function DecisionCard({
           &quot;{decision.rationale}&quot;
         </HadeText>
 
-        {/* ── UGC vibe chips ─────────────────────────────────────────────────── */}
-        {vibeChips.length > 0 && (
-          <div className="mt-3 flex flex-nowrap items-center gap-2 overflow-hidden">
-            {vibeChips.map((chip) => (
+        {explanationChips.length > 0 && (
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            {explanationChips.map((item, index) => (
               <span
-                key={chip.key}
-                className="inline-flex shrink-0 items-center gap-1 rounded-full border border-line bg-surface px-2.5 py-1 text-[11px] font-medium text-ink/70"
+                key={`${item}-${index}`}
+                className="rounded-full border border-line bg-surface px-2.5 py-1 text-[11px] font-medium text-ink/70"
               >
-                <span aria-hidden="true">{chip.icon}</span>
-                <span>{chip.label}</span>
+                {item}
               </span>
             ))}
           </div>
+        )}
+
+        {/* ── UGC vibe chips ─────────────────────────────────────────────────── */}
+        {vibeChips.length > 0 && (
+          <>
+            <div className="mt-3 flex flex-nowrap items-center gap-2 overflow-hidden">
+              {vibeChips.map((chip) => (
+                <span
+                  key={chip.key}
+                  className="inline-flex shrink-0 items-center gap-1 rounded-full border border-line bg-surface px-2.5 py-1 text-[11px] font-medium text-ink/70"
+                >
+                  <span aria-hidden="true">{chip.icon}</span>
+                  <span>{chip.label}</span>
+                </span>
+              ))}
+            </div>
+            {locationNode && locationNode.signal_count > 0 && (
+              <p className="mt-1.5 font-mono text-[10px] text-ink/30">
+                {locationNode.signal_count} recent signals
+              </p>
+            )}
+          </>
         )}
 
         {/* ── Why Now — MEDIUM + LOW only ────────────────────────────────────── */}

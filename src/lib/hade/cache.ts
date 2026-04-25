@@ -14,6 +14,11 @@
  *   • getValidCache  — always resolves, returns null on any failure
  */
 
+import {
+  canUseGlobalFallbackStorage,
+  handleRedisFailure,
+} from "@/lib/hade/redis";
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export type CachedVenue = {
@@ -73,7 +78,11 @@ export async function setOfflineCache(
       await set(CACHE_KEY, entry);
     } else {
       // Server path: in-process singleton
-      g.__hadeOfflineCache = entry;
+      if (canUseGlobalFallbackStorage()) {
+        g.__hadeOfflineCache = entry;
+      } else {
+        handleRedisFailure(new Error("Offline cache fallback disabled in production"));
+      }
     }
   } catch {
     // Silently swallow — cache writes must never break the happy path
@@ -99,7 +108,12 @@ export async function getValidCache(): Promise<CacheEntry | null> {
       entry = await get<CacheEntry>(CACHE_KEY);
     } else {
       // Server path
-      entry = g.__hadeOfflineCache ?? null;
+      if (canUseGlobalFallbackStorage()) {
+        entry = g.__hadeOfflineCache ?? null;
+      } else {
+        handleRedisFailure(new Error("Offline cache fallback disabled in production"));
+        entry = null;
+      }
     }
 
     if (!entry) return null;

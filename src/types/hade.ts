@@ -640,7 +640,7 @@ export interface HadeSettings {
   debug?: boolean;
   /**
    * Override composite scoring weights for this session.
-   * Null = use server defaults (proximity 0.4 / signal 0.35 / intent 0.25).
+   * Null = use server defaults (proximity 0.6 / rating 0.4).
    */
   scoring_weights?: ScoringWeights | null;
 }
@@ -699,20 +699,17 @@ export interface FetchNearbyOptions {
 // ─── Scoring Weights ─────────────────────────────────────────────────────────
 
 /**
- * Configurable composite scoring weights for scoreOpportunity().
- * Values should sum to 1.0. Defaults: proximity 0.4, signal 0.35, intent 0.25.
- * Stored in HadeSettings to allow per-user and per-domain tuning.
+ * Configurable composite scoring weights for synthetic venue scoring.
+ * Values should sum to 1.0. Defaults: proximity 0.6, rating 0.4.
  */
 export interface ScoringWeights {
-  proximity: number; // 0–1
-  signal:    number; // 0–1
-  intent:    number; // 0–1
+  proximity?: number; // 0–1
+  rating?: number; // 0–1
 }
 
 export const DEFAULT_SCORING_WEIGHTS: ScoringWeights = {
-  proximity: 0.4,
-  signal:    0.35,
-  intent:    0.25,
+  proximity: 0.6,
+  rating: 0.4,
 };
 
 // ─── UGC Vibe Signal Layer ───────────────────────────────────────────────────

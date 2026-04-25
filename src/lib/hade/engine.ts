@@ -8,9 +8,7 @@ import type {
   DayType,
   GeoLocation,
   Signal,
-  ScoringWeights,
 } from "@/types/hade";
-import { DEFAULT_SCORING_WEIGHTS } from "@/types/hade";
 
 // ─── Config-driven maps (loaded once at module init) ─────────────────────────
 
@@ -21,6 +19,18 @@ import timeIntentDefaults from "@/config/time_intent_defaults.json";
 
 const _affinityMap = intentAffinityMap  as unknown as Record<string, string[]>;
 const _timeIntents = timeIntentDefaults as unknown as Record<string, string | null>;
+
+type OpportunityScoringWeights = {
+  proximity: number;
+  signal: number;
+  intent: number;
+};
+
+const DEFAULT_OPPORTUNITY_SCORING_WEIGHTS: OpportunityScoringWeights = {
+  proximity: 0.4,
+  signal: 0.35,
+  intent: 0.25,
+};
 
 // ─── Default Config ───────────────────────────────────────────────────────────
 
@@ -298,8 +308,7 @@ export function inferIntentFromTime(time: TimeOfDay): Intent | null {
  * Computes a composite 0–1 score for a candidate venue given the current context.
  *
  * Weights are configurable via the `weights` parameter (defaults to
- * DEFAULT_SCORING_WEIGHTS: proximity 0.4, signal 0.35, intent 0.25).
- * Override via HadeSettings.scoring_weights for per-user or per-domain tuning.
+ * proximity 0.4, signal 0.35, intent 0.25).
  *
  * Used to pre-filter venue candidates before the LLM call.
  * The LLM may override this ranking — this is a pre-filter, not the decision.
@@ -308,7 +317,7 @@ export function scoreOpportunity(
   opp:             Opportunity,
   ctx:             HadeContext,
   maxRadiusMeters?: number,
-  weights:         ScoringWeights = DEFAULT_SCORING_WEIGHTS,
+  weights:         OpportunityScoringWeights = DEFAULT_OPPORTUNITY_SCORING_WEIGHTS,
 ): number {
   const radius = maxRadiusMeters ?? ctx.radius_meters;
 

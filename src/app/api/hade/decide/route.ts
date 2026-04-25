@@ -1,13 +1,17 @@
 import { NextRequest } from "next/server";
 import { serverEnv } from "@/lib/env/server";
 import { generateSyntheticDecision } from "@/core/engine/synthetic";
-import type { GeoLocation, PlaceOption } from "@/types/hade";
-import { getLocationWeights } from "@/lib/hade/weights";
+import type { GeoLocation, LocationNode, PlaceOption, ScoringWeights } from "@/types/hade";
+import { getLocationWeights, locationNodeExists, createLocationNode } from "@/lib/hade/weights";
 import { setOfflineCache, getValidCache } from "@/lib/hade/cache";
 import type { CacheEntry, CachedVenue, CachedLocationNode } from "@/lib/hade/cache";
 import { haversineDistanceMeters } from "@/lib/hade/engine";
 
 export const runtime = "nodejs";
+
+import { computeConfidence } from "@/lib/hade/confidence";
+import { buildExplanation } from "@/lib/hade/explanation";
+
 
 // ─── Configuration ───────────────────────────────────────────────────────────
 
@@ -32,6 +36,11 @@ type UpstreamResult =
         | "upstream_non_json";
       detail: string;
     };
+
+async function getDecisionNode(venueId: string): Promise<LocationNode | null> {
+  const [node] = await getLocationWeights([venueId]);
+  return node ?? null;
+}
 
 // ─── POST handler ────────────────────────────────────────────────────────────
 
@@ -94,7 +103,10 @@ async function generateDecision(
 
       // Upstream body is validated JSON (checked in callUpstream) — safe to parse.
       const data = JSON.parse(upstream.text) as Record<string, unknown>;
-      const enriched = { ...data, source: "llm", fallback_places: [] };
+      const decisionId = (data as { decision?: { id?: unknown } }).decision?.id;
+      const decisionNode =
+        typeof decisionId === "string" ? await getDecisionNode(decisionId) : null;
+      const enriched = { ...data, source: "llm", fallback_places: [], decision_node: decisionNode };
 
       return new Response(JSON.stringify(enriched), {
         status: 200,
@@ -119,10 +131,13 @@ async function generateDecision(
           ` — ${synthetic.places.length} place(s)`,
       );
 
+      const decisionNode = await getDecisionNode(synthetic.data.decision.id);
+      const enrichedSyntheticData = { ...synthetic.data, decision_node: decisionNode };
+
       // ── Tier 2.5: Write offline cache (fire-and-forget, non-blocking) ────────
       void writeCacheFromSynthetic(synthetic.places, body);
 
-      return new Response(JSON.stringify(synthetic.data), {
+      return new Response(JSON.stringify(enrichedSyntheticData), {
         status: 200,
         headers: {
           "Content-Type": "application/json",
@@ -136,7 +151,7 @@ async function generateDecision(
     // ── Tier 2.5: Serve from offline cache ───────────────────────────────────
     const cached = await getValidCache();
     if (cached && cached.venues.length > 0 && geoHint) {
-      const offlineResponse = buildOfflineResponse(cached, geoHint, reqId);
+      const offlineResponse = buildOfflineResponse(cached, geoHint, reqId, body);
       if (offlineResponse) {
         const elapsed = Date.now() - startedAt;
         console.log(`[hade-decide ${reqId}] ✓ Tier 2.5 (offline_cache) ok in ${elapsed}ms`);
@@ -339,6 +354,7 @@ function fallbackResponse(
     session_id: `fallback-${reqId}`,
     source: "static_fallback" as const,
     fallback_places: [],
+    decision_node: null,
   };
 
   console.warn(`[hade-decide ${reqId}] ⚠ fallback (${reason}): ${detail}`);
@@ -360,11 +376,34 @@ function fallbackResponse(
  * them to the offline cache. Fire-and-forget — called with `void`, never awaited
  * on the critical path.
  */
-function writeCacheFromSynthetic(
+async function writeCacheFromSynthetic(
   places: PlaceOption[],
   body: Record<string, unknown>,
 ): Promise<void> {
-  if (places.length === 0) return Promise.resolve();
+  if (places.length === 0) return;
+
+  // ── Cold-start seeding ────────────────────────────────────────────────────
+  // For each venue with no existing LocationNode, create a trust-prior node
+  // derived from its Google rating. This is a one-time initialization only:
+  //   • Existing nodes are never read, modified, or overwritten.
+  //   • weight_map stays empty — no synthetic vibe tags are injected.
+  //   • trust_score encodes prior belief quality; UGC signals refine it later.
+  for (const place of places) {
+    const exists = await locationNodeExists(place.id);
+    if (exists) continue;
+
+    const rating = place.rating ?? 3.5;
+    const trustScore = Math.max(0, Math.min(1, (rating - 1) / 4));
+
+    await createLocationNode({
+      venue_id: place.id,
+      trust_score: trustScore,
+      weight_map: {} as LocationNode["weight_map"],
+      signal_count: 0,
+      last_updated: new Date().toISOString(),
+      version: 0,
+    });
+  }
 
   const venues: CachedVenue[] = places.map((p) => ({
     id: p.id,
@@ -386,7 +425,7 @@ function writeCacheFromSynthetic(
         .filter((n) => n.venue_id.length > 0)
     : [];
 
-  return setOfflineCache(venues, nodes);
+  await setOfflineCache(venues, nodes);
 }
 
 /**
@@ -400,13 +439,24 @@ function buildOfflineResponse(
   cache: CacheEntry,
   geoHint: GeoLocation,
   reqId: string,
+  body: Record<string, unknown>,
 ): Response | null {
   try {
+    const weights =
+      (
+        body as {
+          settings?: { scoring_weights?: ScoringWeights | null };
+        }
+      )?.settings?.scoring_weights ?? undefined;
     const scored = cache.venues.map((venue) => {
       const dist = haversineDistanceMeters(geoHint, venue.geo);
       const proximityScore = Math.max(0, 1 - dist / 3000);
       const ratingScore = ((venue.rating ?? 3.5) - 1) / 4; // 1–5 → 0–1
-      const baseScore = proximityScore * 0.6 + ratingScore * 0.4;
+      const proximityWeight = weights?.proximity ?? 0.6;
+      const ratingWeight = weights?.rating ?? 0.4;
+      const baseScore =
+        proximityScore * proximityWeight +
+        ratingScore * ratingWeight;
 
       // UGC overlay — matches the vibe scoring formula in synthetic.ts
       const node = cache.nodes.find((n) => n.venue_id === venue.id);
@@ -424,8 +474,9 @@ function buildOfflineResponse(
     scored.sort((a, b) => b.score - a.score);
     const best = scored[0];
     if (!best) return null;
+    const decisionNode = cache.nodes.find((n) => n.venue_id === best.venue.id) ?? null;
 
-    const body = {
+    const responseBody = {
       decision: {
         id: best.venue.id,
         venue_name: best.venue.name,
@@ -448,9 +499,10 @@ function buildOfflineResponse(
       session_id: `offline-${reqId}`,
       source: "offline_cache",
       fallback_places: cache.venues,
+      decision_node: decisionNode,
     };
 
-    return new Response(JSON.stringify(body), {
+    return new Response(JSON.stringify(responseBody), {
       status: 200,
       headers: {
         "Content-Type": "application/json",

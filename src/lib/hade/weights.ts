@@ -8,7 +8,13 @@
 
 import type { VibeSignal, VibeTag, LocationNode } from "@/types/hade";
 import { VIBE_TAG_SENTIMENT } from "@/types/hade";
-import { hasRedis, redis } from "@/lib/hade/redis";
+import {
+  canUseGlobalFallbackStorage,
+  handleRedisFailure,
+  hasRedis,
+  redis,
+} from "@/lib/hade/redis";
+import { safeGetTrustMultiplier, updateDeviceTrust } from "@/lib/hade/trust";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -67,12 +73,29 @@ export async function upsertLocationNode(
     node = createNeutralNode(venueId);
   }
 
+  // ── Device trust — synchronous read, zero network cost ────────────────────
+  // preMean captures the venue's weight direction BEFORE this signal so the
+  // alignment check below reflects genuine agreement/conflict with prior state.
+  const existingVals = Object.values(node.weight_map) as number[];
+  const preMean = existingVals.length > 0
+    ? existingVals.reduce((s, v) => s + v, 0) / existingVals.length
+    : NEUTRAL_WEIGHT;
+  const trust = safeGetTrustMultiplier(signal.source_user_id ?? undefined);
+
   for (const tag of signal.vibe_tags) {
     const sentimentPolarity = VIBE_TAG_SENTIMENT[tag];
     const sign = sentimentPolarity === "positive" ? 1 : -1;
     const currentWeight = node.weight_map[tag] ?? NEUTRAL_WEIGHT;
-    node.weight_map[tag] = clamp(currentWeight + sign * weightDelta, 0.1, 0.9);
+    node.weight_map[tag] = clamp(currentWeight + sign * weightDelta * trust, 0.1, 0.9);
   }
+
+  // ── Update device trust (fire-and-forget — must not block) ─────────────────
+  // Aligned = signal polarity matches the venue's existing weight direction.
+  // New venues (preMean === 0.5) treat all first signals as aligned so
+  // early contributors aren't penalised for pioneering a venue.
+  const sentimentPositive = signal.sentiment === "positive";
+  const aligned = sentimentPositive ? preMean >= NEUTRAL_WEIGHT : preMean <= NEUTRAL_WEIGHT;
+  void updateDeviceTrust(signal.source_user_id ?? "", aligned ? 0.05 : -0.05);
 
   const n = node.signal_count;
   node.trust_score = clamp((node.trust_score * n + signal.strength) / (n + 1), 0, 1);
@@ -92,6 +115,10 @@ export async function getLocationWeights(venueIds: string[]): Promise<LocationNo
   if (venueIds.length === 0) return [];
 
   if (!hasRedis || !redis) {
+    if (!canUseGlobalFallbackStorage()) {
+      handleRedisFailure(new Error("Redis unavailable in production"));
+      return [];
+    }
     return venueIds
       .map((id) => nodeRegistry.get(id))
       .filter((n): n is LocationNode => n !== undefined)
@@ -102,8 +129,11 @@ export async function getLocationWeights(venueIds: string[]): Promise<LocationNo
     const nodes = await Promise.all(venueIds.map((id) => getStoredNode(id)));
     return nodes.filter((n): n is LocationNode => n !== null).map(deepCloneNode);
   } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error);
-    console.warn(`[weights] Redis read failed in getLocationWeights: ${detail}`);
+    handleRedisFailure(error);
+
+    if (!canUseGlobalFallbackStorage()) {
+      return [];
+    }
 
     return venueIds
       .map((id) => nodeRegistry.get(id))
@@ -113,9 +143,17 @@ export async function getLocationWeights(venueIds: string[]): Promise<LocationNo
 }
 
 /**
- * Returns the aggregate trust-weighted vibe score for a venue.
- * Positive tags push the score above 0.5; negative tags pull it below.
- * Returns 0.5 (neutral) if the venue has no signals yet.
+ * Returns the aggregate vibe score for a venue, decayed toward neutrality (0.5)
+ * as time passes since the last signal update.
+ *
+ * Scoring formula:
+ *   rawMean      = mean of all weight_map values
+ *   recencyFactor = exp(-0.15 × hoursSinceUpdate)   [1.0 when fresh → 0 when stale]
+ *   score        = 0.5 + (rawMean − 0.5) × recencyFactor
+ *
+ * This is a read-time transformation only — weight_map is never mutated.
+ * Returns 0.5 (neutral) if: no signals exist, weight_map is empty, or
+ * last_updated is missing or unparseable.
  *
  * Never throws — Redis failures fall back to in-memory, then neutral.
  */
@@ -127,11 +165,22 @@ export async function getNodeVibeScore(venueId: string): Promise<number> {
     const values = Object.values(node.weight_map) as number[];
     if (values.length === 0) return NEUTRAL_WEIGHT;
 
-    const mean = values.reduce((sum, v) => sum + v, 0) / values.length;
-    return clamp(mean, 0, 1);
+    const rawMean = values.reduce((sum, v) => sum + v, 0) / values.length;
+
+    const lastUpdated = new Date(node.last_updated).getTime();
+    if (!lastUpdated || isNaN(lastUpdated)) return NEUTRAL_WEIGHT;
+
+    const hoursSinceUpdate = Math.max(0, (Date.now() - lastUpdated) / 3_600_000);
+    const recencyFactor    = Math.min(1, Math.max(0, Math.exp(-0.15 * hoursSinceUpdate)));
+
+    const score = 0.5 + (rawMean - 0.5) * recencyFactor;
+    return Math.min(1, Math.max(0, score));
   } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error);
-    console.warn(`[weights] getNodeVibeScore failed: ${detail}`);
+    handleRedisFailure(error);
+
+    if (!canUseGlobalFallbackStorage()) {
+      return NEUTRAL_WEIGHT;
+    }
 
     const node = nodeRegistry.get(venueId);
     if (!node || node.signal_count === 0) return NEUTRAL_WEIGHT;
@@ -139,8 +188,45 @@ export async function getNodeVibeScore(venueId: string): Promise<number> {
     const values = Object.values(node.weight_map) as number[];
     if (values.length === 0) return NEUTRAL_WEIGHT;
 
-    const mean = values.reduce((sum, v) => sum + v, 0) / values.length;
-    return clamp(mean, 0, 1);
+    const rawMean = values.reduce((sum, v) => sum + v, 0) / values.length;
+
+    const lastUpdated = new Date(node.last_updated).getTime();
+    if (!lastUpdated || isNaN(lastUpdated)) return NEUTRAL_WEIGHT;
+
+    const hoursSinceUpdate = Math.max(0, (Date.now() - lastUpdated) / 3_600_000);
+    const recencyFactor    = Math.min(1, Math.max(0, Math.exp(-0.15 * hoursSinceUpdate)));
+
+    const score = 0.5 + (rawMean - 0.5) * recencyFactor;
+    return Math.min(1, Math.max(0, score));
+  }
+}
+
+/**
+ * Returns true if a LocationNode already exists for this venue.
+ * Redis-first with in-memory fallback. Never throws.
+ */
+export async function locationNodeExists(venueId: string): Promise<boolean> {
+  try {
+    const node = await getStoredNode(venueId);
+    return node !== null;
+  } catch {
+    // getStoredNode already catches internally; this is a belt-and-braces guard.
+    // Returning false on failure is safe: the worst case is a redundant seed write.
+    return false;
+  }
+}
+
+/**
+ * Persists a pre-constructed LocationNode without modifying any existing node.
+ * Intended for cold-start trust seeding only — the caller is responsible for
+ * the existence guard (see locationNodeExists). Never throws.
+ */
+export async function createLocationNode(node: LocationNode): Promise<void> {
+  try {
+    await persistNode(node.venue_id, node);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    console.warn(`[weights] createLocationNode failed for ${node.venue_id}: ${detail}`);
   }
 }
 
@@ -152,6 +238,10 @@ function getNodeKey(venueId: string): string {
 
 async function getStoredNode(venueId: string): Promise<LocationNode | null> {
   if (!hasRedis || !redis) {
+    if (!canUseGlobalFallbackStorage()) {
+      handleRedisFailure(new Error("Redis unavailable in production"));
+      return null;
+    }
     const local = nodeRegistry.get(venueId);
     return local ? deepCloneNode(local) : null;
   }
@@ -167,8 +257,11 @@ async function getStoredNode(venueId: string): Promise<LocationNode | null> {
     nodeRegistry.set(venueId, parsed);
     return deepCloneNode(parsed);
   } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error);
-    console.warn(`[weights] Redis get failed for ${venueId}: ${detail}`);
+    handleRedisFailure(error);
+
+    if (!canUseGlobalFallbackStorage()) {
+      return null;
+    }
 
     const local = nodeRegistry.get(venueId);
     return local ? deepCloneNode(local) : null;
@@ -176,15 +269,21 @@ async function getStoredNode(venueId: string): Promise<LocationNode | null> {
 }
 
 async function persistNode(venueId: string, node: LocationNode): Promise<void> {
-  nodeRegistry.set(venueId, deepCloneNode(node));
+  if (canUseGlobalFallbackStorage()) {
+    nodeRegistry.set(venueId, deepCloneNode(node));
+  }
 
-  if (!hasRedis || !redis) return;
+  if (!hasRedis || !redis) {
+    if (!canUseGlobalFallbackStorage()) {
+      handleRedisFailure(new Error("Redis unavailable in production"));
+    }
+    return;
+  }
 
   try {
     await redis.set(getNodeKey(venueId), node, { ex: NODE_TTL_SECONDS });
   } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error);
-    console.warn(`[weights] Redis set failed for ${venueId}: ${detail}`);
+    handleRedisFailure(error);
   }
 }
 

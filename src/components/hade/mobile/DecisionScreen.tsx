@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import type { Intent, VibeTag } from "@/types/hade";
 import { useHadeAdaptiveContext } from "@/lib/hade/hooks";
@@ -9,6 +9,7 @@ import { HeroDecisionCard } from "./HeroDecisionCard";
 import { PrimaryAction } from "./PrimaryAction";
 import { SecondaryActions } from "./SecondaryActions";
 import { RefineSheet } from "./RefineSheet";
+import { VibeSheet } from "./VibeSheet";
 import { LoadingState } from "./LoadingState";
 
 type Urgency = "low" | "medium" | "high";
@@ -68,10 +69,42 @@ export function DecisionScreen({ scenarioId }: DecisionScreenProps) {
 
   const [refineOpen, setRefineOpen] = useState(false);
   const [showPivotReasons, setShowPivotReasons] = useState(false);
+  const [showVibeSheet, setShowVibeSheet] = useState(false);
+
+  const visitRef = useRef<{
+    venueId: string;
+    venueName: string;
+    pressedAt: number;
+    timerId?: NodeJS.Timeout;
+  } | null>(null);
+
+  // Cancel any pending post-visit timer on unmount / navigation
+  useEffect(() => {
+    return () => {
+      if (visitRef.current?.timerId) {
+        clearTimeout(visitRef.current.timerId);
+      }
+    };
+  }, []);
 
   const handleGo = useCallback(() => {
     if (!decision) return;
     console.log("[HADE] Take me there →", decision.title);
+
+    // Cancel any prior timer so only one sheet can be scheduled per session
+    if (visitRef.current?.timerId) {
+      clearTimeout(visitRef.current.timerId);
+    }
+
+    visitRef.current = {
+      venueId: decision.id,
+      venueName: decision.title,
+      pressedAt: Date.now(),
+    };
+
+    visitRef.current.timerId = setTimeout(() => {
+      setShowVibeSheet(true);
+    }, 15 * 60 * 1000);
   }, [decision]);
 
   const handleRefineConfirm = useCallback(
@@ -101,6 +134,19 @@ export function DecisionScreen({ scenarioId }: DecisionScreenProps) {
       pivot("user_requested_alternative");
     },
     [decision, emitVibeSignal, pivot],
+  );
+
+  // Dismiss without emitting — spec: no signal, no API call
+  const handleDismiss = useCallback(() => {
+    setShowVibeSheet(false);
+  }, []);
+
+  // VibeSheet handles fetch + emitVibeSignal internally; parent just closes
+  const handleSubmit = useCallback(
+    (_tags: string[], _sentiment: "positive" | "negative" | "neutral") => {
+      setShowVibeSheet(false);
+    },
+    [],
   );
 
   if (status === "error") {
@@ -170,6 +216,17 @@ export function DecisionScreen({ scenarioId }: DecisionScreenProps) {
         onClose={() => setRefineOpen(false)}
         onConfirm={handleRefineConfirm}
       />
+
+      <AnimatePresence>
+        {showVibeSheet && visitRef.current && (
+          <VibeSheet
+            venueId={visitRef.current.venueId}
+            venueName={visitRef.current.venueName}
+            onDismiss={handleDismiss}
+            onSubmit={handleSubmit}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

@@ -31,6 +31,7 @@ import {
   sortSignals,
 } from "./signals";
 import { SignalQueue } from "./queue";
+import { getDeviceId } from "./deviceId";
 
 // ─── useHadeEngine ────────────────────────────────────────────────────────────
 
@@ -372,7 +373,10 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
         console.log("[HADE REQUEST PAYLOAD]", body);
         const res = await fetch(`${apiUrl}/hade/decide`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type":     "application/json",
+            "x-hade-device-id": getDeviceId(),
+          },
           body: JSON.stringify(body),
           cache: "no-store",
           signal: controller.signal,
@@ -486,6 +490,10 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
         validation_status: "pending",
         vibe_tags:        tags,
         sentiment,
+        // Device ID for UGC attribution and server-side abuse detection.
+        // getDeviceId() is always non-empty ("server" in SSR, "unknown" if
+        // localStorage is blocked) — no null/empty-string guard needed.
+        source_user_id:   getDeviceId(),
       };
 
       // Only track real venue IDs (Google Place IDs) in node_hints.

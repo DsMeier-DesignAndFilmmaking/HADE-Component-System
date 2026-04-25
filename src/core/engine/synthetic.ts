@@ -28,6 +28,7 @@ import type {
   Intent,
   DecideResponse,
   PlaceOption,
+  ScoringWeights,
 } from "@/types/hade";
 
 // ─── Result type ──────────────────────────────────────────────────────────────
@@ -160,11 +161,21 @@ function clamp(value: number, min: number, max: number): number {
  *
  * Final score is clamped to [0, 1] — safe to use in any downstream ranking.
  */
-async function scorePlaceOption(p: PlaceOption): Promise<number> {
+function scorePlaceOption(
+  place: PlaceOption,
+  geo: GeoLocation,
+  vibeScore: number,
+  weights?: ScoringWeights,
+): number {
+  void geo;
   // ── Base score (unchanged behaviour when no UGC exists) ──────────────────
-  const proximityScore = Math.max(0, 1 - p.distance_meters / 3000);
-  const ratingScore    = ((p.rating ?? 3.5) - 1) / 4; // normalise 1–5 → 0–1
-  const baseScore      = proximityScore * 0.6 + ratingScore * 0.4;
+  const proximityScore = Math.max(0, 1 - place.distance_meters / 3000);
+  const ratingScore    = ((place.rating ?? 3.5) - 1) / 4; // normalise 1–5 → 0–1
+  const proximityWeight = weights?.proximity ?? 0.6;
+  const ratingWeight = weights?.rating ?? 0.4;
+  const baseScore =
+    proximityScore * proximityWeight +
+    ratingScore * ratingWeight;
 
   // ── UGC vibe overlay ─────────────────────────────────────────────────────
   // getNodeVibeScore() returns 0.5 (neutral) when:
@@ -172,7 +183,6 @@ async function scorePlaceOption(p: PlaceOption): Promise<number> {
   //   • All accumulated signals have expired and been filtered out
   //   • The LocationNode signal_count is 0
   // In all three cases vibe_delta = 0 and final_score === baseScore exactly.
-  const vibeScore = await getNodeVibeScore(p.id); // p.id is the Google Place ID / venue_id
   const vibeDelta = (vibeScore - 0.5) * 0.2; // range: −0.10 to +0.10
 
   return clamp(baseScore + vibeDelta, 0, 1);
@@ -201,6 +211,12 @@ export async function generateSyntheticDecision(
 
     const intent = extractIntent(body);
     const radius = extractRadius(body);
+    const scoringWeights =
+      (
+        body as {
+          settings?: { scoring_weights?: ScoringWeights | null };
+        }
+      )?.settings?.scoring_weights ?? undefined;
     const ctx = buildContext(body as Partial<HadeContext>);
     const situationSummary = generateSituationSummary(ctx);
     const { intentLabel, categories: targetCategories } = resolveTargetCategories(
@@ -237,7 +253,12 @@ export async function generateSyntheticDecision(
     const scoredPlaces = await Promise.all(
       relevantPlaces.map(async (place) => ({
         place,
-        score: await scorePlaceOption(place),
+        score: scorePlaceOption(
+          place,
+          geoHint,
+          await getNodeVibeScore(place.id),
+          scoringWeights,
+        ),
       })),
     );
     const sorted = scoredPlaces.sort((a, b) => b.score - a.score);

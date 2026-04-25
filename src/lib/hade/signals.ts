@@ -51,7 +51,20 @@ export function aggregateSignals(signals: Signal[]): Signal[] {
   const map = new Map<string, Signal>();
 
   for (const sig of signals) {
-    const key = `${sig.type}::${sig.venue_id ?? sig.id}`;
+    const vibeSig = sig as Signal & {
+      location_node_id?: string;
+      vibe_tags?: string[];
+    };
+    const key =
+      sig.category === "vibe"
+        ? `VIBE::${vibeSig.location_node_id ?? sig.venue_id ?? sig.id}::${
+            [...(vibeSig.vibe_tags ?? [])]
+              .filter(Boolean)
+              .map((t) => t.trim().toLowerCase())
+              .sort()
+              .join(",") || "no-tags"
+          }`
+        : `${sig.type}::${sig.venue_id ?? sig.id}`;
     const existing = map.get(key);
 
     if (!existing) {
