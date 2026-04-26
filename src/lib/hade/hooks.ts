@@ -357,7 +357,11 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
       //    first missing field and returns false so we exit cleanly.
       //    After this point body is narrowed to ValidatedDecidePayload —
       //    body.persona: AgentPersona and body.geo: GeoLocation are guaranteed.
-      if (!validateDecidePayload(body)) return;
+      if (!validateDecidePayload(body)) {
+        const missing = !body.geo ? "Location access is required." : "Agent configuration is missing.";
+        setError(missing);
+        return;
+      }
 
       // Abort any in-flight request before starting a new one
       abortRef.current?.abort();
@@ -385,6 +389,12 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
         if (!res.ok) {
           throw new Error(`HADE API error ${res.status}: ${res.statusText}`);
         }
+
+        const hadeSource   = res.headers.get("x-hade-source")   ?? "unknown";
+        const hadeDegraded = res.headers.get("x-hade-degraded") === "1";
+        console.log(
+          `[HADE stability] source=${hadeSource} | degraded=${hadeDegraded} | rejection_history=${(body.rejection_history ?? []).length}`,
+        );
 
         const data = await res.json();
         console.log("[HADE] full response:", data);
@@ -436,6 +446,10 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
       const nextRejectionHistory = alreadyRejected
         ? rejectionHistory
         : [...rejectionHistory, currentRejection];
+
+      console.log(
+        `[HADE stability] pivot | rejection_history_length=${nextRejectionHistory.length} | venue=${currentRejection.venue_id} | reason="${reason}"`,
+      );
 
       // Persist across calls in local session state.
       setRejectionHistory((prev) =>

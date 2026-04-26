@@ -23,6 +23,7 @@ const VIBE_TAG_META: Record<VibeTag, VibeTagMeta> = {
   dead:         { label: "Dead",         emoji: "💀" },
   worth_it:     { label: "Worth it",     emoji: "👍" },
   skip_it:      { label: "Skip it",      emoji: "👎" },
+  too_far:      { label: "Too far",      emoji: "📍" },
 };
 
 const ALL_VIBE_TAGS = Object.keys(VIBE_TAG_META) as VibeTag[];

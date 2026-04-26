@@ -166,21 +166,22 @@ export function useHade(config?: UseHadeConfig): UseHadeReturn {
 
   const refine = useCallback(
     async (input: { intent?: Intent | null; urgency?: Urgency }) => {
-      const resolvedGeo = userGeo ?? { lat: 0, lng: 0 };
       const urgency = input.urgency ?? "medium";
 
       const behavioralSig = emit("BEHAVIORAL", {
         content: `Refined: ${input.intent ?? "anything"} · urgency ${urgency}`,
         strength: 0.9,
-        geo: {
-          lat: resolvedGeo.lat + (Math.random() - 0.5) * 0.001,
-          lng: resolvedGeo.lng + (Math.random() - 0.5) * 0.001,
-        },
+        ...(userGeo && {
+          geo: {
+            lat: userGeo.lat + (Math.random() - 0.5) * 0.001,
+            lng: userGeo.lng + (Math.random() - 0.5) * 0.001,
+          },
+        }),
       });
       const intentSig = emit("INTENT", {
         content: input.intent ?? "refine request",
         strength: 0.7,
-        geo: { lat: resolvedGeo.lat, lng: resolvedGeo.lng },
+        ...(userGeo && { geo: { lat: userGeo.lat, lng: userGeo.lng } }),
       });
 
       await decide({

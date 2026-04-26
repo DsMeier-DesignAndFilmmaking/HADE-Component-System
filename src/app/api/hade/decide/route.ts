@@ -551,5 +551,8 @@ function summarizePayload(body: Record<string, unknown>): string {
   const persona = (body as { persona?: { id?: unknown } }).persona;
   const personaId = persona?.id ?? "none";
 
-  return `${geoStr} intent=${String(intent)} persona=${String(personaId)}`;
+  const rejHistory = (body as { rejection_history?: unknown[] }).rejection_history;
+  const rejCount = Array.isArray(rejHistory) ? rejHistory.length : 0;
+
+  return `${geoStr} intent=${String(intent)} persona=${String(personaId)} rejections=${rejCount}`;
 }

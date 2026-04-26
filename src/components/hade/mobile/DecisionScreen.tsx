@@ -30,6 +30,8 @@ function mapReasonToTags(reason: string): string[] {
       return ["dead", "skip_it"];
     case "Overpriced":
       return ["overpriced"];
+    case "Too far":
+      return ["too_far"];
     default:
       return [];
   }
@@ -47,6 +49,7 @@ function toVibeTags(tags: string[]): VibeTag[] {
     "dead",
     "worth_it",
     "skip_it",
+    "too_far",
   ];
   const allowed = new Set(validTags);
   return tags.filter((tag): tag is VibeTag => allowed.has(tag as VibeTag));
@@ -57,7 +60,7 @@ interface DecisionScreenProps {
 }
 
 export function DecisionScreen({ scenarioId }: DecisionScreenProps) {
-  const { context, decide, emitVibeSignal } = useHadeAdaptiveContext();
+  const { emitVibeSignal, pivot } = useHadeAdaptiveContext();
   const {
     decision,
     reasoning,
@@ -121,34 +124,21 @@ export function DecisionScreen({ scenarioId }: DecisionScreenProps) {
 
   const handleReject = useCallback(
     (reason: PivotReason) => {
-      const currentVenue = decision;
-      if (!currentVenue) return;
+      if (!decision) return;
 
       const tags = toVibeTags(mapReasonToTags(reason));
       if (tags.length > 0) {
-        emitVibeSignal(currentVenue.id, tags, "negative");
+        emitVibeSignal(decision.id, tags, "negative");
       }
 
-      const nextRejectionHistory = [
-        ...(context.rejection_history ?? []),
-        {
-          venue_id: currentVenue.id,
-          venue_name: currentVenue.title,
-          pivot_reason: reason,
-          reason,
-        },
-      ];
+      console.log("[HADE] Reject triggered", { venueId: decision.id, reason });
 
-      console.log("[HADE] Reject triggered", { venueId: currentVenue.id, reason });
-
-      void decide({
-        rejection_history: nextRejectionHistory,
-        session_id: null,
-      });
-
+      // pivot() accumulates rejection history, flushes the signal queue,
+      // and re-calls decide() — fixes cumulative history across multiple rejections.
+      pivot(reason);
       setShowPivotReasons(false);
     },
-    [context.rejection_history, decision, decide, emitVibeSignal],
+    [decision, emitVibeSignal, pivot],
   );
 
   // Dismiss without emitting — spec: no signal, no API call

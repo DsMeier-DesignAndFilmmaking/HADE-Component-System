@@ -48,6 +48,7 @@ export class SignalQueue {
 
   enqueue(signal: VibeSignal): void {
     this.queue.push(signal);
+    console.log(`[HADE stability] signal_enqueue | queue_size=${this.queue.length} | id=${signal.id.slice(0, 16)}`);
 
     const write = enqueueSignal(signal)
       .catch((error: unknown) => {
@@ -74,6 +75,7 @@ export class SignalQueue {
       await Promise.allSettled([...this.pendingWrites.values()]);
     }
 
+    console.log(`[HADE stability] signal_flush | flushing queue_size=${this.queue.length}`);
     this.queue = [];
     this.scheduled = false;
 

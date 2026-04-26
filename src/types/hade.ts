@@ -729,7 +729,8 @@ export type VibeTag =
   | "good_energy"
   | "dead"
   | "worth_it"
-  | "skip_it";
+  | "skip_it"
+  | "too_far";
 
 /** Sentiment polarity for a VibeTag — determines sign of the weight delta. */
 export const VIBE_TAG_SENTIMENT: Record<VibeTag, "positive" | "negative"> = {
@@ -743,6 +744,7 @@ export const VIBE_TAG_SENTIMENT: Record<VibeTag, "positive" | "negative"> = {
   dead:         "negative",
   worth_it:     "positive",
   skip_it:      "negative",
+  too_far:      "negative",
 };
 
 /**
