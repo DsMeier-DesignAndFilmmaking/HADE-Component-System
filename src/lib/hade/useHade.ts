@@ -33,6 +33,8 @@ export interface UseHadeReturn {
   status: Status;
   error: string | null;
   meta: HadeAPIMeta | null;
+  /** True when the last response was served from the Tier 3 static stub. */
+  isFallback: boolean;
   regenerate: () => void;
   refine: (input: {
     intent?: Intent | null;
@@ -141,6 +143,8 @@ export function useHade(config?: UseHadeConfig): UseHadeReturn {
 
   const confidence = response?.decision?.confidence ?? 0;
 
+  const isFallback = response?.source === "fallback";
+
   const status: Status = useMemo(() => {
     if (isLoading) return "loading";
     if (error && !response) return "error";
@@ -188,7 +192,6 @@ export function useHade(config?: UseHadeConfig): UseHadeReturn {
         situation: { intent: input.intent ?? null, urgency },
         state: { energy: urgency },
         signals: [...signals, behavioralSig, intentSig],
-        session_id: null,
         persona: activeAgent,
         settings,
       });
@@ -207,6 +210,7 @@ export function useHade(config?: UseHadeConfig): UseHadeReturn {
     status,
     error,
     meta,
+    isFallback,
     regenerate,
     refine,
     getAlternative,

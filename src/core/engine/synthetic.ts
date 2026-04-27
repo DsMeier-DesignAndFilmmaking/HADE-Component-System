@@ -234,13 +234,35 @@ export async function generateSyntheticDecision(
         ` (intent=${intent ?? "any"}, radius=${radius}m, category=${primaryCategory})`,
     );
 
-    const places = await fetchNearbyGrounded({
+    let places = await fetchNearbyGrounded({
       geo: geoHint,
       intent,
       target_categories: targetCategories,
       radius_meters: radius,
       open_now: true,
     });
+
+    // ── UGC injection: merge custom_candidates into the candidate pool ───────
+    // Caller-supplied entities (events, pop-ups, custom venues) are appended
+    // to the Google fetch and deduplicated by id with last-write-wins semantics
+    // — a custom entry overrides any colliding Google record so updated UGC
+    // metadata takes precedence. Category filter and rejection_history filter
+    // both run AFTER this merge, unchanged.
+    const customRaw = (body as { custom_candidates?: unknown }).custom_candidates;
+    const customCandidates = Array.isArray(customRaw)
+      ? (customRaw as PlaceOption[])
+      : [];
+    if (customCandidates.length > 0) {
+      const byId = new Map<string, PlaceOption>();
+      for (const p of places)            byId.set(p.id, p);
+      for (const c of customCandidates)  byId.set(c.id, c); // last-write-wins
+      const beforeCount = places.length;
+      places = [...byId.values()];
+      console.log(
+        `[hade-synthetic ${reqId}] merged ${customCandidates.length} custom_candidate(s)` +
+          ` — pool: ${places.length} (was ${beforeCount})`,
+      );
+    }
 
     const relevantPlaces = filterPlacesByMappedCategory(places, targetCategories);
 

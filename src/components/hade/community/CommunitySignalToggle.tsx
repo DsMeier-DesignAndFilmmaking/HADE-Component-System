@@ -48,6 +48,12 @@ interface CommunitySignalToggleProps {
     tags:      VibeTag[],
     sentiment: VibeSignal["sentiment"],
   ) => void;
+  /**
+   * When true, the toggle is locked and the VibeTag picker is hidden.
+   * A "Signals temporarily paused" notice replaces the live indicator
+   * and picker. No signals are enqueued while degraded.
+   */
+  isDegraded?: boolean;
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -70,11 +76,14 @@ export function CommunitySignalToggle({
   venueId,
   venueName,
   onVibeSignal,
+  isDegraded = false,
 }: CommunitySignalToggleProps) {
   const [selectedTags, setSelectedTags] = useState<Set<VibeTag>>(new Set());
   const [submitted, setSubmitted] = useState(false);
 
-  const showPicker = enabled && !!venueId && !!onVibeSignal;
+  // Picker requires an active venue, a signal handler, enabled opt-in, AND
+  // a healthy backend — never show it when the system is degraded.
+  const showPicker = enabled && !!venueId && !!onVibeSignal && !isDegraded;
 
   function toggleTag(tag: VibeTag) {
     setSelectedTags((prev) => {
@@ -111,10 +120,17 @@ export function CommunitySignalToggle({
         type="button"
         role="switch"
         aria-checked={enabled}
-        onClick={() => onChange(!enabled)}
+        aria-disabled={isDegraded && !enabled}
+        onClick={() => {
+          // Allow turning off even while degraded; block turning on.
+          if (isDegraded && !enabled) return;
+          onChange(!enabled);
+        }}
         className={[
           "group flex items-center gap-3 w-full rounded-xl border px-4 py-3 transition-all duration-200",
-          enabled
+          isDegraded
+            ? "border-line bg-surface opacity-60 cursor-not-allowed"
+            : enabled
             ? "border-accent/30 bg-accent/5"
             : "border-line bg-surface hover:border-ink/15",
         ].join(" ")}
@@ -123,7 +139,7 @@ export function CommunitySignalToggle({
         <div
           className={[
             "relative h-5 w-9 shrink-0 rounded-full transition-colors duration-200",
-            enabled ? "bg-accent" : "bg-ink/15",
+            enabled && !isDegraded ? "bg-accent" : "bg-ink/15",
           ].join(" ")}
         >
           <motion.div
@@ -138,7 +154,7 @@ export function CommunitySignalToggle({
           <span
             className={[
               "text-sm font-medium transition-colors",
-              enabled ? "text-accent" : "text-ink/70",
+              enabled && !isDegraded ? "text-accent" : "text-ink/70",
             ].join(" ")}
           >
             Community Signals
@@ -150,19 +166,36 @@ export function CommunitySignalToggle({
           </span>
         </div>
 
-        {/* Live indicator */}
+        {/* Live indicator — replaced with paused notice when degraded */}
         {enabled && (
           <div className="ml-auto flex items-center gap-1.5 shrink-0">
-            <span className="relative flex h-1.5 w-1.5">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent opacity-50" />
-              <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-accent" />
-            </span>
-            <span className="text-[10px] font-mono text-accent/60 uppercase tracking-wider">
-              Live
-            </span>
+            {isDegraded ? (
+              <span className="text-[10px] font-mono text-ink/40 uppercase tracking-wider">
+                Paused
+              </span>
+            ) : (
+              <>
+                <span className="relative flex h-1.5 w-1.5">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent opacity-50" />
+                  <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-accent" />
+                </span>
+                <span className="text-[10px] font-mono text-accent/60 uppercase tracking-wider">
+                  Live
+                </span>
+              </>
+            )}
           </div>
         )}
       </button>
+
+      {/* ── Degraded notice (only when enabled + degraded) ─────────────────── */}
+      {isDegraded && enabled && (
+        <div className="rounded-lg border border-line bg-surface/60 px-3 py-2">
+          <p className="text-[11px] text-ink/50 leading-tight">
+            Signals temporarily paused — your feedback will resume when the service recovers.
+          </p>
+        </div>
+      )}
 
       {/* ── VibeTag picker (only when enabled + venue in focus) ────────────── */}
       <AnimatePresence>

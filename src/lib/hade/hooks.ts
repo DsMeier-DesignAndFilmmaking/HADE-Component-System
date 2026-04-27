@@ -273,6 +273,7 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
   const [rejectionHistory, setRejectionHistory] = useState<RejectionEntry[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isDegraded, setIsDegraded] = useState(false);
 
   // ── Community Signals (UGC) ──
   const [communitySignals, setCommunitySignalsState] = useState<CommunitySignalsConfig>({
@@ -283,6 +284,10 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
   const setCommunitySignals = useCallback((enabled: boolean) => {
     setCommunitySignalsState({ enabled, shareCurrentSignal: enabled });
   }, []);
+
+  // Ref-ify isDegraded so emitVibeSignal can read it without being recreated.
+  const isDegradedRef = useRef(isDegraded);
+  isDegradedRef.current = isDegraded;
 
   // Ref-ify mutable state so decide() has a stable identity.
   // Without this, every context/signal/rejectionHistory change recreates
@@ -300,6 +305,8 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
   // Retains the persona from the last successful decide call so pivot(),
   // which has no access to the active agent, can inherit it automatically.
   const lastPersonaRef = useRef<AgentPersona | null>(null);
+  // Fixed for the lifetime of this mount — survives pivot/refine, resets on page reload.
+  const sessionIdRef = useRef(crypto.randomUUID());
 
   // ── Vibe Signal / UGC queue ──────────────────────────────────────────────
   // A Set of venue IDs that have received VibeSignal updates since the last
@@ -309,10 +316,7 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
   const signalQueue = useRef<SignalQueue>(
     new SignalQueue({
       onFlush: (res) => {
-        // Update session ID for future flushes
-        signalQueue.current.setSessionId(
-          contextRef.current.session_id ?? null,
-        );
+        signalQueue.current.setSessionId(sessionIdRef.current);
         if (process.env.NODE_ENV === "development") {
           console.debug("[HADE SignalQueue] flush accepted:", res.accepted, res.node_versions);
         }
@@ -346,7 +350,7 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
         time_of_day:       req?.time_of_day ?? ctx.time_of_day,
         day_type:          req?.day_type ?? ctx.day_type,
         radius_meters:     req?.radius_meters ?? ctx.radius_meters,
-        session_id:        req?.session_id ?? ctx.session_id,
+        session_id:        req?.session_id ?? sessionIdRef.current,
         signals:           req?.signals ?? sigs,
         rejection_history: req?.rejection_history ?? rejHistory,
         settings:          req?.settings,
@@ -390,13 +394,17 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
           throw new Error(`HADE API error ${res.status}: ${res.statusText}`);
         }
 
-        const hadeSource   = res.headers.get("x-hade-source")   ?? "unknown";
-        const hadeDegraded = res.headers.get("x-hade-degraded") === "1";
-        console.log(
-          `[HADE stability] source=${hadeSource} | degraded=${hadeDegraded} | rejection_history=${(body.rejection_history ?? []).length}`,
-        );
+        const hadeSource     = res.headers.get("x-hade-source")   ?? "unknown";
+        const headerDegraded = res.headers.get("x-hade-degraded") === "1";
 
         const data = await res.json();
+        const bodyDegraded   = data.degraded === true;
+        const newDegraded    = headerDegraded || bodyDegraded;
+        setIsDegraded(newDegraded);
+
+        console.log(
+          `[HADE stability] source=${hadeSource} | degraded=${newDegraded} | rejection_history=${(body.rejection_history ?? []).length}`,
+        );
         console.log("[HADE] full response:", data);
         const dec = data.decision as HadeDecision;
         const ux = _deriveUX(
@@ -410,6 +418,7 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
           context_snapshot: data.context_snapshot,
           session_id: data.session_id,
           debug: data.debug ?? undefined,
+          source: hadeSource,
         };
         setDecision(dec);
         setResponse(shaped);
@@ -463,7 +472,7 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
       // so LocationNode weights are updated before enrichWithNodeWeights() runs.
       setDecision(null);
       void signalQueue.current.flushAsync().then(() =>
-        decide({ rejection_history: nextRejectionHistory, session_id: null })
+        decide({ rejection_history: nextRejectionHistory })
       );
     },
     [decision, rejectionHistory, updateContext, decide, signalQueue]
@@ -510,6 +519,14 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
         source_user_id:   getDeviceId(),
       };
 
+      // Hard gate — no queue writes when Redis is degraded.
+      if (isDegradedRef.current) {
+        console.warn(
+          `[HADE] emitVibeSignal blocked — system degraded, signal not queued (venue=${venueId})`,
+        );
+        return vibeSignal;
+      }
+
       // Only track real venue IDs (Google Place IDs) in node_hints.
       // LLM and static fallback decisions return synthetic IDs like "fallback-abc123"
       // or "offline-abc123" that will never match a Place in a future Tier 2 response.
@@ -520,7 +537,7 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
       }
 
       // Enqueue for idle-frame flush — never blocks the render cycle
-      signalQueue.current.setSessionId(context.session_id ?? null);
+      signalQueue.current.setSessionId(sessionIdRef.current);
       signalQueue.current.enqueue(vibeSignal);
 
       return vibeSignal;
@@ -536,6 +553,7 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
     response,
     isLoading,
     error,
+    isDegraded,
     setGeo,
     setRadius,
     emit,

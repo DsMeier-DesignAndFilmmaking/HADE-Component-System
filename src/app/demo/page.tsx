@@ -52,7 +52,7 @@ const SAMPLE_CONTENT: Record<SignalType, string[]> = {
 // DEFAULT_GEO removed — passing fake Denver coords is worse than passing null
 
 function DesktopDebugDemo() {
-  const { signals, emit, response, context, isLoading, error, decide, setGeo, setRadius, pivot, communitySignals, setCommunitySignals, emitVibeSignal } = useHadeAdaptiveContext();
+  const { signals, emit, response, context, isLoading, error, decide, setGeo, setRadius, pivot, communitySignals, setCommunitySignals, emitVibeSignal, isDegraded } = useHadeAdaptiveContext();
   const { settings, updateSettings } = useHadeSettings();
 
   // ─── Settings Panel ─────────────────────────────────────────────────────────
@@ -259,6 +259,7 @@ function DesktopDebugDemo() {
         className="mb-6"
         venueId={response?.decision?.id}
         venueName={response?.decision?.venue_name}
+        isDegraded={isDegraded}
         onVibeSignal={(tags, sentiment) => {
           if (response?.decision?.id) {
             emitVibeSignal(response.decision.id, tags, sentiment);

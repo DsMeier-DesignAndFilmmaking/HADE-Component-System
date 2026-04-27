@@ -7,6 +7,7 @@ import { setOfflineCache, getValidCache } from "@/lib/hade/cache";
 import type { CacheEntry, CachedVenue, CachedLocationNode } from "@/lib/hade/cache";
 import { haversineDistanceMeters } from "@/lib/hade/engine";
 import { getRedisMode } from "@/lib/hade/redis";
+import { getNearbyUGC, ugcToPlaceOption } from "@/lib/hade/ugc";
 
 export const runtime = "nodejs";
 
@@ -145,7 +146,8 @@ async function generateDecision(
     );
 
     // ── Tier 2: Synthetic (real Places API candidates) ────────────────────────
-    const synthetic = await generateSyntheticDecision(body, reqId, geoHint);
+    const bodyForTier2 = await injectUGCCandidates(body, geoHint, reqId);
+    const synthetic = await generateSyntheticDecision(bodyForTier2, reqId, geoHint);
 
     if (synthetic.ok) {
       const elapsed = Date.now() - startedAt;
@@ -222,6 +224,56 @@ async function enrichWithNodeWeights(
   return { ...body, location_nodes: nodes };
 }
 
+// ─── UGC candidate injection ─────────────────────────────────────────────────
+
+/**
+ * Fetches nearby UGC entities and merges them into `custom_candidates` before
+ * the Tier 2 synthetic engine runs. Caller-supplied entries take precedence
+ * over stored UGC when IDs collide (last-write-wins on the caller side).
+ *
+ * The synthetic engine's existing merge + filter + scoring pipeline runs
+ * unchanged — UGC entries are indistinguishable from any other custom_candidate.
+ */
+async function injectUGCCandidates(
+  body: Record<string, unknown>,
+  geo: GeoLocation | null,
+  reqId: string,
+): Promise<Record<string, unknown>> {
+  if (!geo) return body;
+
+  const radiusRaw = (body as { radius_meters?: unknown }).radius_meters;
+  const radius =
+    typeof radiusRaw === "number" && Number.isFinite(radiusRaw) && radiusRaw > 0
+      ? radiusRaw
+      : 800;
+
+  let ugcEntities;
+  try {
+    ugcEntities = await getNearbyUGC(geo, radius);
+  } catch {
+    return body;
+  }
+
+  if (ugcEntities.length === 0) return body;
+
+  const ugcPlaces = ugcEntities.map((e) => ugcToPlaceOption(e, geo));
+
+  // Merge: UGC first, then caller's custom_candidates overwrite on id collision.
+  const callerRaw = (body as { custom_candidates?: unknown }).custom_candidates;
+  const callerCandidates = Array.isArray(callerRaw) ? (callerRaw as PlaceOption[]) : [];
+  const byId = new Map<string, PlaceOption>();
+  for (const p of ugcPlaces)         byId.set(p.id, p);
+  for (const c of callerCandidates)  byId.set(c.id, c);
+  const merged = [...byId.values()];
+
+  console.log(
+    `[hade-decide ${reqId}]   ↗ injecting ${ugcPlaces.length} UGC candidate(s)` +
+      ` (custom_candidates pool: ${merged.length})`,
+  );
+
+  return { ...body, custom_candidates: merged };
+}
+
 // ─── Stage 1: Parse body ─────────────────────────────────────────────────────
 
 async function safeParseBody(
@@ -252,6 +304,65 @@ function validatePayload(
     console.warn(`[hade-decide ${reqId}] ✗ validation: ${msg}`);
     return { ok: false, error: msg };
   }
+
+  const candidatesResult = validateCustomCandidates(body, reqId);
+  if (!candidatesResult.ok) return candidatesResult;
+
+  return { ok: true };
+}
+
+/**
+ * Validates custom_candidates if present.
+ *
+ * Only checks the minimal contract: each entry must have a non-empty string
+ * `id`, a non-empty string `name`, and a geo with finite lat/lng.
+ * All other PlaceOption fields are optional — no Google-specific constraints.
+ *
+ * Returns { ok: true } when the field is absent (fully optional).
+ * Returns { ok: false } on the first malformed entry.
+ */
+function validateCustomCandidates(
+  body: Record<string, unknown>,
+  reqId: string,
+): ValidationResult {
+  const raw = (body as { custom_candidates?: unknown }).custom_candidates;
+  if (raw === undefined) return { ok: true };
+
+  if (!Array.isArray(raw)) {
+    const msg = "custom_candidates must be an array";
+    console.warn(`[hade-decide ${reqId}] ✗ validation: ${msg}`);
+    return { ok: false, error: msg };
+  }
+
+  for (let i = 0; i < raw.length; i++) {
+    const entry = raw[i];
+    if (!entry || typeof entry !== "object") {
+      const msg = `custom_candidates[${i}]: must be an object`;
+      console.warn(`[hade-decide ${reqId}] ✗ validation: ${msg}`);
+      return { ok: false, error: msg };
+    }
+
+    const c = entry as Record<string, unknown>;
+
+    if (typeof c.id !== "string" || !c.id.trim()) {
+      const msg = `custom_candidates[${i}]: id must be a non-empty string`;
+      console.warn(`[hade-decide ${reqId}] ✗ validation: ${msg}`);
+      return { ok: false, error: msg };
+    }
+
+    if (typeof c.name !== "string" || !c.name.trim()) {
+      const msg = `custom_candidates[${i}]: name must be a non-empty string`;
+      console.warn(`[hade-decide ${reqId}] ✗ validation: ${msg}`);
+      return { ok: false, error: msg };
+    }
+
+    if (!extractGeo(c)) {
+      const msg = `custom_candidates[${i}]: geo must have finite lat and lng`;
+      console.warn(`[hade-decide ${reqId}] ✗ validation: ${msg}`);
+      return { ok: false, error: msg };
+    }
+  }
+
   return { ok: true };
 }
 
@@ -554,5 +665,9 @@ function summarizePayload(body: Record<string, unknown>): string {
   const rejHistory = (body as { rejection_history?: unknown[] }).rejection_history;
   const rejCount = Array.isArray(rejHistory) ? rejHistory.length : 0;
 
-  return `${geoStr} intent=${String(intent)} persona=${String(personaId)} rejections=${rejCount}`;
+  const customCandidates = (body as { custom_candidates?: unknown[] }).custom_candidates;
+  const customCount = Array.isArray(customCandidates) ? customCandidates.length : 0;
+
+  const customStr = customCount > 0 ? ` custom_candidates=${customCount}` : "";
+  return `${geoStr} intent=${String(intent)} persona=${String(personaId)} rejections=${rejCount}${customStr}`;
 }

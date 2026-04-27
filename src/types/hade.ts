@@ -187,6 +187,20 @@ export interface DecideRequest {
    * The decide handler uses these to fetch fresh weights before scoring.
    */
   node_hints?: string[];
+  /**
+   * Optional caller-supplied entity candidates (events, pop-ups, custom venues)
+   * to surface alongside or instead of Google Places results.
+   *
+   * Each entry must carry a stable `id`, a display `name`, and a `geo` — all
+   * other PlaceOption fields are optional and their absence does not fail
+   * validation. No Google-specific constraints are enforced: `rating`,
+   * `is_open`, and `price_level` may be omitted.
+   *
+   * The decide handler does not yet inject these into Tier 2 scoring
+   * (synthetic pipeline). They are forwarded to the upstream LLM (Tier 1)
+   * as part of the request body for context-aware selection.
+   */
+  custom_candidates?: PlaceOption[];
 }
 
 /**
@@ -293,6 +307,8 @@ export interface HadeResponse {
   context_snapshot: DecideResponse["context_snapshot"];
   session_id: string;
   debug?: HadeDebugPayload;
+  /** Mirror of x-hade-source header. "fallback" means Tier 3 static stub. */
+  source?: string;
 }
 
 // ─── Debug Payload ────────────────────────────────────────────────────────────
@@ -402,6 +418,12 @@ export interface AdaptiveState {
   response: HadeResponse | null;
   isLoading: boolean;
   error: string | null;
+  /**
+   * True when the last /api/hade/decide response indicated Redis is degraded
+   * (body.degraded === true OR x-hade-degraded: 1 header). When true,
+   * emitVibeSignal is a no-op and the UGC UI should show a paused state.
+   */
+  isDegraded: boolean;
   setGeo: (geo: { lat: number; lng: number }) => void;
   setRadius: (radius_meters: number | ((prev: number) => number)) => void;
   emit: (type: SignalType, payload?: Partial<Signal>) => Signal;
@@ -416,6 +438,8 @@ export interface AdaptiveState {
   /**
    * Emit a VibeSignal for a specific venue. Non-blocking — enqueues immediately
    * and flushes to POST /api/hade/signal on the next idle frame.
+   * No-op when isDegraded is true — logs a warning and returns the signal
+   * object without writing to the queue.
    */
   emitVibeSignal: (
     venueId: string,
@@ -680,6 +704,24 @@ export interface PlaceOption {
   rating?: number;
   /** Normalised price level: 0 (free) – 4 (very expensive) */
   price_level?: number;
+}
+
+/**
+ * User-generated entity (event, popup, custom venue) persisted in the UGC store.
+ * Distinct from PlaceOption — UGC is the storage shape; PlaceOption is the
+ * candidate-pool shape produced by `ugcToPlaceOption()` for synthetic.ts.
+ */
+export interface UGCEntity {
+  id: string;
+  venue_name: string;
+  category: string;
+  geo: GeoLocation;
+  /** ISO-8601 timestamp the entity was created. */
+  created_at: string;
+  /** ISO-8601 timestamp at which the entity expires. Drives Redis TTL when present. */
+  expires_at?: string;
+  /** Opaque device id of the creator. */
+  created_by?: string;
 }
 
 export interface FetchNearbyOptions {

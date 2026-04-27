@@ -5,6 +5,7 @@ interface HeroDecisionCardProps {
   category: string;
   neighborhood?: string;
   reasons: string[];
+  isFallback?: boolean;
 }
 
 const CATEGORY_EMOJI: Record<string, string> = {
@@ -38,6 +39,7 @@ export function HeroDecisionCard({
   category,
   neighborhood,
   reasons,
+  isFallback = false,
 }: HeroDecisionCardProps) {
   const key = category.toLowerCase();
   const emoji = CATEGORY_EMOJI[key] ?? "📍";
@@ -46,7 +48,12 @@ export function HeroDecisionCard({
   if (neighborhood && !/[\d,]/.test(neighborhood)) contextParts.push(neighborhood);
 
   return (
-    <section className="flex flex-col rounded-3xl bg-surface p-6 shadow-soft">
+    <section className="relative flex flex-col rounded-3xl bg-surface p-6 shadow-soft">
+      {isFallback && (
+        <span className="absolute top-3 right-4 rounded-full border border-ink/10 bg-ink/5 px-2 py-0.5 text-[10px] font-medium tracking-wide text-ink/40">
+          Limited Mode
+        </span>
+      )}
       <h1 className="text-2xl font-semibold leading-tight text-ink">
         {title}
       </h1>

@@ -11,6 +11,7 @@ import { SecondaryActions } from "./SecondaryActions";
 import { RefineSheet } from "./RefineSheet";
 import { VibeSheet } from "./VibeSheet";
 import { LoadingState } from "./LoadingState";
+import { ErrorBoundary } from "./ErrorBoundary";
 
 type Urgency = "low" | "medium" | "high";
 type PivotReason = "Too crowded" | "Wrong vibe" | "Too far" | "Overpriced";
@@ -66,6 +67,7 @@ export function DecisionScreen({ scenarioId }: DecisionScreenProps) {
     reasoning,
     status,
     error,
+    isFallback,
     regenerate,
     refine,
   } = useHade({ scenarioId });
@@ -184,12 +186,15 @@ export function DecisionScreen({ scenarioId }: DecisionScreenProps) {
           exit={{ x: -32, opacity: 0 }}
           transition={{ duration: 0.24, ease: "easeOut" }}
         >
-          <HeroDecisionCard
-            title={decision.title}
-            category={decision.category}
-            neighborhood={decision.neighborhood}
-            reasons={reasoning}
-          />
+          <ErrorBoundary name="HeroDecisionCard">
+            <HeroDecisionCard
+              title={decision.title}
+              category={decision.category}
+              neighborhood={decision.neighborhood}
+              reasons={reasoning}
+              isFallback={isFallback}
+            />
+          </ErrorBoundary>
         </motion.div>
       </AnimatePresence>
 
@@ -221,20 +226,24 @@ export function DecisionScreen({ scenarioId }: DecisionScreenProps) {
   </div>
 </div>
 
-      <RefineSheet
-        open={refineOpen}
-        onClose={() => setRefineOpen(false)}
-        onConfirm={handleRefineConfirm}
-      />
+      <ErrorBoundary name="RefineSheet" onReset={() => setRefineOpen(false)}>
+        <RefineSheet
+          open={refineOpen}
+          onClose={() => setRefineOpen(false)}
+          onConfirm={handleRefineConfirm}
+        />
+      </ErrorBoundary>
 
       <AnimatePresence>
         {showVibeSheet && visitRef.current && (
-          <VibeSheet
-            venueId={visitRef.current.venueId}
-            venueName={visitRef.current.venueName}
-            onDismiss={handleDismiss}
-            onSubmit={handleSubmit}
-          />
+          <ErrorBoundary name="VibeSheet" onReset={() => setShowVibeSheet(false)}>
+            <VibeSheet
+              venueId={visitRef.current.venueId}
+              venueName={visitRef.current.venueName}
+              onDismiss={handleDismiss}
+              onSubmit={handleSubmit}
+            />
+          </ErrorBoundary>
         )}
       </AnimatePresence>
     </div>

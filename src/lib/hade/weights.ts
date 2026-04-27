@@ -441,7 +441,7 @@ function createNeutralNode(venueId: string): LocationNode {
   return {
     venue_id: venueId,
     weight_map: {} as Record<VibeTag, number>,
-    trust_score: 0,
+    trust_score: 0.25,
     signal_count: 0,
     last_updated: new Date().toISOString(),
     version: 0,
