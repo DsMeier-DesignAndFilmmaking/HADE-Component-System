@@ -125,6 +125,7 @@ export function useHade(config?: UseHadeConfig): UseHadeReturn {
       distance: formatDistance(d.distance_meters),
       eta: formatEta(d.eta_minutes),
       geo: d.geo,
+      ...(d.ugc_meta ? { ugc_meta: d.ugc_meta } : {}),
     };
   }, [response]);
 

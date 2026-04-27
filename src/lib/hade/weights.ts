@@ -34,6 +34,21 @@ const NEUTRAL_WEIGHT = 0.5;
 /** Redis key TTL (7 days). */
 const NODE_TTL_SECONDS = 60 * 60 * 24 * 7;
 
+/**
+ * Quantisation window for vibe-score decay (5 minutes in ms).
+ *
+ * `getNodeVibeScore` uses `bucketedNowMs()` instead of `Date.now()` so that
+ * all requests within the same 5-minute window see an identical elapsed-time
+ * value and therefore an identical recency factor. This eliminates continuous
+ * score drift between otherwise identical requests, making the decay
+ * deterministic within each bucket without removing it across buckets.
+ */
+const SCORE_BUCKET_MS = 5 * 60 * 1000;
+
+function bucketedNowMs(): number {
+  return Math.floor(Date.now() / SCORE_BUCKET_MS) * SCORE_BUCKET_MS;
+}
+
 // ─── In-process fallback registry — DEV ONLY ─────────────────────────────────
 //
 // globalThis.__hadeNodeRegistry is DEV ONLY. In production this module uses a
@@ -213,7 +228,7 @@ export async function getNodeVibeScore(venueId: string): Promise<number> {
     const lastUpdated = new Date(node.last_updated).getTime();
     if (!lastUpdated || isNaN(lastUpdated)) return NEUTRAL_WEIGHT;
 
-    const hoursSinceUpdate = Math.max(0, (Date.now() - lastUpdated) / 3_600_000);
+    const hoursSinceUpdate = Math.max(0, (bucketedNowMs() - lastUpdated) / 3_600_000);
     const recencyFactor    = Math.min(1, Math.max(0, Math.exp(-0.15 * hoursSinceUpdate)));
 
     const score = 0.5 + (rawMean - 0.5) * recencyFactor;
@@ -236,11 +251,38 @@ export async function getNodeVibeScore(venueId: string): Promise<number> {
     const lastUpdated = new Date(node.last_updated).getTime();
     if (!lastUpdated || isNaN(lastUpdated)) return NEUTRAL_WEIGHT;
 
-    const hoursSinceUpdate = Math.max(0, (Date.now() - lastUpdated) / 3_600_000);
+    const hoursSinceUpdate = Math.max(0, (bucketedNowMs() - lastUpdated) / 3_600_000);
     const recencyFactor    = Math.min(1, Math.max(0, Math.exp(-0.15 * hoursSinceUpdate)));
 
     const score = 0.5 + (rawMean - 0.5) * recencyFactor;
     return Math.min(1, Math.max(0, score));
+  }
+}
+
+/**
+ * Reads the persisted `trust_score` for a venue's LocationNode.
+ *
+ * Returns 0.5 (neutral) when:
+ *   • No LocationNode exists for the venue
+ *   • Redis is unreachable in production
+ *   • The stored trust_score is missing / unparseable
+ *
+ * Bounded to [0, 1] by `sanitizeNode` on read. The caller (synthetic.ts)
+ * converts this to a trust delta that contributes — alongside vibe — to a
+ * jointly-bounded social overlay; neutral 0.5 yields 0 delta so unaffected
+ * venues score identically to the pre-trust baseline.
+ *
+ * Never throws.
+ */
+export async function getNodeTrustScore(venueId: string): Promise<number> {
+  try {
+    const node = await getStoredNode(venueId);
+    if (!node) return 0.5;
+    const t = Number(node.trust_score);
+    return Number.isFinite(t) ? clamp(t, 0, 1) : 0.5;
+  } catch (error) {
+    handleRedisFailure({ operation: "getNodeTrustScore", venueId }, error);
+    return 0.5;
   }
 }
 

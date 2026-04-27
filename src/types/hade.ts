@@ -226,6 +226,18 @@ export interface HadeDecision {
 
   // The anchor sentence that drove this decision
   situation_summary: string;
+
+  // Present when the winning candidate was a UGC entity (isUGC: true).
+  // Populated by the Tier 2 synthetic engine. Absent for Google Places results.
+  ugc_meta?: {
+    is_ugc: true;
+    /** ISO-8601 expiry timestamp. Absent for permanent UGC entries. */
+    expires_at?: string;
+    /** ISO-8601 creation timestamp. */
+    created_at: string;
+    /** Pre-computed walking-distance bucket copy ("Around the corner"). */
+    distance_copy: string;
+  };
 }
 
 /**
@@ -281,6 +293,13 @@ export interface HadeAPIDecision {
   distance: string;
   eta?: string;
   geo: GeoLocation;
+  /** Present when the decision is a UGC moment. Mirrors HadeDecision.ugc_meta. */
+  ugc_meta?: {
+    is_ugc: true;
+    expires_at?: string;
+    created_at: string;
+    distance_copy: string;
+  };
 }
 
 export interface HadeAPIMeta {
@@ -309,6 +328,15 @@ export interface HadeResponse {
   debug?: HadeDebugPayload;
   /** Mirror of x-hade-source header. "fallback" means Tier 3 static stub. */
   source?: string;
+  /**
+   * Coarse signal thresholds used by the Level 2 "Why this?" explanation sheet.
+   * Derived server-side from the winner's vibeScore and trustScore.
+   * Absent when the decision came from Tier 1 (LLM) or Tier 3 (static fallback).
+   */
+  explanation_signals?: {
+    vibe_match: "strong" | "moderate" | "none";
+    social_proof: "high" | "moderate" | "none";
+  };
 }
 
 // ─── Debug Payload ────────────────────────────────────────────────────────────
@@ -325,6 +353,12 @@ export interface HadeDebugCandidate {
   context_score: number;
   intent_score: number;
   final_score: number;
+  /** Synthetic-mode additions — populated when the Tier 2 engine is used. */
+  isUGC?: boolean;
+  distance?: number;
+  rating_score?: number;
+  vibe_score?: number;
+  trust_score?: number;
 }
 
 /**
@@ -342,6 +376,11 @@ export interface HadeDebugPayload {
   provider_used?: string;
   strict_constraints_active?: boolean;
   persona_id?: string | null;
+  /** Synthetic-engine fields — present when Tier 2 was used. */
+  candidates_evaluated?: number;
+  ugc_injected?: number;
+  rejection_applied?: boolean;
+  final_reasoning?: string;
 }
 
 // ─── Signals ──────────────────────────────────────────────────────────────────
@@ -704,6 +743,13 @@ export interface PlaceOption {
   rating?: number;
   /** Normalised price level: 0 (free) – 4 (very expensive) */
   price_level?: number;
+  /** True when this candidate originated from the UGC store. UGC entries
+   *  bypass the Google-taxonomy category filter in synthetic.ts. */
+  isUGC?: boolean;
+  /** ISO-8601 creation timestamp. Present only when isUGC === true. */
+  created_at?: string;
+  /** ISO-8601 expiry timestamp. Present only when isUGC === true. */
+  expires_at?: string;
 }
 
 /**

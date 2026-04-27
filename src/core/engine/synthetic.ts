@@ -21,10 +21,12 @@ import {
   generateSituationSummary,
   inferIntentFromTime,
 } from "@/lib/hade/engine";
-import { getNodeVibeScore } from "@/lib/hade/weights";
+import { getNodeTrustScore, getNodeVibeScore } from "@/lib/hade/weights";
+import { getDistanceCopy } from "@/lib/hade/ugcCopy";
 import type {
   GeoLocation,
   HadeContext,
+  HadeDebugPayload,
   Intent,
   DecideResponse,
   PlaceOption,
@@ -33,8 +35,19 @@ import type {
 
 // ─── Result type ──────────────────────────────────────────────────────────────
 
+type ExplanationSignals = {
+  vibe_match: "strong" | "moderate" | "none";
+  social_proof: "high" | "moderate" | "none";
+};
+
 type SyntheticResult =
-  | { ok: true; data: DecideResponse; places: PlaceOption[] }
+  | {
+      ok: true;
+      data: DecideResponse;
+      places: PlaceOption[];
+      debugPayload: HadeDebugPayload;
+      explanation_signals?: ExplanationSignals;
+    }
   | { ok: false };
 
 // ─── Intent / radius helpers ──────────────────────────────────────────────────
@@ -109,7 +122,10 @@ function filterPlacesByMappedCategory(places: PlaceOption[], categories: string[
     categories.map((category) => normalizeMappedCategory(category)),
   );
 
-  return places.filter((place) => normalizedCategories.has(place.category));
+  return places.filter((place) => {
+    if (place.isUGC) return true;
+    return normalizedCategories.has(place.category);
+  });
 }
 
 function normalizeMappedCategory(category: string): string {
@@ -141,6 +157,18 @@ function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
+/** All intermediate values produced by scorePlaceOption, exposed for trace logging. */
+interface ScoreBreakdown {
+  proximityScore: number;
+  ratingScore: number;
+  vibeScore: number;
+  trustScore: number;
+  finalScore: number;
+}
+
+/** Rounds to 3 decimal places — keeps trace logs readable without precision loss. */
+const r3 = (v: number) => Math.round(v * 1000) / 1000;
+
 /**
  * Composite score that balances closeness, quality, and real-time UGC sentiment.
  *
@@ -165,27 +193,51 @@ function scorePlaceOption(
   place: PlaceOption,
   geo: GeoLocation,
   vibeScore: number,
+  trustScore: number,
   weights?: ScoringWeights,
-): number {
+): ScoreBreakdown {
   void geo;
-  // ── Base score (unchanged behaviour when no UGC exists) ──────────────────
-  const proximityScore = Math.max(0, 1 - place.distance_meters / 3000);
-  const ratingScore    = ((place.rating ?? 3.5) - 1) / 4; // normalise 1–5 → 0–1
+
+  // ── Proximity (UGC dampened: floor distance at 100 m to block "drop-pin
+  //    at user location" exploits without changing real-world UX) ──────────
+  const effectiveDistance = place.isUGC
+    ? Math.max(place.distance_meters, 100)
+    : place.distance_meters;
+  const proximityScore = Math.max(0, 1 - effectiveDistance / 3000);
+
+  // ── Rating (UGC without an external rating starts slightly below the
+  //    Google neutral baseline of 0.625 to prevent dominance on cold start) ─
+  const ratingScore =
+    place.isUGC && place.rating === undefined
+      ? 0.55
+      : ((place.rating ?? 3.5) - 1) / 4; // normalise 1–5 → 0–1
+
+  // ── Weighted base — unchanged ratios (0.6 / 0.4) ─────────────────────────
   const proximityWeight = weights?.proximity ?? 0.6;
-  const ratingWeight = weights?.rating ?? 0.4;
+  const ratingWeight    = weights?.rating    ?? 0.4;
   const baseScore =
     proximityScore * proximityWeight +
     ratingScore * ratingWeight;
 
-  // ── UGC vibe overlay ─────────────────────────────────────────────────────
-  // getNodeVibeScore() returns 0.5 (neutral) when:
-  //   • The venue has no LocationNode entry (never received a VibeSignal)
-  //   • All accumulated signals have expired and been filtered out
-  //   • The LocationNode signal_count is 0
-  // In all three cases vibe_delta = 0 and final_score === baseScore exactly.
-  const vibeDelta = (vibeScore - 0.5) * 0.2; // range: −0.10 to +0.10
+  // ── Social overlay: vibe + trust, jointly bounded ────────────────────────
+  // Both inputs default to 0.5 (neutral) when no LocationNode exists, so a
+  // venue with no UGC history has vibeDelta = trustDelta = 0 and scores
+  // identically to the pre-overlay baseline.
+  //   vibeDelta:  ±0.10  (×0.20)
+  //   trustDelta: ±0.075 (×0.15)
+  // The combined delta is clamped to ±0.15 so vibe and trust cannot stack
+  // beyond the cap — prevents signal-stacking exploits.
+  const vibeDelta  = (vibeScore  - 0.5) * 0.2;
+  const trustDelta = (trustScore - 0.5) * 0.15;
+  const boundedSocialDelta = clamp(vibeDelta + trustDelta, -0.15, 0.15);
 
-  return clamp(baseScore + vibeDelta, 0, 1);
+  return {
+    proximityScore,
+    ratingScore,
+    vibeScore,
+    trustScore,
+    finalScore: clamp(baseScore + boundedSocialDelta, 0, 1),
+  };
 }
 
 // ─── Main export ──────────────────────────────────────────────────────────────
@@ -242,6 +294,8 @@ export async function generateSyntheticDecision(
       open_now: true,
     });
 
+    const googleCount = places.length;
+
     // ── UGC injection: merge custom_candidates into the candidate pool ───────
     // Caller-supplied entities (events, pop-ups, custom venues) are appended
     // to the Google fetch and deduplicated by id with last-write-wins semantics
@@ -264,7 +318,24 @@ export async function generateSyntheticDecision(
       );
     }
 
+    const ugcInjectedCount = places.filter((p) => p.isUGC).length;
     const relevantPlaces = filterPlacesByMappedCategory(places, targetCategories);
+    const ugcSurvivedCount = relevantPlaces.filter((p) => p.isUGC).length;
+
+    if (ugcInjectedCount > 0) {
+      const ugcFilteredOutCount = ugcInjectedCount - ugcSurvivedCount;
+      if (ugcSurvivedCount === 0) {
+        console.warn(
+          `[hade-synthetic ${reqId}] ⚠ UGC fully filtered out` +
+            ` — ugc_injected=${ugcInjectedCount} ugc_survived=0 ugc_filtered_out=${ugcInjectedCount}`,
+        );
+      } else {
+        console.log(
+          `[hade-synthetic ${reqId}] UGC visibility:` +
+            ` ugc_injected=${ugcInjectedCount} ugc_survived=${ugcSurvivedCount} ugc_filtered_out=${ugcFilteredOutCount}`,
+        );
+      }
+    }
 
     if (relevantPlaces.length === 0) {
       console.warn(`[hade-synthetic ${reqId}] no places returned — falling through to Tier 3`);
@@ -316,17 +387,34 @@ export async function generateSyntheticDecision(
 
     // ── Pick best place ───────────────────────────────────────────────────────
     const scoredPlaces = await Promise.all(
-      filteredPlaces.map(async (place) => ({
-        place,
-        score: scorePlaceOption(
+      filteredPlaces.map(async (place) => {
+        const [vibeScore, trustScore] = await Promise.all([
+          getNodeVibeScore(place.id),
+          getNodeTrustScore(place.id),
+        ]);
+        const breakdown = scorePlaceOption(
           place,
           geoHint,
-          await getNodeVibeScore(place.id),
+          vibeScore,
+          trustScore,
           scoringWeights,
-        ),
-      })),
+        );
+        return { place, score: breakdown.finalScore, breakdown };
+      }),
     );
-    const sorted = scoredPlaces.sort((a, b) => b.score - a.score);
+    const sorted = scoredPlaces.sort((a, b) => {
+      // 1. finalScore DESC
+      const scoreDiff = b.score - a.score;
+      if (scoreDiff !== 0) return scoreDiff;
+      // 2. distance_meters ASC — closer wins on tie
+      const distDiff = a.place.distance_meters - b.place.distance_meters;
+      if (distDiff !== 0) return distDiff;
+      // 3. isUGC DESC — prefer UGC in exact ties (community-first)
+      const ugcDiff = (b.place.isUGC ? 1 : 0) - (a.place.isUGC ? 1 : 0);
+      if (ugcDiff !== 0) return ugcDiff;
+      // 4. id ASC — final stable tie-breaker, immune to input ordering
+      return a.place.id.localeCompare(b.place.id);
+    });
     const best = sorted[0].place;
 
     // ── Resolve display intent (infer from time if absent) ────────────────────
@@ -336,6 +424,18 @@ export async function generateSyntheticDecision(
       "anything";
 
     // ── Assemble HadeDecision ─────────────────────────────────────────────────
+    const winnerBreakdown = sorted[0].breakdown;
+    const ugcMeta = best.isUGC && best.created_at
+      ? {
+          ugc_meta: {
+            is_ugc: true as const,
+            created_at: best.created_at,
+            ...(best.expires_at ? { expires_at: best.expires_at } : {}),
+            distance_copy: getDistanceCopy(best.distance_meters),
+          },
+        }
+      : {};
+
     const decision = {
       id: best.id,
       venue_name: best.name,
@@ -348,6 +448,7 @@ export async function generateSyntheticDecision(
       confidence: 0.65,
       situation_summary: situationSummary,
       ...(best.address ? { neighborhood: best.address } : {}),
+      ...ugcMeta,
     };
 
     // ── Assemble DecideResponse ───────────────────────────────────────────────
@@ -370,7 +471,89 @@ export async function generateSyntheticDecision(
         ` — "${best.name}" (${best.distance_meters}m, ${filteredPlaces.length} candidate(s))`,
     );
 
-    return { ok: true, data, places: filteredPlaces };
+    // ── Decision trace — structured audit log (no PII: geo truncated to 3dp) ─
+    const ugcCount = customCandidates.length;
+    const winReason =
+      sorted.length === 1
+        ? "only_candidate"
+        : sorted[0].score > (sorted[1]?.score ?? -1)
+          ? "highest_score"
+          : "tie_broken";
+    const top3 = sorted.slice(0, 3);
+    console.log("[hade-trace]", JSON.stringify({
+      trace_id: reqId,
+      input: {
+        geo: { lat: r3(geoHint.lat), lng: r3(geoHint.lng) },
+        intent: intent ?? "any",
+        radius,
+      },
+      candidates: {
+        google_count: googleCount,
+        ugc_count: ugcCount,
+        merged_count: googleCount + ugcCount > 0 ? places.length : 0,
+      },
+      filtering: {
+        after_category: relevantPlaces.length,
+        after_rejection: filteredPlaces.length,
+      },
+      scoring: top3.map(({ place, breakdown }) => ({
+        id: place.id,
+        isUGC: place.isUGC ?? false,
+        distance: place.distance_meters,
+        proximityScore: r3(breakdown.proximityScore),
+        ratingScore:    r3(breakdown.ratingScore),
+        vibeScore:      r3(breakdown.vibeScore),
+        trustScore:     r3(breakdown.trustScore),
+        finalScore:     r3(breakdown.finalScore),
+      })),
+      selected: {
+        id: best.id,
+        finalScore: r3(sorted[0].score),
+        reason: winReason,
+      },
+    }));
+
+    // ── Debug payload (returned when caller sets settings.debug=true) ─────────
+    const finalReasoning =
+      winReason === "only_candidate"
+        ? `Only candidate: ${best.id}`
+        : winReason === "highest_score"
+          ? `Selected ${best.id} (score ${r3(sorted[0].score)}); next was ${sorted[1].place.id} (${r3(sorted[1].score)})`
+          : `Tied at ${r3(sorted[0].score)} — resolved by id: ${best.id} over ${sorted[1].place.id}`;
+
+    const debugPayload: HadeDebugPayload = {
+      candidates_evaluated: filteredPlaces.length,
+      ugc_injected: ugcInjectedCount,
+      rejection_applied: rejected.size > 0,
+      final_reasoning: finalReasoning,
+      scoring_breakdown: top3.map(({ place, breakdown }) => ({
+        venue_id:       place.id,
+        venue_name:     place.name,
+        category:       place.category,
+        proximity_score: r3(breakdown.proximityScore),
+        context_score:  0,
+        intent_score:   0,
+        final_score:    r3(breakdown.finalScore),
+        isUGC:          place.isUGC ?? false,
+        distance:       place.distance_meters,
+        rating_score:   r3(breakdown.ratingScore),
+        vibe_score:     r3(breakdown.vibeScore),
+        trust_score:    r3(breakdown.trustScore),
+      })),
+    };
+
+    const explanation_signals: ExplanationSignals = {
+      vibe_match:
+        winnerBreakdown.vibeScore >= 0.7 ? "strong"
+        : winnerBreakdown.vibeScore >= 0.5 ? "moderate"
+        : "none",
+      social_proof:
+        winnerBreakdown.trustScore >= 0.6 ? "high"
+        : winnerBreakdown.trustScore >= 0.5 ? "moderate"
+        : "none",
+    };
+
+    return { ok: true, data, places: filteredPlaces, debugPayload, explanation_signals };
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
     console.warn(`[hade-synthetic ${reqId}] ✗ threw unexpectedly: ${detail}`);

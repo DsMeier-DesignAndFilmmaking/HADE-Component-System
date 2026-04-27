@@ -52,11 +52,12 @@ function deriveSentiment(tags: string[]): "positive" | "negative" | "neutral" {
 type Props = {
   venueId:   string;
   venueName: string;
+  isUGC?:    boolean;
   onDismiss: () => void;
   onSubmit:  (tags: string[], sentiment: "positive" | "negative" | "neutral") => void;
 };
 
-export function VibeSheet({ venueId, venueName, onDismiss, onSubmit }: Props) {
+export function VibeSheet({ venueId, venueName, isUGC = false, onDismiss, onSubmit }: Props) {
   const { emitVibeSignal } = useHadeAdaptiveContext();
   const [selected, setSelected]   = useState<Set<Tag>>(new Set());
   const [submitting, setSubmitting] = useState(false);
@@ -126,6 +127,14 @@ export function VibeSheet({ venueId, venueName, onDismiss, onSubmit }: Props) {
 
       {/* Tag chips */}
       <div className="flex flex-wrap gap-2 mb-6">
+        {isUGC && (
+          <span
+            aria-label="Community — always selected"
+            className="inline-flex items-center rounded-full border border-accent/30 bg-accentSoft/60 px-3.5 py-1.5 text-sm font-medium text-accent/60 select-none"
+          >
+            Community
+          </span>
+        )}
         {TAGS.map((tag) => {
           const isSelected = selected.has(tag);
           return (

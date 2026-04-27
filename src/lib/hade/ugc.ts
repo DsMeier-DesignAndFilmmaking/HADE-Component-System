@@ -149,17 +149,44 @@ export async function getUGC(id: string): Promise<UGCEntity | null> {
 // ─── Read by geo radius ──────────────────────────────────────────────────────
 
 /**
+ * Deterministic sort for UGC candidates.
+ *
+ * Priority:
+ *   1. distance ASC   — closer venues rank first
+ *   2. created_at DESC — among equidistant entities, newer wins
+ *   3. id ASC          — final stable tie-breaker so Redis SMEMBERS order
+ *                        never influences the result
+ *
+ * Sorting here, before merge and scoring, ensures that identical inputs
+ * always produce identical candidate ordering regardless of Redis SET
+ * iteration order.
+ */
+function sortUGCEntities(entities: UGCEntity[], origin: GeoLocation): UGCEntity[] {
+  return [...entities].sort((a, b) => {
+    const distDiff =
+      haversineDistanceMeters(origin, a.geo) - haversineDistanceMeters(origin, b.geo);
+    if (distDiff !== 0) return distDiff;
+
+    const timeDiff = Date.parse(b.created_at) - Date.parse(a.created_at);
+    if (timeDiff !== 0) return timeDiff;
+
+    return a.id.localeCompare(b.id);
+  });
+}
+
+/**
  * Lists every live UGC entity within `radiusMeters` of `origin`.
  *
  * Strategy:
  *   1. SMEMBERS hade:ugc:index → candidate ids
  *   2. MGET hade:ugc:{id...}   → entities (null entries = expired/missing)
  *   3. Filter nulls + apply haversine radius in-memory
+ *   4. Sort deterministically (distance ASC → created_at DESC → id ASC)
  *
  * Stale ids in the index are tolerated; they surface as null and are dropped.
  *
  * In dev or production-without-Redis, falls back to scanning the in-process
- * registry (DEV ONLY) and applying the same haversine filter.
+ * registry (DEV ONLY) and applying the same filter and sort.
  */
 export async function getNearbyUGC(
   origin: GeoLocation,
@@ -167,6 +194,9 @@ export async function getNearbyUGC(
 ): Promise<UGCEntity[]> {
   const filterByRadius = (entities: UGCEntity[]): UGCEntity[] =>
     entities.filter((e) => haversineDistanceMeters(origin, e.geo) <= radiusMeters);
+
+  const filterAndSort = (entities: UGCEntity[]): UGCEntity[] =>
+    sortUGCEntities(filterByRadius(entities), origin);
 
   if (!hasRedis || !redis) {
     if (!canUseGlobalFallbackStorage()) {
@@ -176,7 +206,7 @@ export async function getNearbyUGC(
       );
       return [];
     }
-    return filterByRadius([...ugcRegistry.values()].map(deepCloneEntity));
+    return filterAndSort([...ugcRegistry.values()].map(deepCloneEntity));
   }
 
   try {
@@ -191,11 +221,11 @@ export async function getNearbyUGC(
         live.push(entry);
       }
     }
-    return filterByRadius(live);
+    return filterAndSort(live);
   } catch (error) {
     handleRedisFailure({ operation: "getNearbyUGC" }, error);
     if (!canUseGlobalFallbackStorage()) return [];
-    return filterByRadius([...ugcRegistry.values()].map(deepCloneEntity));
+    return filterAndSort([...ugcRegistry.values()].map(deepCloneEntity));
   }
 }
 
@@ -224,5 +254,8 @@ export function ugcToPlaceOption(
     geo: { ...entity.geo },
     distance_meters: Math.round(haversineDistanceMeters(origin, entity.geo)),
     is_open: true,
+    isUGC: true,
+    created_at: entity.created_at,
+    ...(entity.expires_at ? { expires_at: entity.expires_at } : {}),
   };
 }

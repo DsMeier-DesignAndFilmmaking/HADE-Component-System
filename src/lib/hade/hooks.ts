@@ -32,6 +32,7 @@ import {
 } from "./signals";
 import { SignalQueue } from "./queue";
 import { getDeviceId } from "./deviceId";
+import { computeTemporalState, getUGCCta } from "./ugcCopy";
 
 // ─── useHadeEngine ────────────────────────────────────────────────────────────
 
@@ -195,6 +196,17 @@ function _deriveUX(
   const highBar = 0.7 + confidenceThreshold * 0.5;
   const medBar  = 0.4 + confidenceThreshold * 0.3;
   const ui_state: UiState = c >= highBar ? "high" : c >= medBar ? "medium" : "low";
+
+  // UGC CTA — temporal state overrides confidence axis
+  if (decision.ugc_meta?.is_ugc) {
+    const temporal = computeTemporalState(
+      decision.ugc_meta.expires_at,
+      decision.ugc_meta.created_at,
+    );
+    const cta = getUGCCta(temporal, ui_state);
+    return { ui_state, cta, badges: [] };
+  }
+
   const cta =
     ui_state === "high" ? "Go now" :
     ui_state === "medium" ? "Explore nearby" :
@@ -419,6 +431,7 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
           session_id: data.session_id,
           debug: data.debug ?? undefined,
           source: hadeSource,
+          ...(data.explanation_signals ? { explanation_signals: data.explanation_signals } : {}),
         };
         setDecision(dec);
         setResponse(shaped);

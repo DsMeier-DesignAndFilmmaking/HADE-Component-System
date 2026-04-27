@@ -157,7 +157,16 @@ async function generateDecision(
       );
 
       const decisionNode = await getDecisionNode(synthetic.data.decision.id);
-      const enrichedSyntheticData = { ...synthetic.data, decision_node: decisionNode };
+      const debugMode =
+        (body as { settings?: { debug?: unknown } }).settings?.debug === true;
+      const enrichedSyntheticData = {
+        ...synthetic.data,
+        decision_node: decisionNode,
+        ...(debugMode ? { debug: synthetic.debugPayload } : {}),
+        ...(synthetic.explanation_signals
+          ? { explanation_signals: synthetic.explanation_signals }
+          : {}),
+      };
 
       // ── Tier 2.5: Write offline cache (fire-and-forget, non-blocking) ────────
       void writeCacheFromSynthetic(synthetic.places, body);
