@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import type { Intent, VibeTag } from "@/types/hade";
+import type { DecisionViewModel } from "@/lib/hade/viewModel";
 import { useHadeAdaptiveContext } from "@/lib/hade/hooks";
 import { useHade } from "@/lib/hade/useHade";
 import { computeTemporalState, getUGCPivotReasons } from "@/lib/hade/ugcCopy";
@@ -56,6 +57,69 @@ function toVibeTags(tags: string[]): VibeTag[] {
   ];
   const allowed = new Set(validTags);
   return tags.filter((tag): tag is VibeTag => allowed.has(tag as VibeTag));
+}
+
+function DebugOverlay({ decision }: { decision: DecisionViewModel }) {
+  const [expanded, setExpanded] = useState(false);
+  const pct = Math.round(decision.confidence * 100);
+  const pillClass = decision.is_ugc
+    ? "bg-orange-500/90 text-white"
+    : "bg-blue-500/90 text-white";
+
+  return (
+    <div className="fixed right-3 top-14 z-50 flex flex-col items-end gap-1.5">
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className={`rounded-full px-2.5 py-1 text-[10px] font-mono font-semibold leading-none shadow-lg ${pillClass}`}
+      >
+        {decision.is_ugc ? "◎ UGC" : "⊕ G"} · {pct}%
+      </button>
+
+      {expanded && (
+        <div className="w-44 rounded-xl border border-white/10 bg-ink/90 px-3 py-2.5 font-mono text-[10px] leading-relaxed text-white/90 shadow-xl backdrop-blur-sm">
+          <div className="flex justify-between">
+            <span className="text-white/50">is_ugc</span>
+            <span className={decision.is_ugc ? "text-orange-400" : "text-blue-400"}>
+              {decision.is_ugc ? "true" : "false"}
+            </span>
+          </div>
+
+          <div className="mt-1 flex justify-between">
+            <span className="text-white/50">confidence</span>
+            <span>{pct}%</span>
+          </div>
+          <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-white/15">
+            <div
+              className="h-full rounded-full bg-white/70 transition-all"
+              style={{ width: `${pct}%` }}
+            />
+          </div>
+
+          <div className="mt-1.5 flex justify-between">
+            <span className="text-white/50">ui_state</span>
+            <span>{decision.ui_state}</span>
+          </div>
+
+          {decision.temporal_state ? (
+            <div className="mt-1 flex justify-between">
+              <span className="text-white/50">temporal</span>
+              <span className="text-orange-300">{decision.temporal_state}</span>
+            </div>
+          ) : decision.is_ugc ? (
+            <div className="mt-1 flex justify-between">
+              <span className="text-white/50">temporal</span>
+              <span className="text-white/30">—</span>
+            </div>
+          ) : null}
+
+          {decision.is_fallback && (
+            <div className="mt-1.5 text-yellow-400">⚠ fallback</div>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 interface DecisionScreenProps {
@@ -120,7 +184,7 @@ export function DecisionScreen({ scenarioId }: DecisionScreenProps) {
       clearTimeout(visitRef.current.timerId);
     }
 
-    const isUGC = !!decision.ugc_meta?.is_ugc;
+    const isUGC = decision.is_ugc;
     visitRef.current = {
       venueId:   decision.id,
       venueName: decision.title,
@@ -184,17 +248,17 @@ export function DecisionScreen({ scenarioId }: DecisionScreenProps) {
   }, []);
 
   // Derived pivot reasons list — UGC-specific when applicable
-  const pivotReasons: string[] = decision?.ugc_meta?.is_ugc
+  const pivotReasons: string[] = decision?.is_ugc && decision.ugc_meta
     ? getUGCPivotReasons(decision.ugc_meta.created_at)
     : PIVOT_REASONS;
 
   // UGC card meta prop for HeroDecisionCard
-  const ugcMeta = decision?.ugc_meta
+  const ugcMeta = decision?.is_ugc && decision.ugc_meta
     ? {
-        expires_at:   decision.ugc_meta.expires_at,
-        created_at:   decision.ugc_meta.created_at,
+        expires_at:    decision.ugc_meta.expires_at,
+        created_at:    decision.ugc_meta.created_at,
         distance_copy: decision.ugc_meta.distance_copy,
-        vibe_chips:   ["community"],
+        vibe_chips:    ["community"],
       }
     : undefined;
 
@@ -241,6 +305,11 @@ export function DecisionScreen({ scenarioId }: DecisionScreenProps) {
         </motion.div>
       </AnimatePresence>
 
+      {/* Debug overlay — dev only */}
+      {process.env.NODE_ENV !== "production" && (
+        <DebugOverlay decision={decision} />
+      )}
+
       {/* Pinned Action Container */}
       <div className="fixed bottom-0 left-0 right-0 z-10 mx-auto w-full max-w-[430px] border-t border-line/10 bg-background/80 px-5 pb-safe-floor pt-4 backdrop-blur-md">
         <div className="flex flex-col gap-4">
@@ -259,7 +328,7 @@ export function DecisionScreen({ scenarioId }: DecisionScreenProps) {
             </div>
           ) : null}
 
-          <PrimaryAction onPress={handleGo} disabled={status !== "ready"} />
+          <PrimaryAction label={decision.cta_label} onPress={handleGo} disabled={status !== "ready"} />
 
           <SecondaryActions
             onAlternatives={handleNotThis}

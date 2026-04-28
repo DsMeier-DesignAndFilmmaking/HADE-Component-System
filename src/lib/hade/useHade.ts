@@ -5,7 +5,6 @@ import type {
   AgentDefinitions,
   AgentPersona,
   GeoLocation,
-  HadeAPIDecision,
   HadeAPIMeta,
   Intent,
 } from "@/types/hade";
@@ -13,7 +12,7 @@ import { useHadeAdaptiveContext } from "./hooks";
 import { useHadeSettings } from "./settings";
 import { deriveReasons } from "./deriveReasons";
 import { getScenario } from "./scenarios";
-import { formatDistance, formatEta } from "./format";
+import { buildDecisionViewModel, type DecisionViewModel } from "./viewModel";
 import agentData from "@/config/agent_definitions.json";
 
 const definitions = agentData as AgentDefinitions;
@@ -27,13 +26,14 @@ export interface UseHadeConfig {
 }
 
 export interface UseHadeReturn {
-  decision: HadeAPIDecision | null;
+  decision: DecisionViewModel | null;
   reasoning: string[];
+  /** Convenience alias for decision.confidence ?? 0. */
   confidence: number;
   status: Status;
   error: string | null;
   meta: HadeAPIMeta | null;
-  /** True when the last response was served from the Tier 3 static stub. */
+  /** Convenience alias for decision.is_fallback. True when served from Tier 3 static stub. */
   isFallback: boolean;
   regenerate: () => void;
   refine: (input: {
@@ -89,10 +89,14 @@ export function useHade(config?: UseHadeConfig): UseHadeReturn {
         setGeoReady(true);
       },
       () => {
-        // Geo denied or unavailable — do NOT fall back to a hardcoded coordinate.
-        // Passing a fake location produces LocationNodes anchored to the wrong city.
-        // The decide() guard on context.geo will prevent a stale request from firing.
         if (cancelled) return;
+        // Geo denied — use scenario demo geo when explicitly configured.
+        // Scenarios are author-set (developer URL param), so a hardcoded coordinate
+        // is intentional. Do NOT fall back for real users with no scenario active.
+        if (scenario?.geo) {
+          setUserGeo(scenario.geo);
+          setGeo(scenario.geo);
+        }
         setGeoReady(true);
       },
       { timeout: 8000, maximumAge: 60_000 },
@@ -114,20 +118,10 @@ export function useHade(config?: UseHadeConfig): UseHadeReturn {
 
   // ── Derived state ────────────────────────────────────────────────────────
 
-  const decision: HadeAPIDecision | null = useMemo(() => {
-    if (!response?.decision) return null;
-    const d = response.decision;
-    return {
-      id: d.id,
-      title: d.venue_name,
-      category: d.category,
-      neighborhood: d.neighborhood,
-      distance: formatDistance(d.distance_meters),
-      eta: formatEta(d.eta_minutes),
-      geo: d.geo,
-      ...(d.ugc_meta ? { ugc_meta: d.ugc_meta } : {}),
-    };
-  }, [response]);
+  const decision: DecisionViewModel | null = useMemo(
+    () => (response ? buildDecisionViewModel(response) : null),
+    [response],
+  );
 
   const meta: HadeAPIMeta | null = useMemo(() => {
     if (!response) return null;
@@ -142,9 +136,9 @@ export function useHade(config?: UseHadeConfig): UseHadeReturn {
     return deriveReasons(response, context);
   }, [response, context]);
 
-  const confidence = response?.decision?.confidence ?? 0;
+  const confidence = decision?.confidence ?? 0;
 
-  const isFallback = response?.source === "fallback";
+  const isFallback = decision?.is_fallback ?? false;
 
   const status: Status = useMemo(() => {
     if (isLoading) return "loading";

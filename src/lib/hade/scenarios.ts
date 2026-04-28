@@ -1,11 +1,16 @@
-import type { DecideRequest, HadeSettings } from "@/types/hade";
+import type { DecideRequest, GeoLocation, HadeSettings } from "@/types/hade";
 
 export type ScenarioId = "exploration" | "quick" | "social";
 
 interface ScenarioConfig {
   request: Partial<DecideRequest>;
   settings: Partial<HadeSettings>;
+  /** Demo geo injected when the real device location is unavailable (preview / CI). */
+  geo?: GeoLocation;
 }
+
+// Capitol Hill, Seattle — dense mixed-use block suitable for all three scenarios.
+const DEMO_GEO: GeoLocation = { lat: 47.6131, lng: -122.3200 };
 
 const SCENARIOS: Record<ScenarioId, ScenarioConfig> = {
   exploration: {
@@ -15,6 +20,7 @@ const SCENARIOS: Record<ScenarioId, ScenarioConfig> = {
       social: { group_size: 1, group_type: "solo" },
     },
     settings: { mode: "explorative" },
+    geo: DEMO_GEO,
   },
   quick: {
     request: {
@@ -24,6 +30,7 @@ const SCENARIOS: Record<ScenarioId, ScenarioConfig> = {
       constraints: { distance_tolerance: "walking" },
     },
     settings: { mode: "precise" },
+    geo: DEMO_GEO,
   },
   social: {
     request: {
@@ -32,6 +39,7 @@ const SCENARIOS: Record<ScenarioId, ScenarioConfig> = {
       social: { group_size: 4, group_type: "friends" },
     },
     settings: { mode: "balanced" },
+    geo: DEMO_GEO,
   },
 };
 
