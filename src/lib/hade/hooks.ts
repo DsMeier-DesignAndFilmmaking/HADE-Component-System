@@ -33,6 +33,7 @@ import {
 import { SignalQueue } from "./queue";
 import { getDeviceId } from "./deviceId";
 import { computeTemporalState, getUGCCta } from "./ugcCopy";
+import { HADE_ENDPOINTS } from "./api";
 
 // ─── useHadeEngine ────────────────────────────────────────────────────────────
 
@@ -365,7 +366,10 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
         session_id:        req?.session_id ?? sessionIdRef.current,
         signals:           req?.signals ?? sigs,
         rejection_history: req?.rejection_history ?? rejHistory,
-        settings:          req?.settings,
+        settings:          {
+          ...(req?.settings ?? {}),
+          debug: process.env.NODE_ENV !== "production",
+        },
         node_hints:        nodeHints.length > 0 ? nodeHints : undefined,
       };
 
@@ -388,10 +392,11 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
       setError(null);
 
       try {
-        const apiUrl = configRef.current.api_url ?? process.env.NEXT_PUBLIC_HADE_API_URL ?? "/api";
-
+        if (process.env.NODE_ENV !== "production") {
+          console.log("[HADE ENDPOINT]", HADE_ENDPOINTS.decide);
+        }
         console.log("[HADE REQUEST PAYLOAD]", body);
-        const res = await fetch(`${apiUrl}/hade/decide`, {
+        const res = await fetch(HADE_ENDPOINTS.decide, {
           method: "POST",
           headers: {
             "Content-Type":     "application/json",
@@ -410,6 +415,14 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
         const headerDegraded = res.headers.get("x-hade-degraded") === "1";
 
         const data = await res.json();
+
+        if (process.env.NODE_ENV !== "production") {
+          console.log("[HADE RESPONSE]", data);
+          if (data?.debug) {
+            console.log("[HADE DEBUG]", data.debug);
+          }
+        }
+
         const bodyDegraded   = data.degraded === true;
         const newDegraded    = headerDegraded || bodyDegraded;
         setIsDegraded(newDegraded);
@@ -418,14 +431,28 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
           `[HADE stability] source=${hadeSource} | degraded=${newDegraded} | rejection_history=${(body.rejection_history ?? []).length}`,
         );
         console.log("[HADE] full response:", data);
+
+        if (!data || !data.decision) {
+          throw new Error("Invalid HADE response");
+        }
+
         const dec = data.decision as HadeDecision;
+        const safeDecision: HadeDecision = {
+          ...dec,
+          venue_name: dec?.venue_name ?? "",
+          category:   dec?.category ?? "",
+          geo:        dec?.geo ?? null,
+          confidence: dec?.confidence ?? 0,
+          ugc_meta:   dec?.ugc_meta ?? undefined,
+        } as HadeDecision;
+
         const ux = _deriveUX(
-          dec,
+          safeDecision,
           data.context_snapshot?.decision_basis ?? "llm",
           req?.settings?.confidence_threshold ?? 0,
         );
         const shaped: HadeResponse = {
-          decision: dec,
+          decision: safeDecision,
           ux,
           context_snapshot: data.context_snapshot,
           session_id: data.session_id,

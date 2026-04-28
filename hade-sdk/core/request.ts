@@ -1,10 +1,14 @@
+import { HADE_ENDPOINTS } from "@/lib/hade/api";
 import type { HadeDecisionRequestBody, HadeSDKConfig, RawDecisionAPIResponse } from "./types";
 
 export async function requestDecision(
   config: Required<HadeSDKConfig>,
   body: HadeDecisionRequestBody,
 ): Promise<RawDecisionAPIResponse> {
-  const response = await config.fetcher(`${config.apiUrl}/hade/decide`, {
+  if (process.env.NODE_ENV !== "production") {
+    console.log("[HADE ENDPOINT]", HADE_ENDPOINTS.decide);
+  }
+  const response = await config.fetcher(HADE_ENDPOINTS.decide, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
