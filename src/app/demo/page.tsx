@@ -2,7 +2,7 @@
 
 import { Suspense, useState, useEffect, useMemo } from "react";
 import { useSearchParams } from "next/navigation";
-import type { SignalType, Intent, DecideRequest, UiState } from "@/types/hade";
+import type { SignalType, Intent, DecideRequest, UiState, SpontaneousObject } from "@/types/hade";
 import { AdaptiveContainer } from "@/components/hade/adaptive/AdaptiveContainer";
 import { DecisionCard } from "@/components/hade/adaptive/DecisionCard";
 import { SignalBadge } from "@/components/hade/adaptive/SignalBadge";
@@ -406,13 +406,29 @@ function DesktopDebugDemo() {
       </div>
 
       {/* ── Decision Output ───────────────────────────────────────────────────── */}
-      {response?.decision && !isBusy && (
+      {response?.decision && !isBusy && (() => {
+        const d = response.decision;
+        const now = Date.now();
+        const decisionObject: SpontaneousObject = {
+          id: d.id,
+          type: d.type ?? "place_opportunity",
+          title: d.title ?? d.venue_name,
+          time_window: d.time_window ?? { start: now, end: now + 2 * 60 * 60 * 1000 },
+          location: d.location ?? { lat: d.geo?.lat ?? 0, lng: d.geo?.lng ?? 0 },
+          radius: d.radius ?? 500,
+          going_count: d.going_count ?? 0,
+          maybe_count: d.maybe_count ?? 0,
+          user_state: d.user_state ?? null,
+          created_at: d.created_at ?? now,
+          expires_at: d.expires_at ?? now + 2 * 60 * 60 * 1000,
+          trust_score: d.trust_score ?? 0.5,
+          vibe_tag: d.vibe_tag,
+          source: d.source,
+        };
+        return (
         <>
           <DecisionCard
-            response={response}
-            agentId={activeAgent.id}
-            onCta={handleCta}
-            onPivot={pivot}
+            object={decisionObject}
             className="mt-6"
           />
 
@@ -491,7 +507,8 @@ function DesktopDebugDemo() {
             </div>
           )}
         </>
-      )}
+        );
+      })()}
 
       {/* ── Empty/Loading States ──────────────────────────────────────────────── */}
       {!response && !isBusy && (

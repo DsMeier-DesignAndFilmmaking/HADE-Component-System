@@ -7,6 +7,7 @@ import { setOfflineCache, getValidCache } from "@/lib/hade/cache";
 import type { CacheEntry, CachedVenue, CachedLocationNode } from "@/lib/hade/cache";
 import { haversineDistanceMeters } from "@/lib/hade/engine";
 import { getRedisMode } from "@/lib/hade/redis";
+import { fetchNearbyGrounded } from "@/core/services/places";
 
 export const runtime = "nodejs";
 
@@ -65,6 +66,79 @@ function withDegradedSignal(
   return new Response(JSON.stringify(enriched), { ...init, headers });
 }
 
+// ─── Fallback candidate builder ───────────────────────────────────────────────
+
+const STATIC_FALLBACK_TITLES = [
+  "Take a walk nearby",
+  "Grab coffee nearby",
+  "Explore this area",
+] as const;
+
+/**
+ * Returns at least 1 SpontaneousObject for use as fallback candidates.
+ *
+ * Resolution order:
+ *   1. Fetch real nearby places via Google Places API
+ *   2. If Places fails or returns nothing, emit 3 static synthetic objects
+ *
+ * The `fallback-` prefix on static IDs is intentional — the client's pivot
+ * guard refuses to add fallback IDs to rejection_history, preventing loops.
+ */
+async function buildFallbackCandidates(
+  geo: GeoLocation | null,
+  reqId: string,
+): Promise<SpontaneousObject[]> {
+  const now = Date.now();
+
+  if (geo) {
+    try {
+      const places = await fetchNearbyGrounded({ geo, radius_meters: 800, open_now: true });
+      if (places.length > 0) {
+        console.log(`[hade-decide ${reqId}] fallback: resolved ${places.length} place(s) from Google`);
+        return places.map((place) => ({
+          id: place.id,
+          type: "place_opportunity" as const,
+          title: place.name,
+          time_window: { start: now, end: now + 60 * 60 * 1000 },
+          location: { lat: place.geo.lat, lng: place.geo.lng, place_id: place.id },
+          radius: Math.round(haversineDistanceMeters(geo, place.geo)),
+          going_count: 0,
+          maybe_count: 0,
+          user_state: null,
+          created_at: now,
+          expires_at: now + 60 * 60 * 1000,
+          trust_score: place.rating !== undefined
+            ? Math.max(0, Math.min(1, (place.rating - 1) / 4))
+            : 0.5,
+          vibe_tag: place.vibe,
+          source: "google_places_fallback",
+        }));
+      }
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      console.warn(`[hade-decide ${reqId}] fallback: Google Places failed: ${detail}`);
+    }
+  }
+
+  // Static synthetic floor — guaranteed >= 1
+  console.log(`[hade-decide ${reqId}] fallback: using ${STATIC_FALLBACK_TITLES.length} static synthetic object(s)`);
+  return STATIC_FALLBACK_TITLES.map((title, i) => ({
+    id: `fallback-static-${i}-${now}`,
+    type: "place_opportunity" as const,
+    title,
+    time_window: { start: now, end: now + 60 * 60 * 1000 },
+    location: { lat: geo?.lat ?? 0, lng: geo?.lng ?? 0 },
+    radius: 500,
+    going_count: 0,
+    maybe_count: 0,
+    user_state: null,
+    created_at: now,
+    expires_at: now + 60 * 60 * 1000,
+    trust_score: 0.5,
+    source: "static_synthetic",
+  }));
+}
+
 // ─── POST handler ────────────────────────────────────────────────────────────
 
 export async function POST(request: NextRequest) {
@@ -76,14 +150,14 @@ export async function POST(request: NextRequest) {
     // Stage 1: Parse body
     const parsed = await safeParseBody(request, reqId);
     if (!parsed.ok) {
-      return fallbackResponse(reqId, "parse_error", parsed.error, null);
+      return await fallbackResponse(reqId, "parse_error", parsed.error, null);
     }
 
     // Stage 2: Validate minimal shape
     const validated = validatePayload(parsed.body, reqId);
     const geoHint = extractGeo(parsed.body);
     if (!validated.ok) {
-      return fallbackResponse(reqId, "validation_error", validated.error, geoHint);
+      return await fallbackResponse(reqId, "validation_error", validated.error, geoHint);
     }
 
     // Stage 3: Inject LocationNode weights for any node_hints in the body
@@ -95,7 +169,7 @@ export async function POST(request: NextRequest) {
     // Belt-and-braces — should be unreachable because every stage catches its own errors.
     const detail = err instanceof Error ? err.message : String(err);
     console.error(`[hade-decide ${reqId}] ✗ unexpected throw: ${detail}`);
-    return fallbackResponse(reqId, "unexpected_error", detail, null);
+    return await fallbackResponse(reqId, "unexpected_error", detail, null);
   }
 }
 
@@ -104,11 +178,15 @@ export async function POST(request: NextRequest) {
 /**
  * Three-tier decision pipeline:
  *
+ *  Cold-start — Return fallback SpontaneousObject immediately when the request
+ *               carries no intent, signals, or rejection history.
  *  Tier 1 — Upstream LLM  : forward to HADE_UPSTREAM_URL, inject source tag
  *  Tier 2 — Synthetic     : build a grounded decision from real Places API results
- *  Tier 3 — Static fallback: hardcoded cafe stub when all else fails
+ *  Tier 2.5 — Offline cache: scored cached venues when Tiers 1-2 both fail
+ *  Tier 3 — Static fallback: guaranteed non-null SpontaneousObject, always 200
  *
- * Always returns a valid Response — never throws past this boundary.
+ * Always returns a valid Response with a non-null decision — never throws past
+ * this boundary and never emits a 503.
  */
 async function generateDecision(
   body: Record<string, unknown>,
@@ -117,8 +195,46 @@ async function generateDecision(
   startedAt: number,
 ): Promise<Response> {
   try {
+    // ── Cold-start guard (before any external call) ───────────────────────────
+    const intent = (body as { situation?: { intent?: unknown } }).situation?.intent;
+    const signals = (body as { signals?: unknown[] }).signals;
+    const rejectionHistory = (body as { rejection_history?: unknown[] }).rejection_history;
+
+    const isColdStart =
+      !intent &&
+      (!Array.isArray(signals) || signals.length === 0) &&
+      (!Array.isArray(rejectionHistory) || rejectionHistory.length === 0);
+
+    if (isColdStart) {
+      console.log(`[hade-decide ${reqId}] cold start — skipping upstream, returning cold_start_fallback`);
+      const candidates = await buildFallbackCandidates(geoHint, reqId);
+      return new Response(
+        JSON.stringify({
+          decision: candidates[0],
+          fallback_places: candidates,
+          source: "cold_start_fallback",
+          degraded: true,
+        }),
+        {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+            "x-hade-source": "cold_start_fallback",
+            "x-hade-degraded": "1",
+          },
+        },
+      );
+    }
+
     // ── Tier 1: Upstream LLM ─────────────────────────────────────────────────
-    const upstream = await callUpstream(body, reqId);
+    let upstream: UpstreamResult;
+    try {
+      upstream = await callUpstream(body, reqId);
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      console.warn(`[hade-decide ${reqId}] ✗ callUpstream threw unexpectedly: ${detail}`);
+      upstream = { ok: false, reason: "upstream_unreachable", detail };
+    }
 
     if (upstream.ok) {
       const elapsed = Date.now() - startedAt;
@@ -145,7 +261,14 @@ async function generateDecision(
     );
 
     // ── Tier 2: Synthetic (real Places API candidates) ────────────────────────
-    const synthetic = await generateSyntheticDecision(body, reqId, geoHint);
+    let synthetic: Awaited<ReturnType<typeof generateSyntheticDecision>>;
+    try {
+      synthetic = await generateSyntheticDecision(body, reqId, geoHint);
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      console.warn(`[hade-decide ${reqId}] ✗ generateSyntheticDecision threw: ${detail}`);
+      synthetic = { ok: false };
+    }
 
     if (synthetic.ok) {
       const elapsed = Date.now() - startedAt;
@@ -181,7 +304,14 @@ async function generateDecision(
     console.warn(`[hade-decide ${reqId}] ↓ Tier 2 failed, trying Tier 2.5 (offline cache)`);
 
     // ── Tier 2.5: Serve from offline cache ───────────────────────────────────
-    const cached = await getValidCache();
+    let cached: CacheEntry | null = null;
+    try {
+      cached = await getValidCache();
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      console.warn(`[hade-decide ${reqId}] ✗ getValidCache threw: ${detail}`);
+    }
+
     if (cached && cached.venues.length > 0 && geoHint) {
       const offlineResponse = buildOfflineResponse(cached, geoHint, reqId, body);
       if (offlineResponse) {
@@ -193,12 +323,12 @@ async function generateDecision(
 
     console.warn(`[hade-decide ${reqId}] ↓ Tier 2.5 failed, falling to Tier 3 (static)`);
 
-    // ── Tier 3: Static fallback ───────────────────────────────────────────────
-    return fallbackResponse(reqId, upstream.reason, upstream.detail, geoHint);
+    // ── Tier 3: Static fallback — always 200, never null ─────────────────────
+    return await fallbackResponse(reqId, upstream.reason, upstream.detail, geoHint);
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
     console.error(`[hade-decide ${reqId}] ✗ generateDecision threw: ${detail}`);
-    return fallbackResponse(reqId, "decision_error", detail, geoHint);
+    return await fallbackResponse(reqId, "decision_error", detail, geoHint);
   }
 }
 
@@ -426,41 +556,45 @@ async function callUpstream(
 
 // ─── Stage 4: Fallback response ──────────────────────────────────────────────
 
-function fallbackResponse(
+/**
+ * Returns a 200 response with guaranteed >= 1 SpontaneousObject in both
+ * `decision` and `fallback_places`. Attempts Google Places first; if that
+ * fails or returns nothing, emits 3 static synthetic objects.
+ */
+async function fallbackResponse(
   reqId: string,
   reason: string,
   detail: string,
-  _geoHint: GeoLocation | null,
-): Response {
-  // No synthetic venue is returned — emitting a `fallback-<id>` decision would
-  // poison the client's rejection_history and trigger an infinite pivot loop.
-  // Status 503 + `decision: null` lets the client treat this as a transient
-  // error and skip auto-retry while degraded.
+  geoHint: GeoLocation | null,
+): Promise<Response> {
+  const candidates = await buildFallbackCandidates(geoHint, reqId);
+  // candidates.length >= 1 guaranteed by buildFallbackCandidates
   const body = {
-    decision: null,
+    decision: candidates[0],
     decision_node: null,
-    fallback_places: [],
+    fallback_places: candidates,
     context_snapshot: {
       situation_summary: "Decision engine temporarily unavailable",
       interpreted_intent: "chill",
       decision_basis: "fallback" as const,
-      candidates_evaluated: 0,
+      candidates_evaluated: candidates.length,
       llm_failure_reason: "provider_error" as const,
     },
     session_id: null,
     source: "static_fallback" as const,
+    degraded: true,
     error: { code: "engine_unavailable", reason, detail },
   };
 
-  console.warn(`[hade-decide ${reqId}] ⚠ fallback (${reason}): ${detail}`);
+  console.warn(`[hade-decide ${reqId}] ⚠ fallback (${reason}): ${detail} — ${candidates.length} candidate(s)`);
 
-  return withDegradedSignal(body, {
-    status: 503,
+  return new Response(JSON.stringify(body), {
+    status: 200,
     headers: {
       "Content-Type": "application/json",
       "x-hade-source": "fallback",
       "x-hade-fallback-reason": reason,
-      "Retry-After": "30",
+      "x-hade-degraded": "1",
     },
   });
 }
