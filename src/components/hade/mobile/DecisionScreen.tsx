@@ -144,6 +144,7 @@ export function DecisionScreen({ scenarioId }: DecisionScreenProps) {
   const [showVerificationSheet, setShowVerificationSheet] = useState(false);
   const [showCreationFlow, setShowCreationFlow] = useState(false);
   const [rejectionCount, setRejectionCount] = useState(0);
+  const [rejectionHistory, setRejectionHistory] = useState<Array<{ venueId: string; reason: string; timestamp: number }>>([]);
 
   const visitRef = useRef<{
     venueId:   string;
@@ -218,7 +219,17 @@ export function DecisionScreen({ scenarioId }: DecisionScreenProps) {
 
   const handleReject = useCallback(
     (reason: string) => {
-      if (!decision) return;
+      const venueId = decision?.id ?? "unknown";
+      setRejectionHistory((prev) => [
+        ...prev,
+        { venueId, reason, timestamp: Date.now() },
+      ]);
+      setRejectionCount((count) => count + 1);
+
+      if (!decision) {
+        setShowPivotReasons(false);
+        return;
+      }
 
       const tags = toVibeTags(mapReasonToTags(reason));
       if (tags.length > 0) {
@@ -228,7 +239,6 @@ export function DecisionScreen({ scenarioId }: DecisionScreenProps) {
       console.log("[HADE] Reject triggered", { venueId: decision.id, reason });
 
       pivot(reason);
-      setRejectionCount((count) => count + 1);
       setShowPivotReasons(false);
     },
     [decision, emitVibeSignal, pivot],

@@ -150,6 +150,7 @@ export async function POST(request: NextRequest) {
     // Stage 1: Parse body
     const parsed = await safeParseBody(request, reqId);
     if (!parsed.ok) {
+      console.log("[HADE FALLBACK TRIGGER]", { reason: "INVALID_RESPONSE", error: parsed.error });
       return await fallbackResponse(reqId, "parse_error", parsed.error, null);
     }
 
@@ -157,6 +158,7 @@ export async function POST(request: NextRequest) {
     const validated = validatePayload(parsed.body, reqId);
     const geoHint = extractGeo(parsed.body);
     if (!validated.ok) {
+      console.log("[HADE FALLBACK TRIGGER]", { reason: "INVALID_RESPONSE", error: validated.error });
       return await fallbackResponse(reqId, "validation_error", validated.error, geoHint);
     }
 
@@ -169,6 +171,7 @@ export async function POST(request: NextRequest) {
     // Belt-and-braces — should be unreachable because every stage catches its own errors.
     const detail = err instanceof Error ? err.message : String(err);
     console.error(`[hade-decide ${reqId}] ✗ unexpected throw: ${detail}`);
+    console.log("[HADE FALLBACK TRIGGER]", { reason: "LLM_ERROR", error: detail });
     return await fallbackResponse(reqId, "unexpected_error", detail, null);
   }
 }
@@ -210,7 +213,7 @@ async function generateDecision(
       const candidates = await buildFallbackCandidates(geoHint, reqId);
       return new Response(
         JSON.stringify({
-          decision: candidates[0],
+          decision: { ...candidates[0], is_fallback: true },
           fallback_places: candidates,
           source: "cold_start_fallback",
           degraded: true,
@@ -233,6 +236,7 @@ async function generateDecision(
     } catch (err) {
       const detail = err instanceof Error ? err.message : String(err);
       console.warn(`[hade-decide ${reqId}] ✗ callUpstream threw unexpectedly: ${detail}`);
+      console.log("[HADE FALLBACK TRIGGER]", { reason: "TIMEOUT", error: detail });
       upstream = { ok: false, reason: "upstream_unreachable", detail };
     }
 
@@ -256,6 +260,7 @@ async function generateDecision(
       });
     }
 
+    console.log("[HADE FALLBACK TRIGGER]", { reason: "LLM_ERROR", error: upstream.detail ?? null });
     console.warn(
       `[hade-decide ${reqId}] ↓ Tier 1 failed (${upstream.reason}), trying Tier 2 (synthetic)`,
     );
@@ -301,6 +306,7 @@ async function generateDecision(
       });
     }
 
+    console.log("[HADE FALLBACK TRIGGER]", { reason: "EMPTY_DECISION", error: null });
     console.warn(`[hade-decide ${reqId}] ↓ Tier 2 failed, trying Tier 2.5 (offline cache)`);
 
     // ── Tier 2.5: Serve from offline cache ───────────────────────────────────
@@ -321,6 +327,7 @@ async function generateDecision(
       }
     }
 
+    console.log("[HADE FALLBACK TRIGGER]", { reason: "EMPTY_DECISION", error: null });
     console.warn(`[hade-decide ${reqId}] ↓ Tier 2.5 failed, falling to Tier 3 (static)`);
 
     // ── Tier 3: Static fallback — always 200, never null ─────────────────────
@@ -328,6 +335,7 @@ async function generateDecision(
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
     console.error(`[hade-decide ${reqId}] ✗ generateDecision threw: ${detail}`);
+    console.log("[HADE FALLBACK TRIGGER]", { reason: "LLM_ERROR", error: detail });
     return await fallbackResponse(reqId, "decision_error", detail, geoHint);
   }
 }
@@ -570,7 +578,7 @@ async function fallbackResponse(
   const candidates = await buildFallbackCandidates(geoHint, reqId);
   // candidates.length >= 1 guaranteed by buildFallbackCandidates
   const body = {
-    decision: candidates[0],
+    decision: { ...candidates[0], is_fallback: true },
     decision_node: null,
     fallback_places: candidates,
     context_snapshot: {

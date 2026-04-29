@@ -22,6 +22,7 @@ import type {
   GeoLocation,
   VibeSignal,
   VibeTag,
+  SpontaneousObject,
 } from "@/types/hade";
 import { buildContext } from "./engine";
 import {
@@ -287,6 +288,7 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isDegraded, setIsDegraded] = useState(false);
+  const [cachedRealPlaces, setCachedRealPlaces] = useState<SpontaneousObject[]>([]);
 
   // ── Community Signals (UGC) ──
   const [communitySignals, setCommunitySignalsState] = useState<CommunitySignalsConfig>({
@@ -346,6 +348,138 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
       },
     }),
   );
+
+  function generateLocalAlternative(state: {
+    geo: GeoLocation;
+    rejection_history: RejectionEntry[];
+    intent?: Intent | null;
+  }): HadeDecision {
+    const now = Date.now();
+
+    const reasons = state.rejection_history.map((r) => r.pivot_reason.toLowerCase());
+    const rejectedTitles = new Set(state.rejection_history.map((r) => r.venue_name.toLowerCase()));
+    const rejectedIds = new Set(state.rejection_history.map((r) => r.venue_id));
+    const multipleRejections = state.rejection_history.length >= 2;
+
+    const hasTooClrowded = reasons.some((r) => r.includes("crowd") || r.includes("busy") || r.includes("packed"));
+    const hasOverpriced   = reasons.some((r) => r.includes("pric") || r.includes("expensiv") || r.includes("cheap"));
+
+    type Candidate = {
+      id: string;
+      title: string;
+      category: string;
+      rationale: string;
+      why_now: string;
+    };
+
+    // Ordered pool — deterministic priority: rule-matched first, then category rotation
+    const pool: Candidate[] = [
+      {
+        id: "local-quiet-spot",
+        title: "Find a quiet spot nearby",
+        category: "rest",
+        rationale: "Somewhere low-key that sidesteps the crowd entirely.",
+        why_now: "You flagged it's too busy — this shifts the energy down.",
+      },
+      {
+        id: "local-park-sit",
+        title: "Sit in a nearby park",
+        category: "outdoor",
+        rationale: "Open air, no cover charge, no queue.",
+        why_now: "Free, calm, and right here — no friction.",
+      },
+      {
+        id: "local-budget-coffee",
+        title: "Grab a drip coffee somewhere simple",
+        category: "cafe",
+        rationale: "A no-frills café keeps the tab low and the vibe easy.",
+        why_now: "You mentioned price — this keeps it light.",
+      },
+      {
+        id: "local-walk",
+        title: "Take a walk nearby",
+        category: "outdoor",
+        rationale: "Walking resets the frame and costs nothing.",
+        why_now: "A different category entirely — movement instead of destination.",
+      },
+      {
+        id: "local-coffee",
+        title: "Grab a coffee",
+        category: "cafe",
+        rationale: "A nearby café is a low-lift way to shift the scene.",
+        why_now: "Simple, close, and easy to bail on.",
+      },
+      {
+        id: "local-explore",
+        title: "Explore this area on foot",
+        category: "exploration",
+        rationale: "No agenda — just see what's around the next block.",
+        why_now: "After multiple passes, exploration beats another list.",
+      },
+      {
+        id: "local-bench",
+        title: "Find a bench and decompress",
+        category: "rest",
+        rationale: "Sometimes the right move is a full stop.",
+        why_now: "You've been deciding for a while — a pause can help.",
+      },
+    ];
+
+    // Rule: crowded → prefer quiet/outdoor; push quiet-spot to front
+    const ordered = hasTooClrowded
+      ? [
+          pool.find((c) => c.id === "local-quiet-spot")!,
+          pool.find((c) => c.id === "local-park-sit")!,
+          ...pool.filter((c) => c.id !== "local-quiet-spot" && c.id !== "local-park-sit"),
+        ]
+      // Rule: overpriced → prefer budget options
+      : hasOverpriced
+      ? [
+          pool.find((c) => c.id === "local-budget-coffee")!,
+          pool.find((c) => c.id === "local-walk")!,
+          pool.find((c) => c.id === "local-park-sit")!,
+          ...pool.filter((c) => !["local-budget-coffee", "local-walk", "local-park-sit"].includes(c.id)),
+        ]
+      // Rule: multiple rejections → rotate category (skip food/cafe, prefer walk/park)
+      : multipleRejections
+      ? [
+          pool.find((c) => c.id === "local-walk")!,
+          pool.find((c) => c.id === "local-explore")!,
+          pool.find((c) => c.id === "local-park-sit")!,
+          ...pool.filter((c) => !["local-walk", "local-explore", "local-park-sit"].includes(c.id)),
+        ]
+      : pool;
+
+    const pick =
+      ordered.find(
+        (c) => !rejectedIds.has(c.id) && !rejectedTitles.has(c.title.toLowerCase()),
+      ) ?? ordered[ordered.length - 1];
+
+    return {
+      id: `local-${pick.id}-${now}`,
+      venue_name: pick.title,
+      title: pick.title,
+      category: pick.category,
+      geo: state.geo,
+      distance_meters: 0,
+      eta_minutes: 5,
+      rationale: pick.rationale,
+      why_now: pick.why_now,
+      confidence: 0.4,
+      situation_summary: "Local fallback",
+      type: "place_opportunity",
+      time_window: { start: now, end: now + 2 * 60 * 60 * 1000 },
+      location: { lat: state.geo.lat, lng: state.geo.lng },
+      radius: 500,
+      going_count: 0,
+      maybe_count: 0,
+      user_state: null,
+      created_at: now,
+      expires_at: now + 2 * 60 * 60 * 1000,
+      trust_score: 0.4,
+      source: "local_degraded_refine",
+    } as HadeDecision;
+  }
 
   const decide = useCallback(
     async (req?: Partial<DecideRequest>) => {
@@ -412,6 +546,30 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
         return;
       }
       lastGeoKeyRef.current = geoKey;
+
+      // Degraded branch — bypass API entirely, generate local alternative
+      if (isDegradedRef.current) {
+        const localDecision = generateLocalAlternative({
+          geo: body.geo,
+          rejection_history: cleanRejHistory,
+          intent: body.situation?.intent ?? null,
+        });
+        const localUX = _deriveUX(localDecision, "fallback", 0);
+        setDecision(localDecision);
+        setResponse({
+          decision: localDecision,
+          ux: localUX,
+          context_snapshot: {
+            situation_summary: "Local fallback",
+            interpreted_intent: String(body.situation?.intent ?? ""),
+            decision_basis: "fallback",
+            candidates_evaluated: 0,
+          },
+          session_id: sessionIdRef.current,
+          source: "static_fallback",
+        });
+        return;
+      }
 
       // Abort any in-flight request before starting a new one
       abortRef.current?.abort();
@@ -492,6 +650,12 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
         };
         setDecision(dec);
         setResponse(shaped);
+        if (Array.isArray(data.fallback_places) && data.fallback_places.length > 0) {
+          const realPlaces = (data.fallback_places as SpontaneousObject[]).filter(
+            (p) => !p.id.startsWith("fallback-") && !p.id.startsWith("offline-"),
+          );
+          if (realPlaces.length > 0) setCachedRealPlaces(realPlaces);
+        }
         lastPersonaRef.current = body.persona; // cache for subsequent pivot() calls
         updateContext({
           session_id: data.session_id,
@@ -515,6 +679,46 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
   const pivot = useCallback(
     (reason: string) => {
       if (!decision) return;
+
+      // ── Fallback rejection recovery ───────────────────────────────────────────
+      // If the current decision is a fallback, do NOT re-enter the normal decide()
+      // path (which would produce another fallback and loop). Instead, recover
+      // using cached real places or generateLocalAlternative().
+      if (decision.is_fallback) {
+        const geo = contextRef.current.geo ?? { lat: 0, lng: 0 };
+        const rejectedIds = new Set(rejectionHistory.map((r) => r.venue_id));
+
+        const recoveryPlace = cachedRealPlaces.find((p) => !rejectedIds.has(p.id));
+        if (recoveryPlace) {
+          const now = Date.now();
+          const recovered: HadeDecision = {
+            ...recoveryPlace,
+            venue_name: recoveryPlace.title,
+            category: recoveryPlace.type ?? "place_opportunity",
+            geo,
+            distance_meters: 0,
+            eta_minutes: 5,
+            rationale: "Recovered from local cache after fallback rejection.",
+            why_now: "Using a nearby real place instead of a generated suggestion.",
+            confidence: 0.5,
+            situation_summary: "Cache recovery",
+            is_fallback: false,
+            source: "cache_recovery",
+            created_at: recoveryPlace.created_at ?? now,
+            expires_at: recoveryPlace.expires_at ?? now + 2 * 60 * 60 * 1000,
+          } as HadeDecision;
+          console.log(`[HADE stability] fallback rejection — recovered from cached real place (${recoveryPlace.id})`);
+          setDecision(recovered);
+          return;
+        }
+
+        const local = generateLocalAlternative({ geo, rejection_history: rejectionHistory });
+        console.log(`[HADE stability] fallback rejection — no cache, using generateLocalAlternative`);
+        setDecision(local);
+        return;
+      }
+
+      // ── Normal pivot ──────────────────────────────────────────────────────────
       // Refuse to pivot on synthetic fallback/offline IDs — pushing them into
       // rejection_history would have no semantic meaning to the server and,
       // before the route returns 503, was the trigger for the infinite loop.
@@ -554,7 +758,7 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
         decide({ rejection_history: nextRejectionHistory })
       );
     },
-    [decision, rejectionHistory, updateContext, decide, signalQueue]
+    [decision, rejectionHistory, cachedRealPlaces, updateContext, decide, signalQueue]
   );
 
   /**
@@ -598,12 +802,10 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
         source_user_id:   getDeviceId(),
       };
 
-      // Hard gate — no queue writes when Redis is degraded.
       if (isDegradedRef.current) {
         console.warn(
-          `[HADE] emitVibeSignal blocked — system degraded, signal not queued (venue=${venueId})`,
+          `[HADE] degraded — signal stored for local refinement`,
         );
-        return vibeSignal;
       }
 
       // Only track real venue IDs (Google Place IDs) in node_hints.
