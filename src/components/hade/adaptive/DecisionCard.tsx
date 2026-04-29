@@ -14,6 +14,7 @@ interface DecisionCardProps {
   explanation?: string[];
   agentId?: string;
   onCta?: () => void;
+  onMaybe?: () => void;
   onPivot?: (reason: string) => void;
   className?: string;
 }
@@ -78,6 +79,26 @@ function getConfidenceLabel(confidence: number) {
   return "🤔 Worth a try";
 }
 
+function getTimeLabel(start: number | undefined): string {
+  const now = Date.now();
+  if (typeof start !== "number" || start <= now) return "Happening now";
+
+  const minutes = Math.max(1, Math.ceil((start - now) / 60_000));
+  return `Starting in ${minutes} min`;
+}
+
+function getGoingLabel(count: number | undefined): string {
+  const safeCount = count ?? 0;
+  return safeCount === 1 ? "1 person going" : `${safeCount} people going`;
+}
+
+function isLive(start: number | undefined, end: number | undefined): boolean {
+  const now = Date.now();
+  const safeStart = start ?? now;
+  const safeEnd = end ?? now;
+  return safeStart <= now && now < safeEnd;
+}
+
 export function DecisionCard({
   response,
   locationNode,
@@ -85,6 +106,7 @@ export function DecisionCard({
   explanation,
   agentId,
   onCta,
+  onMaybe,
   onPivot,
   className = "",
 }: DecisionCardProps) {
@@ -94,14 +116,6 @@ export function DecisionCard({
   const fallbackState: UiState =
     decision.confidence >= 0.7 ? "high" : decision.confidence >= 0.4 ? "medium" : "low";
   const state: UiState = response.ux?.ui_state ?? fallbackState;
-  const ctaLabel =
-    typeof response.ux?.cta === "string" && response.ux.cta.trim().length > 0
-      ? response.ux.cta
-      : state === "low"
-      ? "Refine decision"
-      : state === "medium"
-      ? "Expand search"
-      : "Go now";
   const badges = Array.isArray(response.ux?.badges) ? response.ux.badges : [];
   const isFallback = context_snapshot.decision_basis === "fallback";
   const vibeChips = deriveVibeChips(locationNode);
@@ -112,6 +126,10 @@ export function DecisionCard({
       ? decision.confidence
       : undefined;
   const decisionExplanation = (decision as { explanation?: unknown }).explanation;
+  const title = decision.title ?? decision.venue_name;
+  const timeLabel = getTimeLabel(decision.time_window?.start);
+  const goingLabel = getGoingLabel(decision.going_count);
+  const live = isLive(decision.time_window?.start, decision.time_window?.end ?? decision.expires_at);
   const explanationChips = (
     Array.isArray(explanation) ? explanation : Array.isArray(decisionExplanation) ? decisionExplanation : []
   )
@@ -135,7 +153,7 @@ export function DecisionCard({
               {isFallback ? "Best Match" : "AI Decision"}
             </p>
             <div className="flex items-center gap-2">
-              <HadeHeading level={3}>{decision.venue_name}</HadeHeading>
+              <HadeHeading level={3}>{title}</HadeHeading>
               {typeof effectiveConfidence === "number" && (
                 <span className="rounded-full bg-accentSoft px-2 py-0.5 font-mono text-[10px] font-semibold text-accent">
                   {getConfidenceLabel(effectiveConfidence)}
@@ -143,9 +161,7 @@ export function DecisionCard({
               )}
             </div>
             <HadeText variant="caption" color="muted">
-              {decision.category}
-              {decision.neighborhood ? ` · ${decision.neighborhood}` : ""}
-              {` · ${decision.eta_minutes}m away`}
+              {timeLabel} · {goingLabel}
             </HadeText>
           </div>
 
@@ -164,6 +180,11 @@ export function DecisionCard({
             >
               {state}
             </span>
+            {live && (
+              <span className="rounded bg-green-500/10 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider font-semibold text-green-400">
+                ● live
+              </span>
+            )}
           </div>
         </div>
 
@@ -256,13 +277,21 @@ export function DecisionCard({
             )}
             <span>{context_snapshot.candidates_evaluated} candidates</span>
           </div>
-          <HadeButton
-            variant={state === "low" ? "primary" : "secondary"}
-            size="sm"
-            onClick={onCta}
-          >
-            {ctaLabel}
-          </HadeButton>
+          <div className="flex shrink-0 items-center gap-2">
+            <HadeButton variant="primary" size="sm" onClick={onCta}>
+              Going
+            </HadeButton>
+            <HadeButton variant="secondary" size="sm" onClick={onMaybe}>
+              Maybe
+            </HadeButton>
+            <button
+              type="button"
+              onClick={() => onPivot?.("not_this")}
+              className="rounded-lg border border-line bg-surface px-3 py-1.5 text-xs font-semibold text-ink/60 transition-colors hover:text-ink"
+            >
+              Not This
+            </button>
+          </div>
         </div>
 
         {/* ── Situation summary ───────────────────────────────────────────────── */}

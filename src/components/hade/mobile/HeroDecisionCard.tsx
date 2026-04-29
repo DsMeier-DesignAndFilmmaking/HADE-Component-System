@@ -1,142 +1,102 @@
 "use client";
 
 import { useMemo } from "react";
-import { computeTemporalState, TEMPORAL_COPY } from "@/lib/hade/ugcCopy";
-
-interface UGCCardMeta {
-  expires_at?:   string;
-  created_at:    string;
-  distance_copy: string;
-  vibe_chips:    string[];
-}
+import type { SpontaneousObject } from "@/types/hade";
 
 interface HeroDecisionCardProps {
-  title:        string;
-  category:     string;
-  neighborhood?: string;
-  reasons:      string[];
-  isFallback?:  boolean;
-  ugcMeta?:     UGCCardMeta;
+  object: SpontaneousObject;
+  isFallback?: boolean;
+  onGoing?: () => void;
+  onMaybe?: () => void;
+  onNotThis?: () => void;
 }
 
-const CATEGORY_EMOJI: Record<string, string> = {
-  restaurant:   "🍽️",
-  bar:          "🍸",
-  bar_and_grill:"🍸",
-  cocktail_bar: "🍸",
-  wine_bar:     "🍷",
-  cafe:         "☕",
-  coffee:       "☕",
-  coffee_shop:  "☕",
-  gastropub:    "🍺",
-  brewery:      "🍺",
-  pub:          "🍺",
-  deli:         "🥪",
-  bakery:       "🥐",
-  pizza:        "🍕",
-  club:         "🎵",
-  night_club:   "🎵",
-  lounge:       "🛋️",
-  food_truck:   "🚚",
-  ice_cream:    "🍦",
-};
+function getTimeLabel(object: SpontaneousObject): string {
+  const now = Date.now();
+  const start = object.time_window?.start ?? now;
+  if (start <= now) return "Happening now";
 
-function formatCategory(raw: string): string {
-  return raw.replace(/_/g, " ");
+  const minutes = Math.max(1, Math.ceil((start - now) / 60_000));
+  return `Starting in ${minutes} min`;
+}
+
+function getGoingLabel(count: number): string {
+  return count === 1 ? "1 person going" : `${count} people going`;
+}
+
+function isLive(object: SpontaneousObject): boolean {
+  const now = Date.now();
+  const start = object.time_window?.start ?? now;
+  const end = object.time_window?.end ?? object.expires_at;
+  return start <= now && now < end;
 }
 
 export function HeroDecisionCard({
-  title,
-  category,
-  neighborhood,
-  reasons,
+  object,
   isFallback = false,
-  ugcMeta,
+  onGoing,
+  onMaybe,
+  onNotThis,
 }: HeroDecisionCardProps) {
-  const temporal = useMemo(
-    () => ugcMeta ? computeTemporalState(ugcMeta.expires_at, ugcMeta.created_at) : null,
-    [ugcMeta],
-  );
-
-  if (ugcMeta && temporal) {
-    const temporalCopy = temporal !== "suppressed" ? TEMPORAL_COPY[temporal] : null;
-    const chips = ugcMeta.vibe_chips.length > 0
-      ? ugcMeta.vibe_chips
-      : ["community"];
-
-    return (
-      <section className="relative flex flex-col rounded-3xl bg-surface p-6 shadow-soft">
-        {isFallback && (
-          <span className="absolute top-3 right-4 rounded-full border border-ink/10 bg-ink/5 px-2 py-0.5 text-[10px] font-medium tracking-wide text-ink/40">
-            Limited Mode
-          </span>
-        )}
-
-        {/* Title row with ◎ glyph */}
-        <div className="flex items-start justify-between gap-3">
-          <h1 className="text-2xl font-semibold leading-tight text-ink flex-1">
-            {title}
-          </h1>
-          <span className="mt-1 shrink-0 text-base text-ink/40" aria-hidden="true">◎</span>
-        </div>
-
-        {/* Distance · temporal line */}
-        <p className="mt-1.5 text-sm text-ink/60">
-          {[ugcMeta.distance_copy, temporalCopy].filter(Boolean).join(" · ")}
-        </p>
-
-        {/* Vibe chips — community locked first */}
-        <div className="mt-4 flex flex-wrap gap-2">
-          {chips.map((chip, i) => {
-            const isLocked = i === 0 && chip === "community";
-            return (
-              <span
-                key={chip}
-                className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium ${
-                  isLocked
-                    ? "border-accent/30 bg-accentSoft/60 text-accent/60"
-                    : "border-line bg-surface text-ink/60"
-                }`}
-              >
-                {chip.replace(/_/g, " ")}
-              </span>
-            );
-          })}
-        </div>
-      </section>
-    );
-  }
-
-  // ── Standard Google Place card ─────────────────────────────────────────────
-  const key = category.toLowerCase();
-  const emoji = CATEGORY_EMOJI[key] ?? "📍";
-  const label = formatCategory(category);
-  const contextParts = [`${emoji} ${label}`];
-  if (neighborhood && !/[\d,]/.test(neighborhood)) contextParts.push(neighborhood);
+  const timeLabel = useMemo(() => getTimeLabel(object), [object]);
+  const live = useMemo(() => isLive(object), [object]);
 
   return (
     <section className="relative flex flex-col rounded-3xl bg-surface p-6 shadow-soft">
       {isFallback && (
-        <span className="absolute top-3 right-4 rounded-full border border-ink/10 bg-ink/5 px-2 py-0.5 text-[10px] font-medium tracking-wide text-ink/40">
+        <span className="absolute right-4 top-3 rounded-full border border-ink/10 bg-ink/5 px-2 py-0.5 text-[10px] font-medium tracking-wide text-ink/40">
           Limited Mode
         </span>
       )}
-      <h1 className="text-2xl font-semibold leading-tight text-ink">
-        {title}
+
+      <div className="flex items-center gap-2">
+        <span className="text-xs font-semibold uppercase tracking-[0.18em] text-ink/40">
+          Your move
+        </span>
+        {live && (
+          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-emerald-600">
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+            Live
+          </span>
+        )}
+      </div>
+
+      <h1 className="mt-3 text-2xl font-semibold leading-tight text-ink">
+        {object.title}
       </h1>
 
-      <p className="mt-1.5 text-sm text-ink/60">
-        {contextParts.join(" · ")}
-      </p>
+      <div className="mt-4 flex flex-wrap gap-2">
+        <span className="rounded-full border border-line bg-white/70 px-3 py-1 text-xs font-medium text-ink/70">
+          {timeLabel}
+        </span>
+        <span className="rounded-full border border-line bg-white/70 px-3 py-1 text-xs font-medium text-ink/70">
+          {getGoingLabel(object.going_count ?? 0)}
+        </span>
+      </div>
 
-      <ul className="mt-5 space-y-1.5">
-        {reasons.map((reason) => (
-          <li key={reason} className="flex gap-2 text-base leading-snug text-ink">
-            <span aria-hidden="true" className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
-            <span>{reason}</span>
-          </li>
-        ))}
-      </ul>
+      <div className="mt-5 grid grid-cols-[1fr_1fr_auto] gap-2">
+        <button
+          type="button"
+          onClick={onGoing}
+          className="min-h-[42px] rounded-xl bg-ink px-4 text-sm font-semibold text-white transition-colors active:bg-ink/85 focus:outline-none focus-visible:ring-2 focus-visible:ring-ink/30"
+        >
+          Going
+        </button>
+        <button
+          type="button"
+          onClick={onMaybe}
+          className="min-h-[42px] rounded-xl border border-line bg-white/70 px-4 text-sm font-semibold text-ink transition-colors active:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
+        >
+          Maybe
+        </button>
+        <button
+          type="button"
+          onClick={onNotThis}
+          className="min-h-[42px] rounded-xl border border-line bg-transparent px-3 text-sm font-semibold text-ink/55 transition-colors active:bg-white/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
+        >
+          Not This
+        </button>
+      </div>
     </section>
   );
 }

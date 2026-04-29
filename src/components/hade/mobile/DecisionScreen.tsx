@@ -15,6 +15,7 @@ import { VibeSheet } from "./VibeSheet";
 import { UgcVerificationSheet } from "./UgcVerificationSheet";
 import { LoadingState } from "./LoadingState";
 import { ErrorBoundary } from "./ErrorBoundary";
+import { ActivityCreationView } from "./ActivityCreationView";
 
 type Urgency = "low" | "medium" | "high";
 type PivotReason = "Too crowded" | "Wrong vibe" | "Too far" | "Overpriced";
@@ -130,7 +131,6 @@ export function DecisionScreen({ scenarioId }: DecisionScreenProps) {
   const { emitVibeSignal, pivot } = useHadeAdaptiveContext();
   const {
     decision,
-    reasoning,
     status,
     error,
     isFallback,
@@ -142,6 +142,8 @@ export function DecisionScreen({ scenarioId }: DecisionScreenProps) {
   const [showPivotReasons, setShowPivotReasons] = useState(false);
   const [showVibeSheet, setShowVibeSheet] = useState(false);
   const [showVerificationSheet, setShowVerificationSheet] = useState(false);
+  const [showCreationFlow, setShowCreationFlow] = useState(false);
+  const [rejectionCount, setRejectionCount] = useState(0);
 
   const visitRef = useRef<{
     venueId:   string;
@@ -209,6 +211,11 @@ export function DecisionScreen({ scenarioId }: DecisionScreenProps) {
     setShowPivotReasons(true);
   }, []);
 
+  const handleMaybe = useCallback(() => {
+    if (!decision) return;
+    console.log("[HADE] Maybe →", decision.title);
+  }, [decision]);
+
   const handleReject = useCallback(
     (reason: string) => {
       if (!decision) return;
@@ -221,6 +228,7 @@ export function DecisionScreen({ scenarioId }: DecisionScreenProps) {
       console.log("[HADE] Reject triggered", { venueId: decision.id, reason });
 
       pivot(reason);
+      setRejectionCount((count) => count + 1);
       setShowPivotReasons(false);
     },
     [decision, emitVibeSignal, pivot],
@@ -251,16 +259,6 @@ export function DecisionScreen({ scenarioId }: DecisionScreenProps) {
   const pivotReasons: string[] = decision?.is_ugc && decision.ugc_meta
     ? getUGCPivotReasons(decision.ugc_meta.created_at)
     : PIVOT_REASONS;
-
-  // UGC card meta prop for HeroDecisionCard
-  const ugcMeta = decision?.is_ugc && decision.ugc_meta
-    ? {
-        expires_at:    decision.ugc_meta.expires_at,
-        created_at:    decision.ugc_meta.created_at,
-        distance_copy: decision.ugc_meta.distance_copy,
-        vibe_chips:    ["community"],
-      }
-    : undefined;
 
   if (status === "error") {
     return (
@@ -294,12 +292,11 @@ export function DecisionScreen({ scenarioId }: DecisionScreenProps) {
         >
           <ErrorBoundary name="HeroDecisionCard">
             <HeroDecisionCard
-              title={decision.title}
-              category={decision.category}
-              neighborhood={decision.neighborhood}
-              reasons={reasoning}
+              object={decision.object}
               isFallback={isFallback}
-              ugcMeta={ugcMeta}
+              onGoing={handleGo}
+              onMaybe={handleMaybe}
+              onNotThis={handleNotThis}
             />
           </ErrorBoundary>
         </motion.div>
@@ -328,6 +325,16 @@ export function DecisionScreen({ scenarioId }: DecisionScreenProps) {
             </div>
           ) : null}
 
+          {rejectionCount >= 2 ? (
+            <button
+              type="button"
+              onClick={() => setShowCreationFlow(true)}
+              className="min-h-[42px] rounded-xl bg-ink px-4 text-sm font-semibold text-white transition-colors active:bg-ink/85 focus:outline-none focus-visible:ring-2 focus-visible:ring-ink/30"
+            >
+              Start something nearby
+            </button>
+          ) : null}
+
           <PrimaryAction label={decision.cta_label} onPress={handleGo} disabled={status !== "ready"} />
 
           <SecondaryActions
@@ -345,6 +352,37 @@ export function DecisionScreen({ scenarioId }: DecisionScreenProps) {
           onConfirm={handleRefineConfirm}
         />
       </ErrorBoundary>
+
+      <AnimatePresence>
+        {showCreationFlow && (
+          <motion.div
+            className="fixed inset-0 z-30 flex items-end bg-black/30 px-4 pb-safe-floor"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+          >
+            <motion.div
+              className="mb-4 w-full max-w-[430px] mx-auto"
+              initial={{ y: 32 }}
+              animate={{ y: 0 }}
+              exit={{ y: 32 }}
+            >
+              <ErrorBoundary name="ActivityCreationView" onReset={() => setShowCreationFlow(false)}>
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setShowCreationFlow(false)}
+                    className="absolute right-4 top-4 z-10 rounded-full bg-white/70 px-3 py-1 text-xs font-semibold text-ink/60"
+                  >
+                    Close
+                  </button>
+                  <ActivityCreationView onCreate={() => setShowCreationFlow(false)} />
+                </div>
+              </ErrorBoundary>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {showVibeSheet && visitRef.current && (

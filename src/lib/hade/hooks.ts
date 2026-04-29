@@ -321,6 +321,13 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
   // Fixed for the lifetime of this mount — survives pivot/refine, resets on page reload.
   const sessionIdRef = useRef(crypto.randomUUID());
 
+  // Loop guard: short-circuit retries with the same geo while degraded.
+  // The existing AbortController already cancels in-flight requests, so a
+  // separate time-based debounce is unnecessary; this guard's only job is to
+  // stop auto-retry storms when upstream is down and geo hasn't changed.
+  const lastGeoKeyRef = useRef<string | null>(null);
+  const REJECTION_HISTORY_CAP = 20;
+
   // ── Vibe Signal / UGC queue ──────────────────────────────────────────────
   // A Set of venue IDs that have received VibeSignal updates since the last
   // decide() call. Passed as node_hints so the route fetches fresh weights.
@@ -353,6 +360,17 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
       const nodeHints = [...pendingNodeHints.current];
       pendingNodeHints.current.clear();
 
+      // Strip synthetic fallback/offline IDs and cap length so a long-running
+      // session with repeated degraded responses can't bloat the request.
+      const rawRejHistory = req?.rejection_history ?? rejHistory;
+      const cleanRejHistory = rawRejHistory
+        .filter(
+          (r) =>
+            !r.venue_id.startsWith("fallback-") &&
+            !r.venue_id.startsWith("offline-"),
+        )
+        .slice(-REJECTION_HISTORY_CAP);
+
       const body: DecidePayloadCandidate = {
         persona:           req?.persona ?? lastPersonaRef.current ?? undefined,
         geo:               req?.geo ?? ctx.geo,
@@ -365,7 +383,7 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
         radius_meters:     req?.radius_meters ?? ctx.radius_meters,
         session_id:        req?.session_id ?? sessionIdRef.current,
         signals:           req?.signals ?? sigs,
-        rejection_history: req?.rejection_history ?? rejHistory,
+        rejection_history: cleanRejHistory,
         settings:          {
           ...(req?.settings ?? {}),
           debug: process.env.NODE_ENV !== "production",
@@ -382,6 +400,18 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
         setError(missing);
         return;
       }
+
+      // Loop guard: don't re-fire while degraded with the same geo. Without
+      // this, an automatic retry path on a still-degraded engine produces a
+      // request storm. AbortController handles the in-flight dedupe.
+      const geoKey = `${body.geo.lat.toFixed(4)},${body.geo.lng.toFixed(4)}`;
+      if (isDegradedRef.current && lastGeoKeyRef.current === geoKey) {
+        if (process.env.NODE_ENV !== "production") {
+          console.log("[HADE stability] decide skipped — degraded + same geo");
+        }
+        return;
+      }
+      lastGeoKeyRef.current = geoKey;
 
       // Abort any in-flight request before starting a new one
       abortRef.current?.abort();
@@ -485,6 +515,15 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
   const pivot = useCallback(
     (reason: string) => {
       if (!decision) return;
+      // Refuse to pivot on synthetic fallback/offline IDs — pushing them into
+      // rejection_history would have no semantic meaning to the server and,
+      // before the route returns 503, was the trigger for the infinite loop.
+      if (
+        decision.id.startsWith("fallback-") ||
+        decision.id.startsWith("offline-")
+      ) {
+        return;
+      }
 
       const currentRejection: RejectionEntry = {
         venue_id: decision.id,

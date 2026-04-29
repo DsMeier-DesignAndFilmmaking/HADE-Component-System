@@ -2,14 +2,20 @@
  * Synthetic Decision Engine — Tier 2 fallback
  *
  * Called when the upstream LLM engine is unavailable. Builds a contextually
- * grounded HadeDecision from real nearby venues fetched via Google Places,
- * using the same context utilities (situation summary, intent inference) the
- * upstream engine would use.
+ * grounded HadeDecision by operating on a unified SpontaneousObject pool:
+ *
+ *   1. UGC spontaneous objects are fetched as the primary source
+ *   2. Google Places are fetched and converted to SpontaneousObject
+ *   3. The merged pool is filtered: expired objects and objects outside the
+ *      next 2-hour window are dropped
+ *   4. Remaining candidates are ranked by time proximity (highest weight),
+ *      distance, going_count, trust_score, and user_state
+ *   5. The top-ranked object is returned as a HadeDecision
  *
  * Contract:
  *   • Always resolves — never throws to the caller.
- *   • Returns { ok: false } when geo is absent or no usable places found.
- *   • Returns { ok: true, data, places } when a valid decision is produced.
+ *   • Returns { ok: false } when geo is absent or no usable candidates remain.
+ *   • Returns { ok: true, data, objects } when a valid decision is produced.
  */
 
 import "server-only";
@@ -19,10 +25,12 @@ import { mapIntentToPlacesCategory } from "@/core/utils/intentMapper";
 import {
   buildContext,
   generateSituationSummary,
+  haversineDistanceMeters,
   inferIntentFromTime,
 } from "@/lib/hade/engine";
-import { getNodeTrustScore, getNodeVibeScore } from "@/lib/hade/weights";
+import { getNodeTrustScore } from "@/lib/hade/weights";
 import { getDistanceCopy } from "@/lib/hade/ugcCopy";
+import { getNearbyUGC } from "@/lib/hade/ugc";
 import type {
   GeoLocation,
   HadeContext,
@@ -31,7 +39,13 @@ import type {
   DecideResponse,
   PlaceOption,
   ScoringWeights,
+  UGCEntity,
 } from "@/types/hade";
+import {
+  fromGooglePlace,
+  fromUGC,
+  type SpontaneousObject,
+} from "../../../domain/spontaneous-object/spontaneousObject";
 
 // ─── Result type ──────────────────────────────────────────────────────────────
 
@@ -44,7 +58,7 @@ type SyntheticResult =
   | {
       ok: true;
       data: DecideResponse;
-      places: PlaceOption[];
+      objects: SpontaneousObject[];
       debugPayload: HadeDebugPayload;
       explanation_signals?: ExplanationSignals;
     }
@@ -115,135 +129,322 @@ function resolveTargetCategories(
   };
 }
 
-function filterPlacesByMappedCategory(places: PlaceOption[], categories: string[]): PlaceOption[] {
-  if (categories.length === 0) return places;
+// ─── Clamp utility ────────────────────────────────────────────────────────────
 
-  const normalizedCategories = new Set(
-    categories.map((category) => normalizeMappedCategory(category)),
-  );
-
-  return places.filter((place) => {
-    if (place.isUGC) return true;
-    return normalizedCategories.has(place.category);
-  });
-}
-
-function normalizeMappedCategory(category: string): string {
-  switch (category) {
-    case "coffee_shop":
-      return "cafe";
-    case "book_store":
-      return "bookstore";
-    case "nightclub":
-      return "nightclub";
-    case "tourist_attraction":
-      return "venue";
-    case "campground":
-      return "park";
-    case "aquarium":
-      return "museum";
-    default:
-      return category;
-  }
-}
-
-// ─── Place scoring ────────────────────────────────────────────────────────────
-
-/**
- * Clamps a value to [min, max].
- * Defined here so scorePlaceOption has no external utility dependency.
- */
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
-}
-
-/** All intermediate values produced by scorePlaceOption, exposed for trace logging. */
-interface ScoreBreakdown {
-  proximityScore: number;
-  ratingScore: number;
-  vibeScore: number;
-  trustScore: number;
-  finalScore: number;
 }
 
 /** Rounds to 3 decimal places — keeps trace logs readable without precision loss. */
 const r3 = (v: number) => Math.round(v * 1000) / 1000;
 
-/**
- * Composite score that balances closeness, quality, and real-time UGC sentiment.
- *
- * Components:
- *   proximity_score  — inverse linear decay over 3000 m (weight: 0.60)
- *   rating_score     — Google star rating normalised 1–5 → 0–1 (weight: 0.40)
- *   vibe_delta       — UGC LocationNode sentiment overlay (±0.10 max)
- *
- * UGC integration:
- *   getNodeVibeScore() reads the LocationNode registry for this venue and
- *   returns an aggregate sentiment value in [0, 1] where 0.5 is neutral.
- *   Venues with no UGC history return exactly 0.5, so vibe_delta = 0 and
- *   the score is identical to the pre-UGC baseline — no crash, no bias.
- *
- *   A venue tagged "perfect_vibe" + "worth_it" might score 0.72 → +0.044
- *   A venue tagged "too_crowded" + "skip_it" might score 0.28 → -0.044
- *   Maximum possible swing: ±0.10 (when vibe_score is 0.0 or 1.0)
- *
- * Final score is clamped to [0, 1] — safe to use in any downstream ranking.
- */
-function scorePlaceOption(
-  place: PlaceOption,
-  geo: GeoLocation,
-  vibeScore: number,
-  trustScore: number,
-  weights?: ScoringWeights,
-): ScoreBreakdown {
-  void geo;
+// ─── SpontaneousObject pipeline types ─────────────────────────────────────────
 
-  // ── Proximity (UGC dampened: floor distance at 100 m to block "drop-pin
-  //    at user location" exploits without changing real-world UX) ──────────
-  const effectiveDistance = place.isUGC
-    ? Math.max(place.distance_meters, 100)
-    : place.distance_meters;
-  const proximityScore = Math.max(0, 1 - effectiveDistance / 3000);
+/** Working unit during ranking: SpontaneousObject + optional distance/display metadata. */
+export interface RankedCandidate {
+  obj: SpontaneousObject;
+  distance_meters?: number;
+  category: string;
+  address?: string;
+  rating?: number;
+}
 
-  // ── Rating (UGC without an external rating starts slightly below the
-  //    Google neutral baseline of 0.625 to prevent dominance on cold start) ─
-  const ratingScore =
-    place.isUGC && place.rating === undefined
-      ? 0.55
-      : ((place.rating ?? 3.5) - 1) / 4; // normalise 1–5 → 0–1
+/** All intermediate values produced by scoreSpontaneousCandidate, for trace logging. */
+export interface SpontaneousScoreBreakdown {
+  timeProximityScore: number;
+  distanceScore: number;
+  socialScore: number;
+  trustScore: number;
+  userStateBonus: number;
+  finalScore: number;
+}
 
-  // ── Weighted base — unchanged ratios (0.6 / 0.4) ─────────────────────────
-  const proximityWeight = weights?.proximity ?? 0.6;
-  const ratingWeight    = weights?.rating    ?? 0.4;
-  const baseScore =
-    proximityScore * proximityWeight +
-    ratingScore * ratingWeight;
+// ─── Conversion helpers ───────────────────────────────────────────────────────
 
-  // ── Social overlay: vibe + trust, jointly bounded ────────────────────────
-  // Both inputs default to 0.5 (neutral) when no LocationNode exists, so a
-  // venue with no UGC history has vibeDelta = trustDelta = 0 and scores
-  // identically to the pre-overlay baseline.
-  //   vibeDelta:  ±0.10  (×0.20)
-  //   trustDelta: ±0.075 (×0.15)
-  // The combined delta is clamped to ±0.15 so vibe and trust cannot stack
-  // beyond the cap — prevents signal-stacking exploits.
-  const vibeDelta  = (vibeScore  - 0.5) * 0.2;
-  const trustDelta = (trustScore - 0.5) * 0.15;
-  const boundedSocialDelta = clamp(vibeDelta + trustDelta, -0.15, 0.15);
+function isoToEpochMs(iso: string | undefined): number | undefined {
+  if (!iso) return undefined;
+  const ms = Date.parse(iso);
+  return Number.isFinite(ms) ? ms : undefined;
+}
+
+function epochMsToIso(ms: number): string {
+  return new Date(ms).toISOString();
+}
+
+function hasFiniteLocation(obj: Partial<SpontaneousObject>): obj is Partial<SpontaneousObject> & {
+  location: { lat: number; lng: number; place_id?: string };
+} {
+  return (
+    typeof obj.location?.lat === "number" &&
+    typeof obj.location?.lng === "number" &&
+    Number.isFinite(obj.location.lat) &&
+    Number.isFinite(obj.location.lng)
+  );
+}
+
+function isSpontaneousObject(value: unknown): value is SpontaneousObject {
+  if (!value || typeof value !== "object") return false;
+  const obj = value as Partial<SpontaneousObject>;
+  return (
+    typeof obj.id === "string" &&
+    (obj.type === "ugc_event" || obj.type === "place_opportunity") &&
+    typeof obj.title === "string" &&
+    hasFiniteLocation(obj)
+  );
+}
+
+function normalizeSpontaneousObject(
+  input: SpontaneousObject,
+  now: number,
+): SpontaneousObject {
+  const start = typeof input.time_window?.start === "number" ? input.time_window.start : now;
+  const end = typeof input.time_window?.end === "number" ? input.time_window.end : now + 60 * 60 * 1000;
+  return {
+    ...input,
+    time_window: { start, end },
+    radius: typeof input.radius === "number" ? input.radius : 100,
+    going_count: typeof input.going_count === "number" ? input.going_count : 0,
+    maybe_count: typeof input.maybe_count === "number" ? input.maybe_count : 0,
+    user_state: input.user_state === "going" || input.user_state === "maybe" ? input.user_state : null,
+    created_at: typeof input.created_at === "number" ? input.created_at : now,
+    expires_at: typeof input.expires_at === "number" ? input.expires_at : end,
+    trust_score: typeof input.trust_score === "number" ? clamp(input.trust_score, 0, 1) : 0.5,
+  };
+}
+
+function candidateFromObject(
+  obj: SpontaneousObject,
+  origin: GeoLocation,
+  category: string,
+  metadata: Pick<RankedCandidate, "address" | "rating"> = {},
+): RankedCandidate {
+  return {
+    obj,
+    distance_meters: Math.round(haversineDistanceMeters(origin, obj.location)),
+    category,
+    ...metadata,
+  };
+}
+
+function ugcToCandidate(entity: UGCEntity, origin: GeoLocation, now: number): RankedCandidate | null {
+  const createdAt = isoToEpochMs(entity.created_at) ?? now;
+  const expiresAt = isoToEpochMs(entity.expires_at) ?? now + 2 * 60 * 60 * 1000;
+  const obj = fromUGC({
+    id: entity.id,
+    title: entity.venue_name,
+    type: "ugc_event",
+    location: { lat: entity.geo.lat, lng: entity.geo.lng },
+    time_window: { start: createdAt, end: expiresAt },
+    created_at: createdAt,
+    expires_at: expiresAt,
+    radius: Math.round(haversineDistanceMeters(origin, entity.geo)),
+    vibe_tag: entity.category,
+    source: entity.created_by ?? "user",
+  });
+
+  if (!hasFiniteLocation(obj)) return null;
+
+  return candidateFromObject(
+    normalizeSpontaneousObject({ ...obj, created_at: createdAt, expires_at: expiresAt }, now),
+    origin,
+    entity.category,
+  );
+}
+
+async function getUGCObjects(
+  body: Record<string, unknown>,
+  origin: GeoLocation,
+  radius: number,
+  now: number,
+): Promise<RankedCandidate[]> {
+  const storedEntities = await getNearbyUGC(origin, radius);
+  const stored = storedEntities
+    .map((entity) => ugcToCandidate(entity, origin, now))
+    .filter((candidate): candidate is RankedCandidate => candidate !== null);
+
+  const customRaw = (body as { custom_candidates?: unknown }).custom_candidates;
+  const custom = Array.isArray(customRaw)
+    ? customRaw
+        .filter(isSpontaneousObject)
+        .map((obj) =>
+          candidateFromObject(
+            normalizeSpontaneousObject(obj, now),
+            origin,
+            obj.vibe_tag ?? (obj.type === "ugc_event" ? "ugc" : "venue"),
+          ),
+        )
+    : [];
+
+  const byId = new Map<string, RankedCandidate>();
+  for (const candidate of stored) byId.set(candidate.obj.id, candidate);
+  for (const candidate of custom) byId.set(candidate.obj.id, candidate);
+  return [...byId.values()];
+}
+
+async function getPlaces(params: {
+  geo: GeoLocation;
+  intent: Intent | undefined;
+  targetCategories: string[];
+  radius: number;
+}): Promise<PlaceOption[]> {
+  return fetchNearbyGrounded({
+    geo: params.geo,
+    intent: params.intent,
+    target_categories: params.targetCategories,
+    radius_meters: params.radius,
+    open_now: true,
+  });
+}
+
+function placeToCandidate(place: PlaceOption, origin: GeoLocation, now: number): RankedCandidate | null {
+  const obj = fromGooglePlace({
+    place_id: place.id,
+    name: place.name,
+    geometry: { location: { lat: place.geo.lat, lng: place.geo.lng } },
+  });
+
+  if (!hasFiniteLocation(obj)) return null;
 
   return {
-    proximityScore,
-    ratingScore,
-    vibeScore,
-    trustScore,
-    finalScore: clamp(baseScore + boundedSocialDelta, 0, 1),
+    obj: normalizeSpontaneousObject(
+      {
+        ...obj,
+        vibe_tag: place.vibe,
+        source: "google_places",
+        radius: place.distance_meters,
+        trust_score: place.rating !== undefined ? clamp((place.rating - 1) / 4, 0, 1) : obj.trust_score,
+      },
+      now,
+    ),
+    distance_meters: place.distance_meters,
+    category: place.category,
+    address: place.address,
+    rating: place.rating,
   };
+}
+
+function mergeCandidates(...groups: RankedCandidate[][]): RankedCandidate[] {
+  const byId = new Map<string, RankedCandidate>();
+  for (const group of groups) {
+    for (const candidate of group) {
+      byId.set(candidate.obj.id, candidate);
+    }
+  }
+  return [...byId.values()];
+}
+
+// ─── Time-window filter ───────────────────────────────────────────────────────
+
+/**
+ * Keeps only candidates that:
+ *  1. Have not yet expired (now < expires_at)
+ *  2. Start within the next 2 hours, or have already started (start <= now + 7200)
+ */
+function filterByTimeWindow(candidates: RankedCandidate[], now: number): RankedCandidate[] {
+  return candidates.filter(({ obj }) =>
+    obj.expires_at > now &&
+    obj.time_window.end >= now &&
+    obj.time_window.start <= now + 2 * 60 * 60 * 1000,
+  );
+}
+
+// ─── Ranking formula ──────────────────────────────────────────────────────────
+
+/**
+ * Scores a SpontaneousObject candidate using the new ranking formula:
+ *
+ *   time_proximity (0.45) — inverse decay from window start; 1 if starting now
+ *   distance       (0.30) — inverse linear decay over 3000 m
+ *   social_score   (0.15) — going_count normalised to [0, 1] (50 = max)
+ *   trust_score    (0.10) — persisted trust value from SpontaneousObject
+ *   user_state     (+0.10 / +0.05) — additive bonus for confirmed RSVP
+ *
+ * Venues with no UGC history default to trust_score=0.5 and going_count=0,
+ * so they score identically to the neutral baseline — no crash, no bias.
+ */
+function scoreSpontaneousCandidate(
+  candidate: RankedCandidate,
+  now: number,
+): SpontaneousScoreBreakdown {
+  const { obj, distance_meters } = candidate;
+
+  const msUntilStart = Math.max(0, obj.time_window.start - now);
+  const timeProximityScore = Math.max(0, 1 - msUntilStart / (2 * 60 * 60 * 1000));
+
+  const distanceScore =
+    typeof distance_meters === "number"
+      ? Math.max(0, 1 - distance_meters / 3000)
+      : 0.5;
+
+  const socialScore = Math.min(1, obj.going_count / 50);
+
+  const trustScore = obj.trust_score;
+
+  const userStateBonus =
+    obj.user_state === "going" ? 0.10 :
+    obj.user_state === "maybe" ? 0.05 : 0;
+
+  const baseScore =
+    timeProximityScore * 0.60 +
+    socialScore        * 0.25 +
+    distanceScore      * 0.10 +
+    trustScore         * 0.05;
+
+  return {
+    timeProximityScore,
+    distanceScore,
+    socialScore,
+    trustScore,
+    userStateBonus,
+    finalScore: clamp(baseScore + userStateBonus, 0, 1),
+  };
+}
+
+export async function rankSpontaneousObjects(
+  candidates: RankedCandidate[],
+  now: number = Date.now(),
+): Promise<Array<{ candidate: RankedCandidate; score: number; breakdown: SpontaneousScoreBreakdown }>> {
+  const scoredCandidates = await Promise.all(
+    candidates.map(async (candidate) => {
+      const nodeTrust = await getNodeTrustScore(candidate.obj.id);
+      const effectiveTrust = (candidate.obj.trust_score + nodeTrust) / 2;
+      const candidateWithTrust: RankedCandidate = {
+        ...candidate,
+        obj: { ...candidate.obj, trust_score: effectiveTrust },
+      };
+      const breakdown = scoreSpontaneousCandidate(candidateWithTrust, now);
+      return { candidate: candidateWithTrust, score: breakdown.finalScore, breakdown };
+    }),
+  );
+
+  return scoredCandidates.sort((a, b) => {
+    const scoreDiff = b.score - a.score;
+    if (scoreDiff !== 0) return scoreDiff;
+
+    const goingDiff = b.candidate.obj.going_count - a.candidate.obj.going_count;
+    if (goingDiff !== 0) return goingDiff;
+
+    const aDistance = a.candidate.distance_meters ?? Number.POSITIVE_INFINITY;
+    const bDistance = b.candidate.distance_meters ?? Number.POSITIVE_INFINITY;
+    const distDiff = aDistance - bDistance;
+    if (distDiff !== 0) return distDiff;
+
+    return a.candidate.obj.id.localeCompare(b.candidate.obj.id);
+  });
+}
+
+export async function getTopSpontaneousObject(
+  candidates: RankedCandidate[],
+  now: number = Date.now(),
+): Promise<RankedCandidate | null> {
+  const ranked = await rankSpontaneousObjects(candidates, now);
+  return ranked[0]?.candidate ?? null;
 }
 
 // ─── Main export ──────────────────────────────────────────────────────────────
 
 /**
- * Attempts to build a DecideResponse from real nearby Places API results.
+ * Attempts to build a DecideResponse from a unified SpontaneousObject pool.
  *
  * @param body   - Validated POST body (geo already confirmed present)
  * @param reqId  - Request correlation ID for logging
@@ -269,6 +470,7 @@ export async function generateSyntheticDecision(
           settings?: { scoring_weights?: ScoringWeights | null };
         }
       )?.settings?.scoring_weights ?? undefined;
+    void scoringWeights; // weight overrides not used in SpontaneousObject formula
     const ctx = buildContext(body as Partial<HadeContext>);
     const situationSummary = generateSituationSummary(ctx);
     const { intentLabel, categories: targetCategories } = resolveTargetCategories(
@@ -280,73 +482,34 @@ export async function generateSyntheticDecision(
 
     console.log(`[HADE Tier 2] Intent: "${intentLabel}" -> Mapped Category: "${primaryCategory}"`);
 
-    // ── Fetch nearby places ───────────────────────────────────────────────────
+    // ── Step 1: Fetch UGC (primary) and Places (fallback) ─────────────────────
+    const now = Date.now();
+    const ugcCandidates = await getUGCObjects(body, geoHint, radius, now);
+
     console.log(
       `[hade-synthetic ${reqId}] fetching places` +
         ` (intent=${intent ?? "any"}, radius=${radius}m, category=${primaryCategory})`,
     );
 
-    let places = await fetchNearbyGrounded({
+    const places = await getPlaces({
       geo: geoHint,
       intent,
-      target_categories: targetCategories,
-      radius_meters: radius,
-      open_now: true,
+      targetCategories: targetCategories,
+      radius,
     });
+    const placeCandidates = places
+      .map((place) => placeToCandidate(place, geoHint, now))
+      .filter((candidate): candidate is RankedCandidate => candidate !== null);
 
-    const googleCount = places.length;
+    const googleCount = placeCandidates.length;
+    const ugcInjectedCount = ugcCandidates.length;
 
-    // ── UGC injection: merge custom_candidates into the candidate pool ───────
-    // Caller-supplied entities (events, pop-ups, custom venues) are appended
-    // to the Google fetch and deduplicated by id with last-write-wins semantics
-    // — a custom entry overrides any colliding Google record so updated UGC
-    // metadata takes precedence. Category filter and rejection_history filter
-    // both run AFTER this merge, unchanged.
-    const customRaw = (body as { custom_candidates?: unknown }).custom_candidates;
-    const customCandidates = Array.isArray(customRaw)
-      ? (customRaw as PlaceOption[])
-      : [];
-    if (customCandidates.length > 0) {
-      const byId = new Map<string, PlaceOption>();
-      for (const p of places)            byId.set(p.id, p);
-      for (const c of customCandidates)  byId.set(c.id, c); // last-write-wins
-      const beforeCount = places.length;
-      places = [...byId.values()];
-      console.log(
-        `[hade-synthetic ${reqId}] merged ${customCandidates.length} custom_candidate(s)` +
-          ` — pool: ${places.length} (was ${beforeCount})`,
-      );
-    }
+    // ── Step 2: Merge SpontaneousObject arrays ────────────────────────────────
+    const mergedCandidates = mergeCandidates(ugcCandidates, placeCandidates);
 
-    const ugcInjectedCount = places.filter((p) => p.isUGC).length;
-    const relevantPlaces = filterPlacesByMappedCategory(places, targetCategories);
-    const ugcSurvivedCount = relevantPlaces.filter((p) => p.isUGC).length;
-
-    if (ugcInjectedCount > 0) {
-      const ugcFilteredOutCount = ugcInjectedCount - ugcSurvivedCount;
-      if (ugcSurvivedCount === 0) {
-        console.warn(
-          `[hade-synthetic ${reqId}] ⚠ UGC fully filtered out` +
-            ` — ugc_injected=${ugcInjectedCount} ugc_survived=0 ugc_filtered_out=${ugcInjectedCount}`,
-        );
-      } else {
-        console.log(
-          `[hade-synthetic ${reqId}] UGC visibility:` +
-            ` ugc_injected=${ugcInjectedCount} ugc_survived=${ugcSurvivedCount} ugc_filtered_out=${ugcFilteredOutCount}`,
-        );
-      }
-    }
-
-    if (relevantPlaces.length === 0) {
-      console.warn(`[hade-synthetic ${reqId}] no places returned — falling through to Tier 3`);
-      return { ok: false };
-    }
-
-    // ── HARD EXCLUSION of rejected venues ─────────────────────────────────────
+    // ── Step 3: HARD EXCLUSION of rejected objects ────────────────────────────
     // "Not This" must guarantee a rejected venue is NEVER returned again in the
-    // same session. Filter BEFORE scoring so a rejected venue cannot be ranked,
-    // tied, or surfaced as fallback_places. Schema is RejectionEntry[] (objects
-    // with venue_id); accept raw string[] defensively for forward-compat.
+    // same session. Filter BEFORE conversion so rejected IDs cannot reach ranking.
     const rawRejections = (body as { rejection_history?: unknown }).rejection_history;
     const rejected = new Set<string>(
       Array.isArray(rawRejections)
@@ -363,59 +526,58 @@ export async function generateSyntheticDecision(
         : [],
     );
 
-    const filteredPlaces = rejected.size > 0
-      ? relevantPlaces.filter((place) => !rejected.has(place.id))
-      : relevantPlaces;
+    const admittedCandidates = rejected.size > 0
+      ? mergedCandidates.filter((candidate) => !rejected.has(candidate.obj.id))
+      : mergedCandidates;
 
-    if (filteredPlaces.length === 0) {
+    if (admittedCandidates.length === 0) {
       console.warn(
-        `[hade-synthetic ${reqId}] all ${relevantPlaces.length} candidate(s) rejected` +
+        `[hade-synthetic ${reqId}] all ${mergedCandidates.length} candidate(s) rejected` +
           ` (rejection_history size=${rejected.size}) — falling through to Tier 3`,
       );
       return { ok: false };
     }
 
     if (rejected.size > 0) {
-      const excluded = relevantPlaces.length - filteredPlaces.length;
+      const excluded = mergedCandidates.length - admittedCandidates.length;
       if (excluded > 0) {
         console.log(
           `[hade-synthetic ${reqId}] excluded ${excluded} rejected venue(s)` +
-            ` — ${filteredPlaces.length} candidate(s) remain`,
+            ` — ${admittedCandidates.length} candidate(s) remain`,
         );
       }
     }
 
-    // ── Pick best place ───────────────────────────────────────────────────────
-    const scoredPlaces = await Promise.all(
-      filteredPlaces.map(async (place) => {
-        const [vibeScore, trustScore] = await Promise.all([
-          getNodeVibeScore(place.id),
-          getNodeTrustScore(place.id),
-        ]);
-        const breakdown = scorePlaceOption(
-          place,
-          geoHint,
-          vibeScore,
-          trustScore,
-          scoringWeights,
-        );
-        return { place, score: breakdown.finalScore, breakdown };
-      }),
-    );
-    const sorted = scoredPlaces.sort((a, b) => {
-      // 1. finalScore DESC
-      const scoreDiff = b.score - a.score;
-      if (scoreDiff !== 0) return scoreDiff;
-      // 2. distance_meters ASC — closer wins on tie
-      const distDiff = a.place.distance_meters - b.place.distance_meters;
-      if (distDiff !== 0) return distDiff;
-      // 3. isUGC DESC — prefer UGC in exact ties (community-first)
-      const ugcDiff = (b.place.isUGC ? 1 : 0) - (a.place.isUGC ? 1 : 0);
-      if (ugcDiff !== 0) return ugcDiff;
-      // 4. id ASC — final stable tie-breaker, immune to input ordering
-      return a.place.id.localeCompare(b.place.id);
-    });
-    const best = sorted[0].place;
+    // ── Step 4: Filter by time window (now → +2h) ────────────────────────────
+    const timeWindowCandidates = filterByTimeWindow(admittedCandidates, now);
+
+    if (timeWindowCandidates.length === 0) {
+      console.warn(
+        `[hade-synthetic ${reqId}] no candidates within time window` +
+          ` (admitted=${admittedCandidates.length}) — falling through to Tier 3`,
+      );
+      return { ok: false };
+    }
+
+    const ugcSurvivedCount = timeWindowCandidates.filter((c) => c.obj.type === "ugc_event").length;
+    if (ugcInjectedCount > 0) {
+      const ugcFiltered = ugcInjectedCount - ugcSurvivedCount;
+      console.log(
+        `[hade-synthetic ${reqId}] UGC visibility:` +
+          ` ugc_injected=${ugcInjectedCount} ugc_survived=${ugcSurvivedCount} ugc_filtered_out=${ugcFiltered}`,
+      );
+    }
+
+    // ── Step 5: Score and rank ────────────────────────────────────────────────
+    const sorted = await rankSpontaneousObjects(timeWindowCandidates, now);
+
+    const best = sorted[0];
+    if (!best) return { ok: false };
+
+    const bestObj = best.candidate.obj;
+    const bestDistance = best.candidate.distance_meters ?? 0;
+    const bestCategory = best.candidate.category;
+    const bestVibe = bestObj.vibe_tag ?? bestCategory;
 
     // ── Resolve display intent (infer from time if absent) ────────────────────
     const resolvedIntent: Intent =
@@ -423,56 +585,57 @@ export async function generateSyntheticDecision(
       inferIntentFromTime(ctx.time_of_day) ??
       "anything";
 
-    // ── Assemble HadeDecision ─────────────────────────────────────────────────
-    const winnerBreakdown = sorted[0].breakdown;
-    const ugcMeta = best.isUGC && best.created_at
+    // ── Step 7: Assemble HadeDecision from the winning SpontaneousObject ──────
+    const ugcMeta = bestObj.type === "ugc_event" && bestObj.created_at
       ? {
           ugc_meta: {
             is_ugc: true as const,
-            created_at: best.created_at,
-            ...(best.expires_at ? { expires_at: best.expires_at } : {}),
-            distance_copy: getDistanceCopy(best.distance_meters),
+            created_at: epochMsToIso(bestObj.created_at),
+            ...(bestObj.expires_at ? { expires_at: epochMsToIso(bestObj.expires_at) } : {}),
+            distance_copy: getDistanceCopy(bestDistance),
           },
         }
       : {};
 
     const decision = {
-      id: best.id,
-      venue_name: best.name,
-      category: best.category,
-      geo: best.geo,
-      distance_meters: best.distance_meters,
-      eta_minutes: Math.max(1, Math.ceil(best.distance_meters / 80)), // 80 m/min walking
-      rationale: `A ${best.vibe} ${best.category} a short walk from here.`,
+      ...bestObj,
+      id: bestObj.id,
+      venue_name: bestObj.title,
+      category: bestCategory,
+      geo: { lat: bestObj.location.lat, lng: bestObj.location.lng },
+      distance_meters: bestDistance,
+      eta_minutes: Math.max(1, Math.ceil(bestDistance / 80)),
+      rationale: `A ${bestVibe} ${bestCategory} a short walk from here.`,
       why_now: buildWhyNow(resolvedIntent),
       confidence: 0.65,
       situation_summary: situationSummary,
-      ...(best.address ? { neighborhood: best.address } : {}),
+      ...(best.candidate.address ? { neighborhood: best.candidate.address } : {}),
       ...ugcMeta,
     };
 
     // ── Assemble DecideResponse ───────────────────────────────────────────────
+    const fallbackObjects = timeWindowCandidates.map((c) => c.obj);
     const data: DecideResponse = {
       decision,
       context_snapshot: {
         situation_summary: situationSummary,
         interpreted_intent: resolvedIntent,
         decision_basis: "fallback",
-        candidates_evaluated: filteredPlaces.length,
+        candidates_evaluated: timeWindowCandidates.length,
         llm_failure_reason: "provider_error",
       },
       session_id: `synthetic-${reqId}`,
       source: "synthetic",
-      fallback_places: filteredPlaces,
+      fallback_places: fallbackObjects,
     };
 
     console.log(
       `[hade-synthetic ${reqId}] ✓ built synthetic decision` +
-        ` — "${best.name}" (${best.distance_meters}m, ${filteredPlaces.length} candidate(s))`,
+        ` — "${bestObj.title}" (${bestDistance}m, ${timeWindowCandidates.length} candidate(s))`,
     );
 
     // ── Decision trace — structured audit log (no PII: geo truncated to 3dp) ─
-    const ugcCount = customCandidates.length;
+    const ugcCount = ugcCandidates.length;
     const winReason =
       sorted.length === 1
         ? "only_candidate"
@@ -490,24 +653,26 @@ export async function generateSyntheticDecision(
       candidates: {
         google_count: googleCount,
         ugc_count: ugcCount,
-        merged_count: googleCount + ugcCount > 0 ? places.length : 0,
+        merged_count: mergedCandidates.length,
       },
       filtering: {
-        after_category: relevantPlaces.length,
-        after_rejection: filteredPlaces.length,
+        after_rejection: admittedCandidates.length,
+        after_time_window: timeWindowCandidates.length,
       },
-      scoring: top3.map(({ place, breakdown }) => ({
-        id: place.id,
-        isUGC: place.isUGC ?? false,
-        distance: place.distance_meters,
-        proximityScore: r3(breakdown.proximityScore),
-        ratingScore:    r3(breakdown.ratingScore),
-        vibeScore:      r3(breakdown.vibeScore),
-        trustScore:     r3(breakdown.trustScore),
-        finalScore:     r3(breakdown.finalScore),
+      scoring: top3.map(({ candidate, breakdown }) => ({
+        id: candidate.obj.id,
+        type: candidate.obj.type,
+        distance: candidate.distance_meters,
+        timeProximityScore: r3(breakdown.timeProximityScore),
+        distanceScore:      r3(breakdown.distanceScore),
+        socialScore:        r3(breakdown.socialScore),
+        trustScore:         r3(breakdown.trustScore),
+        userStateBonus:     r3(breakdown.userStateBonus),
+        finalScore:         r3(breakdown.finalScore),
       })),
       selected: {
-        id: best.id,
+        id: bestObj.id,
+        type: bestObj.type,
         finalScore: r3(sorted[0].score),
         reason: winReason,
       },
@@ -516,44 +681,42 @@ export async function generateSyntheticDecision(
     // ── Debug payload (returned when caller sets settings.debug=true) ─────────
     const finalReasoning =
       winReason === "only_candidate"
-        ? `Only candidate: ${best.id}`
+        ? `Only candidate: ${bestObj.id}`
         : winReason === "highest_score"
-          ? `Selected ${best.id} (score ${r3(sorted[0].score)}); next was ${sorted[1].place.id} (${r3(sorted[1].score)})`
-          : `Tied at ${r3(sorted[0].score)} — resolved by id: ${best.id} over ${sorted[1].place.id}`;
+          ? `Selected ${bestObj.id} (score ${r3(sorted[0].score)}); next was ${sorted[1].candidate.obj.id} (${r3(sorted[1].score)})`
+          : `Tied at ${r3(sorted[0].score)} — resolved by id: ${bestObj.id} over ${sorted[1].candidate.obj.id}`;
 
     const debugPayload: HadeDebugPayload = {
-      candidates_evaluated: filteredPlaces.length,
+      candidates_evaluated: timeWindowCandidates.length,
       ugc_injected: ugcInjectedCount,
       rejection_applied: rejected.size > 0,
       final_reasoning: finalReasoning,
-      scoring_breakdown: top3.map(({ place, breakdown }) => ({
-        venue_id:       place.id,
-        venue_name:     place.name,
-        category:       place.category,
-        proximity_score: r3(breakdown.proximityScore),
-        context_score:  0,
-        intent_score:   0,
-        final_score:    r3(breakdown.finalScore),
-        isUGC:          place.isUGC ?? false,
-        distance:       place.distance_meters,
-        rating_score:   r3(breakdown.ratingScore),
-        vibe_score:     r3(breakdown.vibeScore),
-        trust_score:    r3(breakdown.trustScore),
+      scoring_breakdown: top3.map(({ candidate, breakdown }) => ({
+        venue_id:        candidate.obj.id,
+        venue_name:      candidate.obj.title,
+        category:        candidate.category,
+        proximity_score: r3(breakdown.timeProximityScore),
+        context_score:   r3(breakdown.distanceScore),
+        intent_score:    r3(breakdown.socialScore),
+        final_score:     r3(breakdown.finalScore),
+        isUGC:           candidate.obj.type === "ugc_event",
+        distance:        candidate.distance_meters ?? 0,
+        trust_score:     r3(breakdown.trustScore),
       })),
     };
 
     const explanation_signals: ExplanationSignals = {
       vibe_match:
-        winnerBreakdown.vibeScore >= 0.7 ? "strong"
-        : winnerBreakdown.vibeScore >= 0.5 ? "moderate"
+        best.breakdown.socialScore >= 0.3 ? "strong"
+        : best.breakdown.socialScore > 0  ? "moderate"
         : "none",
       social_proof:
-        winnerBreakdown.trustScore >= 0.6 ? "high"
-        : winnerBreakdown.trustScore >= 0.5 ? "moderate"
+        best.breakdown.trustScore >= 0.6 ? "high"
+        : best.breakdown.trustScore >= 0.5 ? "moderate"
         : "none",
     };
 
-    return { ok: true, data, places: filteredPlaces, debugPayload, explanation_signals };
+    return { ok: true, data, objects: fallbackObjects, debugPayload, explanation_signals };
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
     console.warn(`[hade-synthetic ${reqId}] ✗ threw unexpectedly: ${detail}`);

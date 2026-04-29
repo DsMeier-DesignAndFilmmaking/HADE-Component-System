@@ -2,6 +2,8 @@ import SwiftUI
 
 struct DecisionView: View {
     @StateObject private var viewModel = HadeViewModel()
+    @State private var rejectionCount = 0
+    @State private var isCreationFlowPresented = false
 
     var body: some View {
         GeometryReader { proxy in
@@ -17,7 +19,14 @@ struct DecisionView: View {
                     Spacer(minLength: max(18, proxy.size.height * 0.05))
 
                     if let decision = viewModel.state.decision {
-                        DecisionCard(decision: decision, isUpdating: viewModel.state.status == .updating)
+                        DecisionCard(
+                            object: object(from: decision),
+                            distanceText: decision.distanceText,
+                            isUpdating: viewModel.state.status == .updating,
+                            onGoing: viewModel.go,
+                            onMaybe: {},
+                            onNotThis: handleNotThis
+                        )
                             .transition(.opacity.combined(with: .move(edge: .trailing)))
                     } else {
                         loadingCard
@@ -31,6 +40,14 @@ struct DecisionView: View {
                     Spacer(minLength: max(18, proxy.size.height * 0.05))
 
                     PrimaryCTAButton(action: viewModel.go)
+
+                    if rejectionCount >= 2 {
+                        Button("Start something nearby") {
+                            isCreationFlowPresented = true
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .padding(.top, 12)
+                    }
 
                     HStack {
                         Button("Refine") {
@@ -65,6 +82,9 @@ struct DecisionView: View {
         .sheet(isPresented: $viewModel.isRefineSheetPresented) {
             RefineBottomSheet(isPresented: $viewModel.isRefineSheetPresented, onSelect: viewModel.refine)
         }
+        .sheet(isPresented: $isCreationFlowPresented) {
+            ActivityCreationView()
+        }
         .task {
             viewModel.start()
         }
@@ -78,6 +98,23 @@ struct DecisionView: View {
             return ["Understanding your context..."]
         }
         return Array(viewModel.state.reasoning.prefix(3))
+    }
+
+    private func handleNotThis() {
+        rejectionCount += 1
+        viewModel.regenerate()
+    }
+
+    private func object(from decision: Decision) -> SpontaneousObject {
+        let now = Date().timeIntervalSince1970
+        return SpontaneousObject.fromUGC(
+            id: decision.id,
+            title: decision.title,
+            lat: 0,
+            lng: 0,
+            timeWindowStart: now,
+            timeWindowEnd: now + 3600
+        )
     }
 
     private var loadingCard: some View {

@@ -1,13 +1,12 @@
 import { NextRequest } from "next/server";
 import { serverEnv } from "@/lib/env/server";
 import { generateSyntheticDecision } from "@/core/engine/synthetic";
-import type { GeoLocation, LocationNode, PlaceOption, ScoringWeights } from "@/types/hade";
+import type { GeoLocation, LocationNode, ScoringWeights, SpontaneousObject } from "@/types/hade";
 import { getLocationWeights, locationNodeExists, createLocationNode } from "@/lib/hade/weights";
 import { setOfflineCache, getValidCache } from "@/lib/hade/cache";
 import type { CacheEntry, CachedVenue, CachedLocationNode } from "@/lib/hade/cache";
 import { haversineDistanceMeters } from "@/lib/hade/engine";
 import { getRedisMode } from "@/lib/hade/redis";
-import { getNearbyUGC, ugcToPlaceOption } from "@/lib/hade/ugc";
 
 export const runtime = "nodejs";
 
@@ -146,14 +145,13 @@ async function generateDecision(
     );
 
     // ── Tier 2: Synthetic (real Places API candidates) ────────────────────────
-    const bodyForTier2 = await injectUGCCandidates(body, geoHint, reqId);
-    const synthetic = await generateSyntheticDecision(bodyForTier2, reqId, geoHint);
+    const synthetic = await generateSyntheticDecision(body, reqId, geoHint);
 
     if (synthetic.ok) {
       const elapsed = Date.now() - startedAt;
       console.log(
         `[hade-decide ${reqId}] ✓ Tier 2 (synthetic) ok in ${elapsed}ms` +
-          ` — ${synthetic.places.length} place(s)`,
+          ` — ${synthetic.objects.length} object(s)`,
       );
 
       const decisionNode = await getDecisionNode(synthetic.data.decision.id);
@@ -169,7 +167,7 @@ async function generateDecision(
       };
 
       // ── Tier 2.5: Write offline cache (fire-and-forget, non-blocking) ────────
-      void writeCacheFromSynthetic(synthetic.places, body);
+      void writeCacheFromSynthetic(synthetic.objects, body);
 
       return withDegradedSignal(enrichedSyntheticData, {
         status: 200,
@@ -233,56 +231,6 @@ async function enrichWithNodeWeights(
   return { ...body, location_nodes: nodes };
 }
 
-// ─── UGC candidate injection ─────────────────────────────────────────────────
-
-/**
- * Fetches nearby UGC entities and merges them into `custom_candidates` before
- * the Tier 2 synthetic engine runs. Caller-supplied entries take precedence
- * over stored UGC when IDs collide (last-write-wins on the caller side).
- *
- * The synthetic engine's existing merge + filter + scoring pipeline runs
- * unchanged — UGC entries are indistinguishable from any other custom_candidate.
- */
-async function injectUGCCandidates(
-  body: Record<string, unknown>,
-  geo: GeoLocation | null,
-  reqId: string,
-): Promise<Record<string, unknown>> {
-  if (!geo) return body;
-
-  const radiusRaw = (body as { radius_meters?: unknown }).radius_meters;
-  const radius =
-    typeof radiusRaw === "number" && Number.isFinite(radiusRaw) && radiusRaw > 0
-      ? radiusRaw
-      : 800;
-
-  let ugcEntities;
-  try {
-    ugcEntities = await getNearbyUGC(geo, radius);
-  } catch {
-    return body;
-  }
-
-  if (ugcEntities.length === 0) return body;
-
-  const ugcPlaces = ugcEntities.map((e) => ugcToPlaceOption(e, geo));
-
-  // Merge: UGC first, then caller's custom_candidates overwrite on id collision.
-  const callerRaw = (body as { custom_candidates?: unknown }).custom_candidates;
-  const callerCandidates = Array.isArray(callerRaw) ? (callerRaw as PlaceOption[]) : [];
-  const byId = new Map<string, PlaceOption>();
-  for (const p of ugcPlaces)         byId.set(p.id, p);
-  for (const c of callerCandidates)  byId.set(c.id, c);
-  const merged = [...byId.values()];
-
-  console.log(
-    `[hade-decide ${reqId}]   ↗ injecting ${ugcPlaces.length} UGC candidate(s)` +
-      ` (custom_candidates pool: ${merged.length})`,
-  );
-
-  return { ...body, custom_candidates: merged };
-}
-
 // ─── Stage 1: Parse body ─────────────────────────────────────────────────────
 
 async function safeParseBody(
@@ -323,9 +271,9 @@ function validatePayload(
 /**
  * Validates custom_candidates if present.
  *
- * Only checks the minimal contract: each entry must have a non-empty string
- * `id`, a non-empty string `name`, and a geo with finite lat/lng.
- * All other PlaceOption fields are optional — no Google-specific constraints.
+ * Only checks the minimal SpontaneousObject contract: each entry must have a
+ * non-empty string `id`, a non-empty string `title`, a valid `type`, and a
+ * location with finite lat/lng.
  *
  * Returns { ok: true } when the field is absent (fully optional).
  * Returns { ok: false } on the first malformed entry.
@@ -359,14 +307,28 @@ function validateCustomCandidates(
       return { ok: false, error: msg };
     }
 
-    if (typeof c.name !== "string" || !c.name.trim()) {
-      const msg = `custom_candidates[${i}]: name must be a non-empty string`;
+    if (c.type !== "ugc_event" && c.type !== "place_opportunity") {
+      const msg = `custom_candidates[${i}]: type must be ugc_event or place_opportunity`;
       console.warn(`[hade-decide ${reqId}] ✗ validation: ${msg}`);
       return { ok: false, error: msg };
     }
 
-    if (!extractGeo(c)) {
-      const msg = `custom_candidates[${i}]: geo must have finite lat and lng`;
+    if (typeof c.title !== "string" || !c.title.trim()) {
+      const msg = `custom_candidates[${i}]: title must be a non-empty string`;
+      console.warn(`[hade-decide ${reqId}] ✗ validation: ${msg}`);
+      return { ok: false, error: msg };
+    }
+
+    const location = c.location;
+    const lat = location && typeof location === "object" ? (location as { lat?: unknown }).lat : null;
+    const lng = location && typeof location === "object" ? (location as { lng?: unknown }).lng : null;
+    if (
+      typeof lat !== "number" ||
+      typeof lng !== "number" ||
+      !Number.isFinite(lat) ||
+      !Number.isFinite(lng)
+    ) {
+      const msg = `custom_candidates[${i}]: location must have finite lat and lng`;
       console.warn(`[hade-decide ${reqId}] ✗ validation: ${msg}`);
       return { ok: false, error: msg };
     }
@@ -468,46 +430,37 @@ function fallbackResponse(
   reqId: string,
   reason: string,
   detail: string,
-  geoHint: GeoLocation | null,
+  _geoHint: GeoLocation | null,
 ): Response {
-  // Use caller's geo if available. A null geo here means even geo validation
-  // failed — use a zero-point sentinel rather than a hardcoded city coordinate.
-  const geo: GeoLocation = geoHint ?? { lat: 0, lng: 0 };
-
+  // No synthetic venue is returned — emitting a `fallback-<id>` decision would
+  // poison the client's rejection_history and trigger an infinite pivot loop.
+  // Status 503 + `decision: null` lets the client treat this as a transient
+  // error and skip auto-retry while degraded.
   const body = {
-    decision: {
-      id: `fallback-${reqId}`,
-      venue_name: "A spot nearby",
-      category: "venue",
-      geo,
-      distance_meters: 0,
-      eta_minutes: 0,
-      rationale: "The decision engine is temporarily unavailable — try again in a moment.",
-      why_now: "Engine offline",
-      confidence: 0.1,
-      situation_summary: "Fallback decision — upstream engine unavailable",
-    },
+    decision: null,
+    decision_node: null,
+    fallback_places: [],
     context_snapshot: {
-      situation_summary: "Fallback decision — upstream engine unavailable",
+      situation_summary: "Decision engine temporarily unavailable",
       interpreted_intent: "chill",
       decision_basis: "fallback" as const,
       candidates_evaluated: 0,
       llm_failure_reason: "provider_error" as const,
     },
-    session_id: `fallback-${reqId}`,
+    session_id: null,
     source: "static_fallback" as const,
-    fallback_places: [],
-    decision_node: null,
+    error: { code: "engine_unavailable", reason, detail },
   };
 
   console.warn(`[hade-decide ${reqId}] ⚠ fallback (${reason}): ${detail}`);
 
   return withDegradedSignal(body, {
-    status: 200,
+    status: 503,
     headers: {
       "Content-Type": "application/json",
       "x-hade-source": "fallback",
       "x-hade-fallback-reason": reason,
+      "Retry-After": "30",
     },
   });
 }
@@ -520,10 +473,10 @@ function fallbackResponse(
  * on the critical path.
  */
 async function writeCacheFromSynthetic(
-  places: PlaceOption[],
+  objects: SpontaneousObject[],
   body: Record<string, unknown>,
 ): Promise<void> {
-  if (places.length === 0) return;
+  if (objects.length === 0) return;
 
   // ── Cold-start seeding ────────────────────────────────────────────────────
   // For each venue with no existing LocationNode, create a trust-prior node
@@ -531,16 +484,13 @@ async function writeCacheFromSynthetic(
   //   • Existing nodes are never read, modified, or overwritten.
   //   • weight_map stays empty — no synthetic vibe tags are injected.
   //   • trust_score encodes prior belief quality; UGC signals refine it later.
-  for (const place of places) {
-    const exists = await locationNodeExists(place.id);
+  for (const object of objects) {
+    const exists = await locationNodeExists(object.id);
     if (exists) continue;
 
-    const rating = place.rating ?? 3.5;
-    const trustScore = Math.max(0, Math.min(1, (rating - 1) / 4));
-
     await createLocationNode({
-      venue_id: place.id,
-      trust_score: trustScore,
+      venue_id: object.id,
+      trust_score: Math.max(0, Math.min(1, object.trust_score)),
       weight_map: {} as LocationNode["weight_map"],
       signal_count: 0,
       last_updated: new Date().toISOString(),
@@ -548,11 +498,11 @@ async function writeCacheFromSynthetic(
     });
   }
 
-  const venues: CachedVenue[] = places.map((p) => ({
-    id: p.id,
-    name: p.name,
-    geo: p.geo,
-    rating: p.rating,
+  const venues: CachedVenue[] = objects.map((object) => ({
+    id: object.id,
+    name: object.title,
+    geo: { lat: object.location.lat, lng: object.location.lng },
+    rating: 1 + Math.max(0, Math.min(1, object.trust_score)) * 4,
   }));
 
   const rawNodes = (body as { location_nodes?: unknown }).location_nodes;
@@ -618,9 +568,27 @@ function buildOfflineResponse(
     const best = scored[0];
     if (!best) return null;
     const decisionNode = cache.nodes.find((n) => n.venue_id === best.venue.id) ?? null;
+    const now = Date.now();
+    const fallbackObjects: SpontaneousObject[] = cache.venues.map((venue) => ({
+      id: venue.id,
+      type: "place_opportunity",
+      title: venue.name,
+      time_window: { start: now, end: now + 60 * 60 * 1000 },
+      location: { lat: venue.geo.lat, lng: venue.geo.lng, place_id: venue.id },
+      radius: Math.round(haversineDistanceMeters(geoHint, venue.geo)),
+      going_count: 0,
+      maybe_count: 0,
+      user_state: null,
+      created_at: now,
+      expires_at: now + 60 * 60 * 1000,
+      trust_score: Math.max(0, Math.min(1, ((venue.rating ?? 3.5) - 1) / 4)),
+      source: "offline_cache",
+    }));
+    const bestObject = fallbackObjects.find((object) => object.id === best.venue.id);
 
     const responseBody = {
       decision: {
+        ...(bestObject ?? {}),
         id: best.venue.id,
         venue_name: best.venue.name,
         category: "venue",
@@ -641,7 +609,7 @@ function buildOfflineResponse(
       },
       session_id: `offline-${reqId}`,
       source: "offline_cache",
-      fallback_places: cache.venues,
+      fallback_places: fallbackObjects,
       decision_node: decisionNode,
     };
 

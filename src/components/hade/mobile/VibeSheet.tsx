@@ -82,28 +82,11 @@ export function VibeSheet({ venueId, venueName, isUGC = false, onDismiss, onSubm
     const tags      = Array.from(selected);
     const sentiment = deriveSentiment(tags);
 
-    // ── STEP 1: Direct server record (source tag preserved for analytics) ────
-    try {
-      await fetch("/api/hade/signal", {
-        method:  "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          venueId,
-          tags,
-          sentiment,
-          source: "post_visit_sheet",
-        }),
-      });
-    } catch {
-      // Best-effort — don't block dismissal on network failure
-    }
-
-    // ── STEP 2: Queue-based signal (high-intent strength = 0.9) ─────────────
-    // Treated as the strongest UGC category; strength 0.9 vs default 0.7
-    // to reflect post-experience truth capture.
+    // Queue-based signal (high-intent strength = 0.9). The SignalQueue posts
+    // a properly batched { signals: VibeSignal[] } payload to /api/hade/signal
+    // on the next idle frame — no direct fetch needed here.
     emitVibeSignal(venueId, tags as VibeTag[], sentiment, 0.9);
 
-    // ── STEP 3: Close — no duplicate submissions possible via submitted flag ──
     setSubmitted(true);
     onSubmit(tags, sentiment);
   };

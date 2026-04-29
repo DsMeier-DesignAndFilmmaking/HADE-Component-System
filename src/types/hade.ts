@@ -1,3 +1,6 @@
+import type { SpontaneousObject } from "../../domain/spontaneous-object/spontaneousObject";
+export type { SpontaneousObject, SpontaneousObjectType } from "../../domain/spontaneous-object/spontaneousObject";
+
 // ─── Primitives ──────────────────────────────────────────────────────────────
 
 export interface GeoLocation {
@@ -188,19 +191,10 @@ export interface DecideRequest {
    */
   node_hints?: string[];
   /**
-   * Optional caller-supplied entity candidates (events, pop-ups, custom venues)
-   * to surface alongside or instead of Google Places results.
-   *
-   * Each entry must carry a stable `id`, a display `name`, and a `geo` — all
-   * other PlaceOption fields are optional and their absence does not fail
-   * validation. No Google-specific constraints are enforced: `rating`,
-   * `is_open`, and `price_level` may be omitted.
-   *
-   * The decide handler does not yet inject these into Tier 2 scoring
-   * (synthetic pipeline). They are forwarded to the upstream LLM (Tier 1)
-   * as part of the request body for context-aware selection.
+   * Optional caller-supplied SpontaneousObject candidates surfaced alongside
+   * stored UGC and place-derived fallback opportunities.
    */
-  custom_candidates?: PlaceOption[];
+  custom_candidates?: SpontaneousObject[];
 }
 
 /**
@@ -210,7 +204,7 @@ export interface DecideRequest {
  * situation_summary is the anchor sentence the LLM used as its
  * reasoning starting point — exposed here for transparency and debugging.
  */
-export interface HadeDecision {
+export interface HadeDecision extends Partial<SpontaneousObject> {
   id: string;
   venue_name: string;
   category: string;
@@ -266,7 +260,7 @@ export interface DecideResponse {
    * Real nearby venues fetched during Tier 2. Populated only when source === "synthetic".
    * Empty array for llm and static_fallback paths.
    */
-  fallback_places?: PlaceOption[];
+  fallback_places?: SpontaneousObject[];
 }
 
 // ─── UX Layer ─────────────────────────────────────────────────────────────────

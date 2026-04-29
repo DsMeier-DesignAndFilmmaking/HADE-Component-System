@@ -14,7 +14,7 @@
  *   ✗ distance_copy  — UGC only; backend pre-computes bucket label in ugc_meta.distance_copy
  */
 
-import type { HadeResponse, UiState } from "@/types/hade";
+import type { HadeResponse, SpontaneousObject, UiState } from "@/types/hade";
 import { computeTemporalState, type TemporalState } from "@/lib/hade/ugcCopy";
 import { formatDistance, formatEta } from "@/lib/hade/format";
 
@@ -70,6 +70,8 @@ export interface DecisionViewModel {
     vibe_match:   "strong" | "moderate" | "none";
     social_proof: "high"   | "moderate" | "none";
   };
+
+  object: SpontaneousObject;
 }
 
 // ─── Mapping ─────────────────────────────────────────────────────────────────
@@ -107,6 +109,23 @@ export function buildDecisionViewModel(response: HadeResponse): DecisionViewMode
     isUGC && dec.ugc_meta?.distance_copy
       ? dec.ugc_meta.distance_copy
       : formatDistance(dec.distance_meters);
+  const now = Date.now();
+  const object: SpontaneousObject = {
+    id: dec.id,
+    type: dec.type ?? (isUGC ? "ugc_event" : "place_opportunity"),
+    title: dec.title ?? dec.venue_name,
+    time_window: dec.time_window ?? { start: now, end: now + 60 * 60 * 1000 },
+    location: dec.location ?? { lat: dec.geo.lat, lng: dec.geo.lng },
+    radius: dec.radius ?? dec.distance_meters,
+    going_count: dec.going_count ?? 0,
+    maybe_count: dec.maybe_count ?? 0,
+    user_state: dec.user_state ?? null,
+    created_at: dec.created_at ?? now,
+    expires_at: dec.expires_at ?? now + 60 * 60 * 1000,
+    trust_score: dec.trust_score ?? dec.confidence,
+    vibe_tag: dec.vibe_tag,
+    source: dec.source,
+  };
 
   return {
     // Identity
@@ -136,5 +155,6 @@ export function buildDecisionViewModel(response: HadeResponse): DecisionViewMode
 
     // Signals
     explanation_signals: response.explanation_signals,
+    object,
   };
 }

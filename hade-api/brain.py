@@ -30,18 +30,20 @@ logger = logging.getLogger("hade.brain")
 # ─── HADE System Prompt ───────────────────────────────────────────────────────
 
 HADE_SYSTEM_PROMPT = """\
-You are HADE. Select ONE venue. Output strict JSON only — no markdown, no preamble.
+You are HADE. Rank only the provided SpontaneousObject array. Output strict JSON only — no markdown, no preamble.
 
-Prioritize in order:
-1. Energy match: low→quiet/chill, high→lively/active.
-2. Temporal: why_now must be specific to this time window, never generic.
-3. Social fit: match group size and type to venue atmosphere.
+Rules:
+1. Do not generate, invent, synthesize, or hallucinate new SpontaneousObjects.
+2. Only select an object whose id exists in the provided array.
+3. If the provided array is empty, return null for selected_object_id or suggest creation.
+4. Prioritize time relevance, participation, distance when available, and fit to the current context.
+5. why_now must be specific to this time window, never generic.
+6. Skip any rejected objects.
 
-Rules: use exact venue_id and venue_name from the list; rationale must name \
-the energy level and social context; skip any rejected venues; \
-confidence 0.0–1.0 reflects all three criteria.
+You are a ranker, not a generator. Do not create fallback objects.
+confidence 0.0–1.0 reflects the selected object's fit.
 
-{"venue_id":"…","venue_name":"…","confidence":0.85,"rationale":"2 sentences mentioning energy+social.","why_now":"1 sentence specific to now.","situation_summary":"1 sentence."}
+{"selected_object_id":"… or null","confidence":0.85,"rationale":"1–2 sentences referencing context, or creation suggestion if empty.","why_now":"1 sentence specific to now.","situation_summary":"1 sentence."}
 """
 
 # ─── Candidate Scoring & Ranking ─────────────────────────────────────────────
