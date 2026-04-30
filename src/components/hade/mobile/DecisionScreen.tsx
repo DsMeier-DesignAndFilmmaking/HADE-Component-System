@@ -146,6 +146,13 @@ export function DecisionScreen({ scenarioId }: DecisionScreenProps) {
   const [rejectionCount, setRejectionCount] = useState(0);
   const [rejectionHistory, setRejectionHistory] = useState<Array<{ venueId: string; reason: string; timestamp: number }>>([]);
 
+  useEffect(() => {
+    console.log("[HADE STATE]", {
+      rejection_history_length: rejectionHistory.length,
+      reasons: rejectionHistory.map((r) => r.reason),
+    });
+  }, [rejectionHistory]);
+
   const visitRef = useRef<{
     venueId:   string;
     venueName: string;
@@ -270,58 +277,59 @@ export function DecisionScreen({ scenarioId }: DecisionScreenProps) {
     ? getUGCPivotReasons(decision.ugc_meta.created_at)
     : PIVOT_REASONS;
 
-  if (status === "error") {
-    return (
-      <div className="flex h-[100dvh] w-full flex-col items-center justify-center gap-4 bg-background px-5">
-        <p className="text-base text-ink/70">Something got in the way.</p>
-        <p className="max-w-xs text-center text-sm text-ink/50">{error}</p>
-        <button
-          type="button"
-          onClick={regenerate}
-          className="mt-2 h-11 rounded-xl border border-line px-5 text-sm font-medium text-ink/70"
-        >
-          Try again
-        </button>
-      </div>
-    );
+  if (decision) {
+    console.log("[HADE UI DECISION]", decision.id, decision.title);
   }
-
-  if (status !== "ready" || !decision) {
-    return <LoadingState />;
-  }
-
-  console.log("[HADE UI DECISION]", decision.id, decision.title);
 
   return (
     <div className="mx-auto flex h-[100dvh] w-full max-w-[430px] flex-col bg-background px-5 pt-6 pb-safe-floor">
-      <AnimatePresence mode="wait">
-        <motion.div
-          key={decision.id}
-          initial={{ x: 32, opacity: 0 }}
-          animate={{ x: 0, opacity: 1 }}
-          exit={{ x: -32, opacity: 0 }}
-          transition={{ duration: 0.24, ease: "easeOut" }}
-        >
-          <ErrorBoundary name="HeroDecisionCard">
-            <HeroDecisionCard
-              object={decision.object}
-              onGoing={handleGo}
-              onMaybe={handleMaybe}
-              onNotThis={handleNotThis}
-            />
-          </ErrorBoundary>
-        </motion.div>
-      </AnimatePresence>
-
-      {/* Debug overlay — dev only */}
-      {process.env.NODE_ENV !== "production" && (
-        <DebugOverlay decision={decision} />
+      {status === "error" && (
+        <div className="flex flex-1 flex-col items-center justify-center gap-4">
+          <p className="text-base text-ink/70">Something got in the way.</p>
+          <p className="max-w-xs text-center text-sm text-ink/50">{error}</p>
+          <button
+            type="button"
+            onClick={regenerate}
+            className="mt-2 h-11 rounded-xl border border-line px-5 text-sm font-medium text-ink/70"
+          >
+            Try again
+          </button>
+        </div>
       )}
 
-      {/* Pinned Action Container */}
+      {(status === "loading" || (status !== "error" && !decision)) && <LoadingState />}
+
+      {status === "ready" && decision && (
+        <>
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={decision.id}
+              initial={{ x: 32, opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
+              exit={{ x: -32, opacity: 0 }}
+              transition={{ duration: 0.24, ease: "easeOut" }}
+            >
+              <ErrorBoundary name="HeroDecisionCard">
+                <HeroDecisionCard
+                  object={decision.object}
+                  onGoing={handleGo}
+                  onMaybe={handleMaybe}
+                  onNotThis={handleNotThis}
+                />
+              </ErrorBoundary>
+            </motion.div>
+          </AnimatePresence>
+
+          {process.env.NODE_ENV !== "production" && (
+            <DebugOverlay decision={decision} />
+          )}
+        </>
+      )}
+
+      {/* Pinned Action Container — always rendered */}
       <div className="fixed bottom-0 left-0 right-0 z-10 mx-auto w-full max-w-[430px] border-t border-line/10 bg-background/80 px-5 pb-safe-floor pt-4 backdrop-blur-md">
         <div className="flex flex-col gap-4">
-          {showPivotReasons ? (
+          {showPivotReasons && decision && (
             <div className="grid grid-cols-2 gap-2">
               {pivotReasons.map((reason) => (
                 <button
@@ -334,25 +342,26 @@ export function DecisionScreen({ scenarioId }: DecisionScreenProps) {
                 </button>
               ))}
             </div>
-          ) : null}
+          )}
 
-          {rejectionCount >= 2 ? (
-            <button
-              type="button"
-              onClick={() => setShowCreationFlow(true)}
-              className="min-h-[42px] rounded-xl bg-ink px-4 text-sm font-semibold text-white transition-colors active:bg-ink/85 focus:outline-none focus-visible:ring-2 focus-visible:ring-ink/30"
-            >
-              Start something nearby
-            </button>
-          ) : null}
+          <button
+            type="button"
+            onClick={() => setShowCreationFlow(true)}
+            className="min-h-[42px] rounded-xl bg-ink px-4 text-sm font-semibold text-white transition-colors active:bg-ink/85 focus:outline-none focus-visible:ring-2 focus-visible:ring-ink/30"
+          >
+            Start something nearby
+          </button>
 
-          <PrimaryAction label={decision.cta_label} onPress={handleGo} disabled={status !== "ready"} />
-
-          <SecondaryActions
-            onAlternatives={handleNotThis}
-            onRefine={() => setRefineOpen(true)}
-            disabled={status !== "ready"}
-          />
+          {status === "ready" && decision && (
+            <>
+              <PrimaryAction label={decision.cta_label} onPress={handleGo} disabled={false} />
+              <SecondaryActions
+                onAlternatives={handleNotThis}
+                onRefine={() => setRefineOpen(true)}
+                disabled={false}
+              />
+            </>
+          )}
         </div>
       </div>
 

@@ -18,6 +18,14 @@ export function PwaServiceWorker() {
 
     const register = async () => {
       try {
+        // Verify sw.js is reachable before registering to avoid a silent 404
+        // that causes "bad HTTP response code" hydration errors.
+        const probe = await fetch("/sw.js", { method: "HEAD" });
+        if (!probe.ok) {
+          console.error("[NEXT SCRIPT LOAD ERROR]", "/sw.js", probe.status);
+          return;
+        }
+
         const registration = await navigator.serviceWorker.register("/sw.js");
         const syncManager = (registration as SyncCapableSW).sync;
         if (syncManager) {
@@ -37,7 +45,8 @@ export function PwaServiceWorker() {
         };
 
         window.addEventListener("online", onlineHandler);
-      } catch {
+      } catch (err) {
+        console.error("[NEXT SCRIPT LOAD ERROR]", "/sw.js", err);
         // Best-effort registration; app remains usable without SW.
       }
     };

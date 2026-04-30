@@ -285,6 +285,14 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
   const [decision, setDecision] = useState<HadeDecision | null>(null);
   const [response, setResponse] = useState<HadeResponse | null>(null);
   const [rejectionHistory, setRejectionHistory] = useState<RejectionEntry[]>([]);
+
+  useEffect(() => {
+    console.log("[HADE STATE]", {
+      rejection_history_length: rejectionHistory.length,
+      reasons: rejectionHistory.map((r) => r.pivot_reason),
+    });
+  }, [rejectionHistory]);
+
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isDegraded, setIsDegraded] = useState(false);
@@ -359,101 +367,124 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
     const reasons = state.rejection_history.map((r) => r.pivot_reason.toLowerCase());
     const rejectedTitles = new Set(state.rejection_history.map((r) => r.venue_name.toLowerCase()));
     const rejectedIds = new Set(state.rejection_history.map((r) => r.venue_id));
-    const multipleRejections = state.rejection_history.length >= 2;
+    const historyLength = state.rejection_history.length;
 
-    const hasTooClrowded = reasons.some((r) => r.includes("crowd") || r.includes("busy") || r.includes("packed"));
-    const hasOverpriced   = reasons.some((r) => r.includes("pric") || r.includes("expensiv") || r.includes("cheap"));
+    const hasCrowded   = reasons.some((r) => r.includes("crowd") || r.includes("busy") || r.includes("packed") || r === "too crowded");
+    const hasOverpriced = reasons.some((r) => r.includes("pric") || r.includes("expensiv") || r.includes("cheap") || r === "overpriced");
+    const hasWrongVibe  = reasons.some((r) => r.includes("vibe") || r.includes("scene") || r === "wrong vibe");
 
-    type Candidate = {
-      id: string;
-      title: string;
-      category: string;
-      rationale: string;
-      why_now: string;
-    };
+    type Candidate = { id: string; title: string; category: string; rationale: string; why_now: string };
 
-    // Ordered pool — deterministic priority: rule-matched first, then category rotation
-    const pool: Candidate[] = [
+    // ── Tier 3 escalation (3+ rejections) ────────────────────────────────────
+    const escalationPool: Candidate[] = [
       {
-        id: "local-quiet-spot",
-        title: "Find a quiet spot nearby",
-        category: "rest",
-        rationale: "Somewhere low-key that sidesteps the crowd entirely.",
-        why_now: "You flagged it's too busy — this shifts the energy down.",
-      },
-      {
-        id: "local-park-sit",
-        title: "Sit in a nearby park",
+        id: "esc-walk-reset",
+        title: "Take a short walk and reset",
         category: "outdoor",
-        rationale: "Open air, no cover charge, no queue.",
-        why_now: "Free, calm, and right here — no friction.",
+        rationale: "Movement breaks the loop — step outside and let the next idea surface.",
+        why_now: "Three passes is enough. A walk costs nothing and clears the frame.",
       },
       {
-        id: "local-budget-coffee",
-        title: "Grab a drip coffee somewhere simple",
+        id: "esc-casual-coffee",
+        title: "Grab a casual coffee",
         category: "cafe",
-        rationale: "A no-frills café keeps the tab low and the vibe easy.",
-        why_now: "You mentioned price — this keeps it light.",
+        rationale: "No agenda, no pressure — just a cup and a moment.",
+        why_now: "Low commitment, easy exit, zero friction.",
       },
       {
-        id: "local-walk",
-        title: "Take a walk nearby",
+        id: "esc-people-watch",
+        title: "Sit somewhere open and people-watch",
         category: "outdoor",
-        rationale: "Walking resets the frame and costs nothing.",
-        why_now: "A different category entirely — movement instead of destination.",
-      },
-      {
-        id: "local-coffee",
-        title: "Grab a coffee",
-        category: "cafe",
-        rationale: "A nearby café is a low-lift way to shift the scene.",
-        why_now: "Simple, close, and easy to bail on.",
-      },
-      {
-        id: "local-explore",
-        title: "Explore this area on foot",
-        category: "exploration",
-        rationale: "No agenda — just see what's around the next block.",
-        why_now: "After multiple passes, exploration beats another list.",
-      },
-      {
-        id: "local-bench",
-        title: "Find a bench and decompress",
-        category: "rest",
-        rationale: "Sometimes the right move is a full stop.",
-        why_now: "You've been deciding for a while — a pause can help.",
+        rationale: "Sometimes the best move is no move at all.",
+        why_now: "You've been deciding for a while — let the city do the work.",
       },
     ];
 
-    // Rule: crowded → prefer quiet/outdoor; push quiet-spot to front
-    const ordered = hasTooClrowded
-      ? [
-          pool.find((c) => c.id === "local-quiet-spot")!,
-          pool.find((c) => c.id === "local-park-sit")!,
-          ...pool.filter((c) => c.id !== "local-quiet-spot" && c.id !== "local-park-sit"),
-        ]
-      // Rule: overpriced → prefer budget options
-      : hasOverpriced
-      ? [
-          pool.find((c) => c.id === "local-budget-coffee")!,
-          pool.find((c) => c.id === "local-walk")!,
-          pool.find((c) => c.id === "local-park-sit")!,
-          ...pool.filter((c) => !["local-budget-coffee", "local-walk", "local-park-sit"].includes(c.id)),
-        ]
-      // Rule: multiple rejections → rotate category (skip food/cafe, prefer walk/park)
-      : multipleRejections
-      ? [
-          pool.find((c) => c.id === "local-walk")!,
-          pool.find((c) => c.id === "local-explore")!,
-          pool.find((c) => c.id === "local-park-sit")!,
-          ...pool.filter((c) => !["local-walk", "local-explore", "local-park-sit"].includes(c.id)),
-        ]
-      : pool;
+    // ── Tier 1 pool (1 rejection — quiet / low-key) ───────────────────────────
+    const quietPool: Candidate[] = [
+      {
+        id: "q-quiet-spot",
+        title: "Find a quiet spot nearby",
+        category: "rest",
+        rationale: "Somewhere low-key with no queue and no noise.",
+        why_now: "First pass — pull back and reset before trying again.",
+      },
+      {
+        id: "q-bench",
+        title: "Find a bench and take a breath",
+        category: "rest",
+        rationale: "A seated pause is sometimes the right call.",
+        why_now: "No pressure, no decision required.",
+      },
+    ];
+
+    // ── Tier 2 pool (2 rejections — switch category) ──────────────────────────
+    const switchPool: Candidate[] = [
+      {
+        id: "sw-walk",
+        title: "Take a walk nearby",
+        category: "outdoor",
+        rationale: "Walking switches the mode from choosing to moving.",
+        why_now: "Second rejection — change category entirely.",
+      },
+      {
+        id: "sw-coffee",
+        title: "Grab a drip coffee somewhere simple",
+        category: "cafe",
+        rationale: "A no-frills café resets the vibe without a big commitment.",
+        why_now: "Different category, low stakes.",
+      },
+      {
+        id: "sw-park",
+        title: "Sit in a nearby park",
+        category: "outdoor",
+        rationale: "Open air, no cover charge, no queue.",
+        why_now: "Free, calm, right here.",
+      },
+    ];
+
+    // ── Reason-override candidates ────────────────────────────────────────────
+    const crowdedOverride: Candidate = {
+      id: "ov-crowd-quiet",
+      title: "Find somewhere quieter",
+      category: "rest",
+      rationale: "Somewhere low-key that sidesteps the crowd entirely.",
+      why_now: "You flagged it's too busy — this shifts the energy down.",
+    };
+    const overpricedOverride: Candidate = {
+      id: "ov-budget",
+      title: "Find something free or close to it",
+      category: "outdoor",
+      rationale: "No spend required — fresh air and open space cost nothing.",
+      why_now: "You mentioned price — this removes it as a variable.",
+    };
+    const wrongVibeOverride: Candidate = {
+      id: "ov-vibe-switch",
+      title: "Explore a different part of this area",
+      category: "exploration",
+      rationale: "A block in any direction can be a completely different scene.",
+      why_now: "Vibe mismatch — change the backdrop, not the destination type.",
+    };
+
+    // ── Select pool by progression tier ──────────────────────────────────────
+    let candidates: Candidate[];
+    if (historyLength >= 3) {
+      candidates = escalationPool;
+    } else if (historyLength === 2) {
+      candidates = switchPool;
+    } else {
+      candidates = quietPool;
+    }
+
+    // Reason overrides prepend to current tier pool (don't replace)
+    if (hasWrongVibe)   candidates = [wrongVibeOverride, ...candidates];
+    if (hasOverpriced)  candidates = [overpricedOverride, ...candidates];
+    if (hasCrowded)     candidates = [crowdedOverride, ...candidates];
 
     const pick =
-      ordered.find(
+      candidates.find(
         (c) => !rejectedIds.has(c.id) && !rejectedTitles.has(c.title.toLowerCase()),
-      ) ?? ordered[ordered.length - 1];
+      ) ?? escalationPool[historyLength % escalationPool.length];
 
     const lat = typeof state.geo.lat === "number" && isFinite(state.geo.lat) ? state.geo.lat : 0;
     const lng = typeof state.geo.lng === "number" && isFinite(state.geo.lng) ? state.geo.lng : 0;
@@ -757,16 +788,19 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
         venue_name: decision.venue_name,
         pivot_reason: reason,
       };
-      const alreadyRejected = rejectionHistory.some((entry) => entry.venue_id === decision.id);
+
+      // Use ref for read — always current even under rapid calls.
+      const latestHistory = rejectionHistoryRef.current;
+      const alreadyRejected = latestHistory.some((entry) => entry.venue_id === decision.id);
       const nextRejectionHistory = alreadyRejected
-        ? rejectionHistory
-        : [...rejectionHistory, currentRejection];
+        ? latestHistory
+        : [...latestHistory, currentRejection];
 
       console.log(
         `[HADE stability] pivot | rejection_history_length=${nextRejectionHistory.length} | venue=${currentRejection.venue_id} | reason="${reason}"`,
       );
 
-      // Persist across calls in local session state.
+      // Functional update — no stale closure, accumulates correctly across rapid calls.
       setRejectionHistory((prev) =>
         prev.some((entry) => entry.venue_id === decision.id) ? prev : [...prev, currentRejection]
       );
@@ -781,7 +815,7 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
         decide({ rejection_history: nextRejectionHistory })
       );
     },
-    [decision, rejectionHistory, cachedRealPlaces, updateContext, decide, signalQueue]
+    [decision, cachedRealPlaces, updateContext, decide, signalQueue]
   );
 
   /**
