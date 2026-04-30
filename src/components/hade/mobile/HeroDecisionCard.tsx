@@ -5,7 +5,6 @@ import type { SpontaneousObject } from "@/types/hade";
 
 interface HeroDecisionCardProps {
   object: SpontaneousObject;
-  isFallback?: boolean;
   onGoing?: () => void;
   onMaybe?: () => void;
   onNotThis?: () => void;
@@ -33,7 +32,6 @@ function isLive(object: SpontaneousObject): boolean {
 
 export function HeroDecisionCard({
   object,
-  isFallback = false,
   onGoing,
   onMaybe,
   onNotThis,
@@ -43,11 +41,6 @@ export function HeroDecisionCard({
 
   return (
     <section className="relative flex flex-col rounded-3xl bg-surface p-6 shadow-soft">
-      {isFallback && (
-        <span className="absolute right-4 top-3 rounded-full border border-ink/10 bg-ink/5 px-2 py-0.5 text-[10px] font-medium tracking-wide text-ink/40">
-          Limited Mode
-        </span>
-      )}
 
       <div className="flex items-center gap-2">
         <span className="text-xs font-semibold uppercase tracking-[0.18em] text-ink/40">

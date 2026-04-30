@@ -290,6 +290,8 @@ export function DecisionScreen({ scenarioId }: DecisionScreenProps) {
     return <LoadingState />;
   }
 
+  console.log("[HADE UI DECISION]", decision.id, decision.title);
+
   return (
     <div className="mx-auto flex h-[100dvh] w-full max-w-[430px] flex-col bg-background px-5 pt-6 pb-safe-floor">
       <AnimatePresence mode="wait">
@@ -303,7 +305,6 @@ export function DecisionScreen({ scenarioId }: DecisionScreenProps) {
           <ErrorBoundary name="HeroDecisionCard">
             <HeroDecisionCard
               object={decision.object}
-              isFallback={isFallback}
               onGoing={handleGo}
               onMaybe={handleMaybe}
               onNotThis={handleNotThis}

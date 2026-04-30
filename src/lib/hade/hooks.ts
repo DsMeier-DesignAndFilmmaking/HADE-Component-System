@@ -455,12 +455,15 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
         (c) => !rejectedIds.has(c.id) && !rejectedTitles.has(c.title.toLowerCase()),
       ) ?? ordered[ordered.length - 1];
 
-    return {
+    const lat = typeof state.geo.lat === "number" && isFinite(state.geo.lat) ? state.geo.lat : 0;
+    const lng = typeof state.geo.lng === "number" && isFinite(state.geo.lng) ? state.geo.lng : 0;
+
+    const decision: HadeDecision = {
       id: `local-${pick.id}-${now}`,
       venue_name: pick.title,
       title: pick.title,
       category: pick.category,
-      geo: state.geo,
+      geo: { lat, lng },
       distance_meters: 0,
       eta_minutes: 5,
       rationale: pick.rationale,
@@ -469,7 +472,7 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
       situation_summary: "Local fallback",
       type: "place_opportunity",
       time_window: { start: now, end: now + 2 * 60 * 60 * 1000 },
-      location: { lat: state.geo.lat, lng: state.geo.lng },
+      location: { lat, lng },
       radius: 500,
       going_count: 0,
       maybe_count: 0,
@@ -479,6 +482,10 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
       trust_score: 0.4,
       source: "local_degraded_refine",
     } as HadeDecision;
+
+    console.log("[HADE LOCAL DECISION]", decision);
+
+    return decision;
   }
 
   const decide = useCallback(
@@ -555,9 +562,9 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
           intent: body.situation?.intent ?? null,
         });
         const localUX = _deriveUX(localDecision, "fallback", 0);
-        setDecision(localDecision);
+        setDecision({ ...localDecision });
         setResponse({
-          decision: localDecision,
+          decision: { ...localDecision },
           ux: localUX,
           context_snapshot: {
             situation_summary: "Local fallback",
@@ -648,7 +655,7 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
           source: hadeSource,
           ...(data.explanation_signals ? { explanation_signals: data.explanation_signals } : {}),
         };
-        setDecision(dec);
+        setDecision({ ...safeDecision });
         setResponse(shaped);
         if (Array.isArray(data.fallback_places) && data.fallback_places.length > 0) {
           const realPlaces = (data.fallback_places as SpontaneousObject[]).filter(
@@ -708,13 +715,29 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
             expires_at: recoveryPlace.expires_at ?? now + 2 * 60 * 60 * 1000,
           } as HadeDecision;
           console.log(`[HADE stability] fallback rejection — recovered from cached real place (${recoveryPlace.id})`);
-          setDecision(recovered);
+          console.log("[HADE UI DECISION]", recovered.id, recovered.title);
+          setDecision({ ...recovered });
+          setResponse({
+            decision: { ...recovered },
+            ux: _deriveUX(recovered, "fallback", 0),
+            context_snapshot: { situation_summary: "Cache recovery", interpreted_intent: "", decision_basis: "fallback", candidates_evaluated: 0 },
+            session_id: sessionIdRef.current,
+            source: "static_fallback",
+          });
           return;
         }
 
         const local = generateLocalAlternative({ geo, rejection_history: rejectionHistory });
         console.log(`[HADE stability] fallback rejection — no cache, using generateLocalAlternative`);
-        setDecision(local);
+        console.log("[HADE UI DECISION]", local.id, local.title);
+        setDecision({ ...local });
+        setResponse({
+          decision: { ...local },
+          ux: _deriveUX(local, "fallback", 0),
+          context_snapshot: { situation_summary: "Local fallback", interpreted_intent: "", decision_basis: "fallback", candidates_evaluated: 0 },
+          session_id: sessionIdRef.current,
+          source: "static_fallback",
+        });
         return;
       }
 

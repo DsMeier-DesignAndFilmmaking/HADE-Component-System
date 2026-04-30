@@ -146,7 +146,7 @@ export function buildDecisionViewModel(response: HadeResponse): DecisionViewMode
     cta_label: response.ux?.cta       ?? FALLBACK_CTA,
 
     // Source
-    is_fallback: response.source === "fallback" || response.source === "static_fallback",
+    is_fallback: dec.is_fallback === true || response.source === "fallback" || response.source === "static_fallback",
 
     // UGC
     is_ugc:       isUGC,
