@@ -23,7 +23,7 @@ import "server-only";
 
 import { serverEnv } from "@/lib/env/server";
 import { getRedisMode } from "@/lib/hade/redis";
-import type { GeoLocation, Intent, PlaceOption, FetchNearbyOptions } from "@/types/hade";
+import type { GeoLocation, Intent, KnownIntent, PlaceOption, FetchNearbyOptions } from "@/types/hade";
 import placesTypeMapJson from "@/config/places_type_map.json";
 import vibeWordMapJson   from "@/config/vibe_word_map.json";
 
@@ -40,7 +40,7 @@ export type { PlaceOption, FetchNearbyOptions };
  *
  * "anything" has no entry → request omits includedTypes (broadest search).
  */
-const INTENT_TYPES = placesTypeMapJson as Partial<Record<Intent, string[]>>;
+const INTENT_TYPES = placesTypeMapJson as Partial<Record<KnownIntent, string[]>>;
 
 // ─── Category normalisation ───────────────────────────────────────────────────
 
@@ -341,7 +341,7 @@ export async function fetchNearbyGrounded(
     target_categories && target_categories.length > 0
       ? target_categories
       : intent
-        ? INTENT_TYPES[intent]
+        ? INTENT_TYPES[intent as KnownIntent]
         : undefined;
   if (includedTypes?.length) {
     requestBody.includedTypes = includedTypes;

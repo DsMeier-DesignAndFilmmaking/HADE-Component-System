@@ -17,6 +17,16 @@
     box-sizing: border-box;
   }
 
+  @keyframes text-gradient {
+    0% { background-position: 0% center; }
+    50% { background-position: 100% center; }
+    100% { background-position: 0% center; }
+  }
+  
+  .animate-text-gradient {
+    animation: text-gradient 5s linear infinite;
+  }
+
   html {
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;

@@ -15,6 +15,9 @@ final class HadeViewModel: ObservableObject {
     private let timeProvider: TimeContextProviding
 
     private var latestCoordinate: CLLocationCoordinate2D?
+
+    /// The most recently received device coordinate. Nil until location permission is granted.
+    var currentCoordinate: CLLocationCoordinate2D? { latestCoordinate }
     private var latestMotion: MotionState = .still
     private var latestFingerprint: String?
     private var lastContextRefresh = Date.distantPast

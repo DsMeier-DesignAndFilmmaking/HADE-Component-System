@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { SpontaneousObject } from "@/types/hade";
+import { RADIUS } from "@/core/constants/radius";
 
 type Step = "chips" | "time" | "confirm";
 
@@ -83,7 +84,7 @@ export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
       title: chip.title,
       time_window: { start, end },
       location: location ?? { lat: 0, lng: 0 },
-      radius: 150,
+      radius: RADIUS.ACTIVITY_CREATION,
       going_count: 0,
       maybe_count: 0,
       user_state: null,

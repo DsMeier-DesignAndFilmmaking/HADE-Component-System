@@ -555,7 +555,8 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
           ...(req?.settings ?? {}),
           debug: process.env.NODE_ENV !== "production",
         },
-        node_hints:        nodeHints.length > 0 ? nodeHints : undefined,
+        node_hints:          nodeHints.length > 0 ? nodeHints : undefined,
+        candidate_categories: req?.candidate_categories ?? ctx.candidate_categories,
       };
 
       // 2. Validate before any side effects. Logs a specific warning for the

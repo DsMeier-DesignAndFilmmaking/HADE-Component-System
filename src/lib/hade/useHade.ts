@@ -22,8 +22,11 @@ const agents = definitions.agents;
 
 const GEO_STORAGE_KEY = "hade_last_known_geo";
 
-/** San Francisco — a reasonable coastal default far from (0,0). */
-const DEFAULT_GEO = { lat: 37.7749, lng: -122.4194 };
+/** Configurable geo fallback — set NEXT_PUBLIC_FALLBACK_GEO_LAT/LNG in env to override. */
+const DEFAULT_GEO = {
+  lat: Number(process.env.NEXT_PUBLIC_FALLBACK_GEO_LAT ?? "37.7749"),
+  lng: Number(process.env.NEXT_PUBLIC_FALLBACK_GEO_LNG ?? "-122.4194"),
+};
 
 function saveLastKnownGeo(geo: { lat: number; lng: number }): void {
   try {
@@ -296,12 +299,7 @@ export function useHade(config?: UseHadeConfig): UseHadeReturn {
       const behavioralSig = emit("BEHAVIORAL", {
         content: `Refined: ${input.intent ?? "anything"} · urgency ${urgency}`,
         strength: 0.9,
-        ...(userGeo && {
-          geo: {
-            lat: userGeo.lat + (Math.random() - 0.5) * 0.001,
-            lng: userGeo.lng + (Math.random() - 0.5) * 0.001,
-          },
-        }),
+        ...(userGeo && { geo: { lat: userGeo.lat, lng: userGeo.lng } }),
       });
       const intentSig = emit("INTENT", {
         content: input.intent ?? "refine request",

@@ -42,7 +42,7 @@ struct DecisionView: View {
                     PrimaryCTAButton(action: viewModel.go)
 
                     if rejectionCount >= 2 {
-                        Button("Start something nearby") {
+                        Button("Add Spontaneous Note") {
                             isCreationFlowPresented = true
                         }
                         .buttonStyle(.borderedProminent)
@@ -107,11 +107,12 @@ struct DecisionView: View {
 
     private func object(from decision: Decision) -> SpontaneousObject {
         let now = Date().timeIntervalSince1970
+        let coord = viewModel.currentCoordinate
         return SpontaneousObject.fromUGC(
             id: decision.id,
             title: decision.title,
-            lat: 0,
-            lng: 0,
+            lat: coord?.latitude ?? 39.7392,
+            lng: coord?.longitude ?? -104.9903,
             timeWindowStart: now,
             timeWindowEnd: now + 3600
         )

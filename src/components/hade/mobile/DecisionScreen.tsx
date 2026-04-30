@@ -8,7 +8,7 @@ import { useHadeAdaptiveContext } from "@/lib/hade/hooks";
 import { useHade } from "@/lib/hade/useHade";
 import { computeTemporalState, getUGCPivotReasons } from "@/lib/hade/ugcCopy";
 import { HeroDecisionCard } from "./HeroDecisionCard";
-import { PrimaryAction } from "./PrimaryAction";
+
 import { SecondaryActions } from "./SecondaryActions";
 import { RefineSheet } from "./RefineSheet";
 import { VibeSheet } from "./VibeSheet";
@@ -145,6 +145,10 @@ export function DecisionScreen({ scenarioId }: DecisionScreenProps) {
   const [showCreationFlow, setShowCreationFlow] = useState(false);
   const [rejectionCount, setRejectionCount] = useState(0);
   const [rejectionHistory, setRejectionHistory] = useState<Array<{ venueId: string; reason: string; timestamp: number }>>([]);
+  const [decisionHistory, setDecisionHistory] = useState<DecisionViewModel[]>([]);
+  // When "Previous" is pressed we restore a past card without calling pivot().
+  // This local override takes precedence over the live decision from useHade.
+  const [previousOverride, setPreviousOverride] = useState<DecisionViewModel | null>(null);
 
   useEffect(() => {
     console.log("[HADE STATE]", {
@@ -152,6 +156,34 @@ export function DecisionScreen({ scenarioId }: DecisionScreenProps) {
       reasons: rejectionHistory.map((r) => r.reason),
     });
   }, [rejectionHistory]);
+
+  // Push each new decision onto the history stack so "Previous" can navigate back.
+  // We track by id so rapid re-renders don't push duplicates.
+  // Also clear any previous-override whenever a genuinely new decision arrives.
+  const lastPushedIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!decision) return;
+    if (decision.id === lastPushedIdRef.current) return;
+    lastPushedIdRef.current = decision.id;
+    setPreviousOverride(null); // new live decision — drop the override
+    setDecisionHistory((prev) => [...prev, decision]);
+  }, [decision]);
+
+  const handlePrevious = useCallback(() => {
+    setDecisionHistory((prev) => {
+      if (prev.length < 2) return prev;
+      // Pop the current entry and surface the one before it.
+      const next = prev.slice(0, -1);
+      const target = next[next.length - 1];
+      console.log("[HADE] Previous →", target.id, target.title);
+      // We don't call pivot() here — no rejection is recorded.
+      // Restore the previous decision directly in the view model.
+      // useHade doesn't expose a setter, so we surface it via a
+      // local override state managed in this component.
+      setPreviousOverride(target);
+      return next;
+    });
+  }, []);
 
   const visitRef = useRef<{
     venueId:   string;
@@ -187,17 +219,18 @@ export function DecisionScreen({ scenarioId }: DecisionScreenProps) {
   }, [decision, regenerate]);
 
   const handleGo = useCallback(() => {
-    if (!decision) return;
-    console.log("[HADE] Take me there →", decision.title);
+    const target = previousOverride ?? decision;
+    if (!target) return;
+    console.log("[HADE] Take me there →", target.title);
 
     if (visitRef.current?.timerId) {
       clearTimeout(visitRef.current.timerId);
     }
 
-    const isUGC = decision.is_ugc;
+    const isUGC = target.is_ugc;
     visitRef.current = {
-      venueId:   decision.id,
-      venueName: decision.title,
+      venueId:   target.id,
+      venueName: target.title,
       pressedAt: Date.now(),
       isUGC,
     };
@@ -205,7 +238,7 @@ export function DecisionScreen({ scenarioId }: DecisionScreenProps) {
     visitRef.current.timerId = setTimeout(() => {
       setShowVerificationSheet(true);
     }, 15 * 60 * 1000);
-  }, [decision]);
+  }, [decision, previousOverride]);
 
   const handleRefineConfirm = useCallback(
     async ({ intent, urgency }: { intent: Intent | null; urgency: Urgency }) => {
@@ -220,9 +253,10 @@ export function DecisionScreen({ scenarioId }: DecisionScreenProps) {
   }, []);
 
   const handleMaybe = useCallback(() => {
-    if (!decision) return;
-    console.log("[HADE] Maybe →", decision.title);
-  }, [decision]);
+    const target = previousOverride ?? decision;
+    if (!target) return;
+    console.log("[HADE] Maybe →", target.title);
+  }, [decision, previousOverride]);
 
   const handleReject = useCallback(
     (reason: string) => {
@@ -272,13 +306,17 @@ export function DecisionScreen({ scenarioId }: DecisionScreenProps) {
     setShowVibeSheet(true);
   }, []);
 
+  // The card to display — previousOverride takes precedence while navigating back.
+  // Once a new live decision arrives, the override is cleared automatically.
+  const displayDecision = previousOverride ?? decision;
+
   // Derived pivot reasons list — UGC-specific when applicable
-  const pivotReasons: string[] = decision?.is_ugc && decision.ugc_meta
-    ? getUGCPivotReasons(decision.ugc_meta.created_at)
+  const pivotReasons: string[] = displayDecision?.is_ugc && displayDecision.ugc_meta
+    ? getUGCPivotReasons(displayDecision.ugc_meta.created_at)
     : PIVOT_REASONS;
 
-  if (decision) {
-    console.log("[HADE UI DECISION]", decision.id, decision.title);
+  if (displayDecision) {
+    console.log("[HADE UI DECISION]", displayDecision.id, displayDecision.title);
   }
 
   return (
@@ -297,21 +335,21 @@ export function DecisionScreen({ scenarioId }: DecisionScreenProps) {
         </div>
       )}
 
-      {(status === "loading" || (status !== "error" && !decision)) && <LoadingState />}
+      {(status === "loading" || (status !== "error" && !displayDecision)) && <LoadingState />}
 
-      {status === "ready" && decision && (
+      {status === "ready" && displayDecision && (
         <>
           <AnimatePresence mode="wait">
             <motion.div
-              key={decision.id}
-              initial={{ x: 32, opacity: 0 }}
+              key={displayDecision.id}
+              initial={{ x: previousOverride ? -32 : 32, opacity: 0 }}
               animate={{ x: 0, opacity: 1 }}
-              exit={{ x: -32, opacity: 0 }}
+              exit={{ x: previousOverride ? 32 : -32, opacity: 0 }}
               transition={{ duration: 0.24, ease: "easeOut" }}
             >
               <ErrorBoundary name="HeroDecisionCard">
                 <HeroDecisionCard
-                  object={decision.object}
+                  object={displayDecision.object}
                   onGoing={handleGo}
                   onMaybe={handleMaybe}
                   onNotThis={handleNotThis}
@@ -321,7 +359,7 @@ export function DecisionScreen({ scenarioId }: DecisionScreenProps) {
           </AnimatePresence>
 
           {process.env.NODE_ENV !== "production" && (
-            <DebugOverlay decision={decision} />
+            <DebugOverlay decision={displayDecision} />
           )}
         </>
       )}
@@ -329,7 +367,7 @@ export function DecisionScreen({ scenarioId }: DecisionScreenProps) {
       {/* Pinned Action Container — always rendered */}
       <div className="fixed bottom-0 left-0 right-0 z-10 mx-auto w-full max-w-[430px] border-t border-line/10 bg-background/80 px-5 pb-safe-floor pt-4 backdrop-blur-md">
         <div className="flex flex-col gap-4">
-          {showPivotReasons && decision && (
+          {showPivotReasons && displayDecision && (
             <div className="grid grid-cols-2 gap-2">
               {pivotReasons.map((reason) => (
                 <button
@@ -349,18 +387,16 @@ export function DecisionScreen({ scenarioId }: DecisionScreenProps) {
             onClick={() => setShowCreationFlow(true)}
             className="min-h-[42px] rounded-xl bg-ink px-4 text-sm font-semibold text-white transition-colors active:bg-ink/85 focus:outline-none focus-visible:ring-2 focus-visible:ring-ink/30"
           >
-            Start something nearby
+            Add Spontaneous Note
           </button>
 
-          {status === "ready" && decision && (
-            <>
-              <PrimaryAction label={decision.cta_label} onPress={handleGo} disabled={false} />
-              <SecondaryActions
-                onAlternatives={handleNotThis}
-                onRefine={() => setRefineOpen(true)}
-                disabled={false}
-              />
-            </>
+          {status === "ready" && displayDecision && (
+            <SecondaryActions
+              onPrevious={handlePrevious}
+              hasPrevious={decisionHistory.length > 1}
+              onRefine={() => setRefineOpen(true)}
+              disabled={false}
+            />
           )}
         </div>
       </div>

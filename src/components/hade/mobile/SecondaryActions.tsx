@@ -1,14 +1,16 @@
 "use client";
 
 interface SecondaryActionsProps {
-  onAlternatives: () => void;
+  onPrevious: () => void;
   onRefine: () => void;
+  hasPrevious?: boolean;
   disabled?: boolean;
 }
 
 export function SecondaryActions({
-  onAlternatives,
+  onPrevious,
   onRefine,
+  hasPrevious = false,
   disabled = false,
 }: SecondaryActionsProps) {
   const baseClass =
@@ -16,8 +18,13 @@ export function SecondaryActions({
 
   return (
     <div className="flex w-full items-center justify-center gap-6">
-      <button type="button" onClick={onAlternatives} disabled={disabled} className={baseClass}>
-        Not this
+      <button
+        type="button"
+        onClick={onPrevious}
+        disabled={disabled || !hasPrevious}
+        className={baseClass}
+      >
+        Previous
       </button>
       <span aria-hidden="true" className="h-4 w-px bg-line" />
       <button type="button" onClick={onRefine} disabled={disabled} className={baseClass}>

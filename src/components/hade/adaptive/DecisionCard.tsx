@@ -147,7 +147,7 @@ export function DecisionCard({
         {/* ── CTAs ───────────────────────────────────────────────────────────── */}
         <div className="flex items-center gap-2 pt-3 border-t border-line">
           <HadeButton variant="primary" size="sm" onClick={onGoing}>
-            Going
+            Let's Go
           </HadeButton>
           <HadeButton variant="secondary" size="sm" onClick={onMaybe}>
             Maybe

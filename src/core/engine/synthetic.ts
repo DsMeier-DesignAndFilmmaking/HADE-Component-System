@@ -20,7 +20,7 @@
 
 import "server-only";
 
-import { fetchNearbyGrounded } from "@/core/services/places";
+import { getPlacesCandidates } from "@/core/adapters/placesAdapter";
 import { mapIntentToPlacesCategory } from "@/core/utils/intentMapper";
 import {
   buildContext,
@@ -31,6 +31,9 @@ import {
 import { getNodeTrustScore } from "@/lib/hade/weights";
 import { getDistanceCopy } from "@/lib/hade/ugcCopy";
 import { getNearbyUGC } from "@/lib/hade/ugc";
+import { getDomainConfig, type DomainConfig } from "@/core/domain/config";
+import { RADIUS } from "@/core/constants/radius";
+import type { DecisionCandidate } from "@/core/types/decision";
 import type {
   GeoLocation,
   HadeContext,
@@ -38,7 +41,6 @@ import type {
   Intent,
   DecideResponse,
   PlaceOption,
-  ScoringWeights,
   UGCEntity,
 } from "@/types/hade";
 import {
@@ -61,17 +63,16 @@ type SyntheticResult =
       objects: SpontaneousObject[];
       debugPayload: HadeDebugPayload;
       explanation_signals?: ExplanationSignals;
+      topCandidate?: DecisionCandidate;
     }
   | { ok: false };
 
 // ─── Intent / radius helpers ──────────────────────────────────────────────────
 
-const VALID_INTENTS = new Set<string>(["eat", "drink", "chill", "scene", "anything"]);
-
 function extractIntent(body: Record<string, unknown>): Intent | undefined {
   const situation = (body as { situation?: { intent?: unknown } }).situation;
   const intent = situation?.intent;
-  return typeof intent === "string" && VALID_INTENTS.has(intent)
+  return typeof intent === "string" && intent.trim().length > 0
     ? (intent as Intent)
     : undefined;
 }
@@ -108,7 +109,7 @@ function mapLegacyIntentToSemantic(intent: Intent): string {
     case "scene":
       return "Energy";
     default:
-      return "Anything";
+      return intent; // unknown intents become their own semantic label
   }
 }
 
@@ -159,6 +160,27 @@ export interface SpontaneousScoreBreakdown {
   finalScore: number;
 }
 
+// ─── DecisionCandidate adapter ────────────────────────────────────────────────
+
+/**
+ * Wraps a SpontaneousObject into the normalized DecisionCandidate shape.
+ * Distance and time_relevance are derived from the caller's RankedCandidate
+ * context and must be merged in at the call site if needed.
+ */
+export function toDecisionCandidate(obj: SpontaneousObject): DecisionCandidate {
+  return {
+    id: obj.id,
+    title: obj.title,
+    geo: { lat: obj.location.lat, lng: obj.location.lng },
+    metadata: {
+      social_signal: obj.going_count > 0 ? Math.min(1, obj.going_count / 50) : undefined,
+      trust_score: obj.trust_score,
+      tags: obj.vibe_tag ? [obj.vibe_tag] : undefined,
+    },
+    raw: obj,
+  };
+}
+
 // ─── Conversion helpers ───────────────────────────────────────────────────────
 
 function isoToEpochMs(iso: string | undefined): number | undefined {
@@ -202,7 +224,7 @@ function normalizeSpontaneousObject(
   return {
     ...input,
     time_window: { start, end },
-    radius: typeof input.radius === "number" ? input.radius : 100,
+    radius: typeof input.radius === "number" ? input.radius : RADIUS.OBJECT_NORMALIZE_MIN,
     going_count: typeof input.going_count === "number" ? input.going_count : 0,
     maybe_count: typeof input.maybe_count === "number" ? input.maybe_count : 0,
     user_state: input.user_state === "going" || input.user_state === "maybe" ? input.user_state : null,
@@ -281,26 +303,6 @@ async function getUGCObjects(
   return [...byId.values()];
 }
 
-async function getPlaces(params: {
-  geo: GeoLocation;
-  intent: Intent | undefined;
-  targetCategories: string[];
-  radius: number;
-}): Promise<PlaceOption[]> {
-  console.log("[HADE TRACE] Places fetch executing at: src/core/engine/synthetic.ts", {
-    geo: params.geo,
-    intent: params.intent,
-    target_categories: params.targetCategories,
-    radius_meters: params.radius,
-  });
-  return fetchNearbyGrounded({
-    geo: params.geo,
-    intent: params.intent,
-    target_categories: params.targetCategories,
-    radius_meters: params.radius,
-    open_now: true,
-  });
-}
 
 function placeToCandidate(place: PlaceOption, origin: GeoLocation, now: number): RankedCandidate | null {
   const obj = fromGooglePlace({
@@ -371,6 +373,7 @@ function filterByTimeWindow(candidates: RankedCandidate[], now: number): RankedC
 function scoreSpontaneousCandidate(
   candidate: RankedCandidate,
   now: number,
+  weights?: DomainConfig["scoringWeights"],
 ): SpontaneousScoreBreakdown {
   const { obj, distance_meters } = candidate;
 
@@ -390,11 +393,12 @@ function scoreSpontaneousCandidate(
     obj.user_state === "going" ? 0.10 :
     obj.user_state === "maybe" ? 0.05 : 0;
 
+  const w = weights ?? { time: 0.60, social: 0.25, distance: 0.10, trust: 0.05 };
   const baseScore =
-    timeProximityScore * 0.60 +
-    socialScore        * 0.25 +
-    distanceScore      * 0.10 +
-    trustScore         * 0.05;
+    timeProximityScore * w.time     +
+    socialScore        * w.social   +
+    distanceScore      * w.distance +
+    trustScore         * w.trust;
 
   return {
     timeProximityScore,
@@ -409,6 +413,7 @@ function scoreSpontaneousCandidate(
 export async function rankSpontaneousObjects(
   candidates: RankedCandidate[],
   now: number = Date.now(),
+  weights?: DomainConfig["scoringWeights"],
 ): Promise<Array<{ candidate: RankedCandidate; score: number; breakdown: SpontaneousScoreBreakdown }>> {
   const scoredCandidates = await Promise.all(
     candidates.map(async (candidate) => {
@@ -418,7 +423,7 @@ export async function rankSpontaneousObjects(
         ...candidate,
         obj: { ...candidate.obj, trust_score: effectiveTrust },
       };
-      const breakdown = scoreSpontaneousCandidate(candidateWithTrust, now);
+      const breakdown = scoreSpontaneousCandidate(candidateWithTrust, now, weights);
       return { candidate: candidateWithTrust, score: breakdown.finalScore, breakdown };
     }),
   );
@@ -470,23 +475,19 @@ export async function generateSyntheticDecision(
 
     const intent = extractIntent(body);
     const radius = extractRadius(body);
-    const scoringWeights =
-      (
-        body as {
-          settings?: { scoring_weights?: ScoringWeights | null };
-        }
-      )?.settings?.scoring_weights ?? undefined;
-    void scoringWeights; // weight overrides not used in SpontaneousObject formula
     const ctx = buildContext(body as Partial<HadeContext>);
     const situationSummary = generateSituationSummary(ctx);
-    const { intentLabel, categories: targetCategories } = resolveTargetCategories(
-      situationSummary,
-      intent,
-      ctx.time_of_day,
-    );
-    const primaryCategory = targetCategories[0] ?? "broad";
+    const domainMode = (body as { mode?: unknown }).mode as string | undefined;
+    const config = getDomainConfig(domainMode);
 
-    console.log(`[HADE Tier 2] Intent: "${intentLabel}" -> Mapped Category: "${primaryCategory}"`);
+    const callerCategories = (body as { candidate_categories?: unknown }).candidate_categories;
+    const categories =
+      Array.isArray(callerCategories) && (callerCategories as unknown[]).length > 0
+        ? (callerCategories as string[])
+        : config.categoryResolver(ctx);
+    const primaryCategory = categories[0] ?? "broad";
+
+    console.log(`[HADE Tier 2] domain=${config.id} intent="${intent ?? "any"}" category="${primaryCategory}"`);
 
     // ── Step 1: Fetch UGC (primary) and Places (fallback) ─────────────────────
     const now = Date.now();
@@ -497,12 +498,7 @@ export async function generateSyntheticDecision(
         ` (intent=${intent ?? "any"}, radius=${radius}m, category=${primaryCategory})`,
     );
 
-    const places = await getPlaces({
-      geo: geoHint,
-      intent,
-      targetCategories: targetCategories,
-      radius,
-    });
+    const places = await getPlacesCandidates(ctx, categories);
     const placeCandidates = places
       .map((place) => placeToCandidate(place, geoHint, now))
       .filter((candidate): candidate is RankedCandidate => candidate !== null);
@@ -575,7 +571,7 @@ export async function generateSyntheticDecision(
     }
 
     // ── Step 5: Score and rank ────────────────────────────────────────────────
-    const sorted = await rankSpontaneousObjects(timeWindowCandidates, now);
+    const sorted = await rankSpontaneousObjects(timeWindowCandidates, now, config.scoringWeights);
 
     const best = sorted[0];
     if (!best) return { ok: false };
@@ -612,7 +608,7 @@ export async function generateSyntheticDecision(
       distance_meters: bestDistance,
       eta_minutes: Math.max(1, Math.ceil(bestDistance / 80)),
       rationale: `A ${bestVibe} ${bestCategory} a short walk from here.`,
-      why_now: buildWhyNow(resolvedIntent),
+      why_now: config.copy.buildWhyNow(ctx),
       confidence: 0.65,
       situation_summary: situationSummary,
       ...(best.candidate.address ? { neighborhood: best.candidate.address } : {}),
@@ -655,6 +651,7 @@ export async function generateSyntheticDecision(
         geo: { lat: r3(geoHint.lat), lng: r3(geoHint.lng) },
         intent: intent ?? "any",
         radius,
+        domain: config.id,
       },
       candidates: {
         google_count: googleCount,
@@ -722,7 +719,17 @@ export async function generateSyntheticDecision(
         : "none",
     };
 
-    return { ok: true, data, objects: fallbackObjects, debugPayload, explanation_signals };
+    const baseCandidate = toDecisionCandidate(bestObj);
+    const topCandidate: DecisionCandidate = {
+      ...baseCandidate,
+      metadata: {
+        ...baseCandidate.metadata,
+        distance_meters: bestDistance,
+        time_relevance: r3(best.breakdown.timeProximityScore),
+      },
+    };
+
+    return { ok: true, data, objects: fallbackObjects, debugPayload, explanation_signals, topCandidate };
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
     console.warn(`[hade-synthetic ${reqId}] ✗ threw unexpectedly: ${detail}`);

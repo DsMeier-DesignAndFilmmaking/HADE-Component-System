@@ -15,6 +15,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { fetchNearbyGrounded } from "@/core/services/places";
+import { RADIUS } from "@/core/constants/radius";
 
 export const runtime = "nodejs";
 
@@ -50,7 +51,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
   console.log("[HADE GEO VALID]", { lat, lng });
 
-  const radius     = Number(searchParams.get("radius") ?? 800);
+  const radius     = Number(searchParams.get("radius") ?? RADIUS.SEARCH_DEFAULT);
   const intent     = searchParams.get("intent") ?? undefined;
   const openNow    = searchParams.get("open_now") !== "false";
   const maxResults = Math.min(Number(searchParams.get("max_results") ?? 20), 20);

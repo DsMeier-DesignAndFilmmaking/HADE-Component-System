@@ -8,6 +8,7 @@ import type { CacheEntry, CachedVenue, CachedLocationNode } from "@/lib/hade/cac
 import { haversineDistanceMeters } from "@/lib/hade/engine";
 import { getRedisMode } from "@/lib/hade/redis";
 import { fetchNearbyGrounded } from "@/core/services/places";
+import { RADIUS } from "@/core/constants/radius";
 
 export const runtime = "nodejs";
 
@@ -94,11 +95,11 @@ async function buildFallbackCandidates(
     try {
       console.log("[HADE TRACE] Places fetch executing at: src/app/api/hade/decide/route.ts", {
         geo,
-        radius_meters: 800,
+        radius_meters: RADIUS.SEARCH_DEFAULT,
         open_now: true,
         caller: "buildFallbackCandidates",
       });
-      const places = await fetchNearbyGrounded({ geo, radius_meters: 800, open_now: true });
+      const places = await fetchNearbyGrounded({ geo, radius_meters: RADIUS.SEARCH_DEFAULT, open_now: true });
       if (places.length > 0) {
         console.log(`[hade-decide ${reqId}] fallback: resolved ${places.length} place(s) from Google`);
         return places.map((place) => ({
@@ -134,7 +135,7 @@ async function buildFallbackCandidates(
     title,
     time_window: { start: now, end: now + 60 * 60 * 1000 },
     location: { lat: geo?.lat ?? 0, lng: geo?.lng ?? 0 },
-    radius: 500,
+    radius: RADIUS.FALLBACK_STATIC,
     going_count: 0,
     maybe_count: 0,
     user_state: null,

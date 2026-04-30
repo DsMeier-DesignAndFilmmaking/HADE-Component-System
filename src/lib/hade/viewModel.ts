@@ -15,6 +15,7 @@
  */
 
 import type { HadeResponse, SpontaneousObject, UiState } from "@/types/hade";
+import type { DecisionCandidate } from "@/core/types/decision";
 import { computeTemporalState, type TemporalState } from "@/lib/hade/ugcCopy";
 import { formatDistance, formatEta } from "@/lib/hade/format";
 
@@ -70,6 +71,12 @@ export interface DecisionViewModel {
     vibe_match:   "strong" | "moderate" | "none";
     social_proof: "high"   | "moderate" | "none";
   };
+
+  // ── Conditional display flags (driven by DecisionCandidate.metadata) ─────────
+  /** False when time_relevance is absent — components should hide time labels. */
+  show_time_label: boolean;
+  /** False when social_signal is absent or zero — components should hide going count. */
+  show_going_ui:   boolean;
 
   object: SpontaneousObject;
 }
@@ -155,6 +162,41 @@ export function buildDecisionViewModel(response: HadeResponse): DecisionViewMode
 
     // Signals
     explanation_signals: response.explanation_signals,
+
+    // Default flags: HadeResponse carries all signals, so both are shown
+    show_time_label: true,
+    show_going_ui:   true,
+
     object,
+  };
+}
+
+// ─── DecisionCandidate-first mapper ──────────────────────────────────────────
+
+/**
+ * Builds a DecisionViewModel using a DecisionCandidate as the authoritative
+ * source for metadata-derived display flags, with HadeResponse supplying the
+ * remaining fields.
+ *
+ * Fallback rules:
+ *   • show_time_label → false when candidate.metadata.time_relevance is absent
+ *   • show_going_ui   → false when candidate.metadata.social_signal is absent or 0
+ *
+ * The original SpontaneousObject is preserved in `object` via buildDecisionViewModel
+ * so no downstream components break.
+ */
+export function mapToDecisionViewModel(
+  candidate: DecisionCandidate,
+  response: HadeResponse,
+): DecisionViewModel | null {
+  const base = buildDecisionViewModel(response);
+  if (!base) return null;
+
+  const { time_relevance, social_signal } = candidate.metadata;
+
+  return {
+    ...base,
+    show_time_label: time_relevance !== undefined,
+    show_going_ui:   social_signal !== undefined && social_signal > 0,
   };
 }

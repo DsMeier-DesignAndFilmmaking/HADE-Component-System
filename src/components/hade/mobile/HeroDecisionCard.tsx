@@ -71,9 +71,8 @@ export function HeroDecisionCard({
         <button
           type="button"
           onClick={onGoing}
-          className="min-h-[42px] rounded-xl bg-ink px-4 text-sm font-semibold text-white transition-colors active:bg-ink/85 focus:outline-none focus-visible:ring-2 focus-visible:ring-ink/30"
-        >
-          Going
+          className="min-h-[42px] rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white transition-colors hover:bg-blue-700 active:bg-blue-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50"        >
+          Let's Go
         </button>
         <button
           type="button"

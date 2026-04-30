@@ -17,7 +17,9 @@ export type SignalType =
   | "EVENT"
   | "INTENT";
 
-export type Intent = "eat" | "drink" | "chill" | "scene" | "anything";
+export const KNOWN_INTENTS = ["eat", "drink", "chill", "scene", "anything"] as const;
+export type KnownIntent = (typeof KNOWN_INTENTS)[number];
+export type Intent = KnownIntent | (string & {});
 
 // ─── Signal Source Layer ─────────────────────────────────────────────────────
 
@@ -156,6 +158,8 @@ export interface HadeContext {
   session_id: string | null;
   signals: Signal[];
   rejection_history: RejectionEntry[];
+  /** Domain-specific Google Place types to fetch. Bypasses intent-derived category mapping. */
+  candidate_categories?: string[];
 }
 
 export interface HadeConfig {
@@ -195,6 +199,8 @@ export interface DecideRequest {
    * stored UGC and place-derived fallback opportunities.
    */
   custom_candidates?: SpontaneousObject[];
+  /** Domain-specific Google Place types to fetch. Bypasses intent-derived category mapping. */
+  candidate_categories?: string[];
 }
 
 /**
@@ -815,7 +821,8 @@ export type VibeTag =
   | "dead"
   | "worth_it"
   | "skip_it"
-  | "too_far";
+  | "too_far"
+  | (string & {});
 
 /** Sentiment polarity for a VibeTag — determines sign of the weight delta. */
 export const VIBE_TAG_SENTIMENT: Record<VibeTag, "positive" | "negative"> = {
