@@ -487,6 +487,8 @@ export async function generateSyntheticDecision(
         : config.categoryResolver(ctx);
     const primaryCategory = categories[0] ?? "broad";
 
+    console.log("[HADE DEBUG] categories:", categories);
+
     console.log(`[HADE Tier 2] domain=${config.id} intent="${intent ?? "any"}" category="${primaryCategory}"`);
 
     // ── Step 1: Fetch UGC (primary) and Places (fallback) ─────────────────────
