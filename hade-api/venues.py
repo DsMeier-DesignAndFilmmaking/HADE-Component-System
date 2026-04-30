@@ -110,10 +110,10 @@ async def get_nearby_venues(
         List of Venue objects that are OPERATIONAL and currently open.
         Returns an empty list on any API failure (graceful degradation).
     """
-    api_key = os.environ.get("GOOGLE_PLACES_API_KEY")
+    api_key = os.environ.get("GOOGLE_API_KEY")
     print(f"[venues] lat={lat}, lng={lng}, api_key_set={bool(api_key)}")
     if not api_key:
-        logger.warning("GOOGLE_PLACES_API_KEY not set — skipping venue fetch")
+        logger.warning("GOOGLE_API_KEY not set — skipping venue fetch")
         return []
 
     if included_types is None:

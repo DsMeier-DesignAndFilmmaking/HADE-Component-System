@@ -92,6 +92,12 @@ async function buildFallbackCandidates(
 
   if (geo) {
     try {
+      console.log("[HADE TRACE] Places fetch executing at: src/app/api/hade/decide/route.ts", {
+        geo,
+        radius_meters: 800,
+        open_now: true,
+        caller: "buildFallbackCandidates",
+      });
       const places = await fetchNearbyGrounded({ geo, radius_meters: 800, open_now: true });
       if (places.length > 0) {
         console.log(`[hade-decide ${reqId}] fallback: resolved ${places.length} place(s) from Google`);
@@ -209,7 +215,49 @@ async function generateDecision(
       (!Array.isArray(rejectionHistory) || rejectionHistory.length === 0);
 
     if (isColdStart) {
-      console.log(`[hade-decide ${reqId}] cold start — skipping upstream, returning cold_start_fallback`);
+      console.log(`[hade-decide ${reqId}] cold start — attempting Places fetch before fallback`);
+
+      if (geoHint) {
+        let coldStartSynthetic: Awaited<ReturnType<typeof generateSyntheticDecision>>;
+        try {
+          coldStartSynthetic = await generateSyntheticDecision(body, reqId, geoHint);
+        } catch (err) {
+          const detail = err instanceof Error ? err.message : String(err);
+          console.warn(`[hade-decide ${reqId}] ✗ cold-start synthetic threw: ${detail}`);
+          coldStartSynthetic = { ok: false };
+        }
+
+        if (coldStartSynthetic.ok) {
+          const elapsed = Date.now() - startedAt;
+          console.log(
+            `[hade-decide ${reqId}] ✓ cold-start Places ok in ${elapsed}ms` +
+              ` — ${coldStartSynthetic.objects.length} object(s)`,
+          );
+          const decisionNode = await getDecisionNode(coldStartSynthetic.data.decision.id);
+          const debugMode =
+            (body as { settings?: { debug?: unknown } }).settings?.debug === true;
+          const enrichedColdStart = {
+            ...coldStartSynthetic.data,
+            source: "cold_start_synthetic",
+            decision_node: decisionNode,
+            ...(debugMode ? { debug: coldStartSynthetic.debugPayload } : {}),
+            ...(coldStartSynthetic.explanation_signals
+              ? { explanation_signals: coldStartSynthetic.explanation_signals }
+              : {}),
+          };
+          void writeCacheFromSynthetic(coldStartSynthetic.objects, body);
+          return withDegradedSignal(enrichedColdStart, {
+            status: 200,
+            headers: {
+              "Content-Type": "application/json",
+              "x-hade-source": "cold_start_synthetic",
+            },
+          });
+        }
+      }
+
+      console.warn("[HADE] Falling back due to no places");
+      console.log(`[hade-decide ${reqId}] cold start — no places available, returning cold_start_fallback`);
       const candidates = await buildFallbackCandidates(geoHint, reqId);
       return new Response(
         JSON.stringify({
@@ -306,6 +354,7 @@ async function generateDecision(
       });
     }
 
+    console.warn("[HADE] Falling back due to no places");
     console.log("[HADE FALLBACK TRIGGER]", { reason: "EMPTY_DECISION", error: null });
     console.warn(`[hade-decide ${reqId}] ↓ Tier 2 failed, trying Tier 2.5 (offline cache)`);
 
@@ -327,6 +376,7 @@ async function generateDecision(
       }
     }
 
+    console.warn("[HADE] Falling back due to no places");
     console.log("[HADE FALLBACK TRIGGER]", { reason: "EMPTY_DECISION", error: null });
     console.warn(`[hade-decide ${reqId}] ↓ Tier 2.5 failed, falling to Tier 3 (static)`);
 

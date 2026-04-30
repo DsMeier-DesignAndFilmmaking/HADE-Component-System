@@ -22,6 +22,7 @@
 import "server-only";
 
 import { serverEnv } from "@/lib/env/server";
+import { getRedisMode } from "@/lib/hade/redis";
 import type { GeoLocation, Intent, PlaceOption, FetchNearbyOptions } from "@/types/hade";
 import placesTypeMapJson from "@/config/places_type_map.json";
 import vibeWordMapJson   from "@/config/vibe_word_map.json";
@@ -270,11 +271,23 @@ const REQUEST_TIMEOUT_MS = 6_000;
 export async function fetchNearbyGrounded(
   opts: FetchNearbyOptions,
 ): Promise<PlaceOption[]> {
-  const apiKey = serverEnv.googlePlacesApiKey;
+  console.log("[HADE TRACE] Places fetch executing at: src/core/services/places.ts", {
+    geo: opts.geo,
+    intent: opts.intent,
+    radius_meters: opts.radius_meters,
+    open_now: opts.open_now,
+  });
+
+  const apiKey = serverEnv.googleApiKey;
+
+  console.log("[HADE ENV CHECK]", {
+    keyExists: !!apiKey,
+    runtime: typeof window === "undefined" ? "server" : "client",
+  });
 
   if (!apiKey) {
     console.warn(
-      "[places] GOOGLE_PLACES_API_KEY not configured — skipping Places fetch",
+      "[places] GOOGLE_API_KEY not configured — skipping Places fetch",
     );
     return [];
   }
@@ -287,6 +300,29 @@ export async function fetchNearbyGrounded(
     open_now = true,
     max_results = DEFAULT_MAX_RESULTS,
   } = opts;
+
+  console.log("[HADE PLACES INPUT GEO]", { lat: geo?.lat, lng: geo?.lng });
+
+  if (!geo || !geo.lat || !geo.lng) {
+    console.error("[HADE GEO ERROR] Missing coordinates", geo);
+    return [];
+  }
+
+  if (geo.lat === 0 && geo.lng === 0) {
+    console.error("[HADE GEO ERROR] Invalid coordinates (0,0)");
+    return [];
+  }
+
+  console.log("[HADE GEO VALID]", geo);
+
+  const degraded = getRedisMode() !== "FULL";
+  const validGeo = !!(geo && geo.lat && geo.lng);
+  console.log("[HADE GEO → PLACES PIPELINE]", {
+    geo,
+    validGeo,
+    degraded,
+    willFetchPlaces: validGeo,
+  });
 
   const requestBody: NearbySearchBody = {
     locationRestriction: {
@@ -311,6 +347,8 @@ export async function fetchNearbyGrounded(
     requestBody.includedTypes = includedTypes;
   }
 
+  console.log("[HADE PLACES] Fetching", { lat: geo.lat, lng: geo.lng });
+
   try {
     const response = await fetch(PLACES_API_URL, {
       method: "POST",
@@ -324,20 +362,34 @@ export async function fetchNearbyGrounded(
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
 
+    console.log("[HADE PLACES] Raw response status", response.status);
+
     if (!response.ok) {
       const errText = await response.text().catch(() => "(unreadable)");
-      console.warn(
-        `[places] Google Places API ${response.status}: ${errText.slice(0, 200)}`,
+      const error = new Error(
+        `Google Places API ${response.status}: ${errText.slice(0, 200)}`,
       );
+      console.error("[HADE PLACES ERROR]", error);
       return [];
     }
 
-    const data = (await response.json()) as GooglePlacesResponse;
+    let data: GooglePlacesResponse;
+    try {
+      data = (await response.json()) as GooglePlacesResponse;
+    } catch (parseErr) {
+      console.error("[HADE PLACES ERROR]", parseErr);
+      return [];
+    }
+
+    console.log("[HADE PLACES] Raw JSON", data);
+
     const rawPlaces = data.places ?? [];
 
     const candidates: PlaceOption[] = rawPlaces
       .map((p) => toPlaceOption(p, geo, open_now))
       .filter((p): p is PlaceOption => p !== null);
+
+    console.log("[HADE PLACES] Parsed places", candidates);
 
     console.log(
       `[places] ${rawPlaces.length} raw → ${candidates.length} usable` +
@@ -348,8 +400,7 @@ export async function fetchNearbyGrounded(
 
     return candidates;
   } catch (err) {
-    const detail = err instanceof Error ? err.message : String(err);
-    console.warn(`[places] fetchNearbyGrounded failed: ${detail}`);
+    console.error("[HADE PLACES ERROR]", err);
     return [];
   }
 }

@@ -331,11 +331,6 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
   // Fixed for the lifetime of this mount — survives pivot/refine, resets on page reload.
   const sessionIdRef = useRef(crypto.randomUUID());
 
-  // Loop guard: short-circuit retries with the same geo while degraded.
-  // The existing AbortController already cancels in-flight requests, so a
-  // separate time-based debounce is unnecessary; this guard's only job is to
-  // stop auto-retry storms when upstream is down and geo hasn't changed.
-  const lastGeoKeyRef = useRef<string | null>(null);
   const REJECTION_HISTORY_CAP = 20;
 
   // ── Vibe Signal / UGC queue ──────────────────────────────────────────────
@@ -573,42 +568,6 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
         return;
       }
 
-      // Loop guard: don't re-fire while degraded with the same geo. Without
-      // this, an automatic retry path on a still-degraded engine produces a
-      // request storm. AbortController handles the in-flight dedupe.
-      const geoKey = `${body.geo.lat.toFixed(4)},${body.geo.lng.toFixed(4)}`;
-      if (isDegradedRef.current && lastGeoKeyRef.current === geoKey) {
-        if (process.env.NODE_ENV !== "production") {
-          console.log("[HADE stability] decide skipped — degraded + same geo");
-        }
-        return;
-      }
-      lastGeoKeyRef.current = geoKey;
-
-      // Degraded branch — bypass API entirely, generate local alternative
-      if (isDegradedRef.current) {
-        const localDecision = generateLocalAlternative({
-          geo: body.geo,
-          rejection_history: cleanRejHistory,
-          intent: body.situation?.intent ?? null,
-        });
-        const localUX = _deriveUX(localDecision, "fallback", 0);
-        setDecision({ ...localDecision });
-        setResponse({
-          decision: { ...localDecision },
-          ux: localUX,
-          context_snapshot: {
-            situation_summary: "Local fallback",
-            interpreted_intent: String(body.situation?.intent ?? ""),
-            decision_basis: "fallback",
-            candidates_evaluated: 0,
-          },
-          session_id: sessionIdRef.current,
-          source: "static_fallback",
-        });
-        return;
-      }
-
       // Abort any in-flight request before starting a new one
       abortRef.current?.abort();
       const controller = new AbortController();
@@ -686,6 +645,13 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
           source: hadeSource,
           ...(data.explanation_signals ? { explanation_signals: data.explanation_signals } : {}),
         };
+        const pipelinePlaces = Array.isArray(data.fallback_places) ? data.fallback_places : [];
+        console.log("[HADE PIPELINE]", {
+          degraded: newDegraded,
+          hasPlaces: pipelinePlaces.length > 0,
+          placesCount: pipelinePlaces.length,
+          usingFallback: safeDecision?.is_fallback === true,
+        });
         setDecision({ ...safeDecision });
         setResponse(shaped);
         if (Array.isArray(data.fallback_places) && data.fallback_places.length > 0) {
@@ -747,6 +713,12 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
           } as HadeDecision;
           console.log(`[HADE stability] fallback rejection — recovered from cached real place (${recoveryPlace.id})`);
           console.log("[HADE UI DECISION]", recovered.id, recovered.title);
+          console.log("[HADE PIPELINE]", {
+            degraded: isDegradedRef.current,
+            hasPlaces: cachedRealPlaces.length > 0,
+            placesCount: cachedRealPlaces.length,
+            usingFallback: recovered?.is_fallback === true,
+          });
           setDecision({ ...recovered });
           setResponse({
             decision: { ...recovered },
@@ -761,6 +733,12 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
         const local = generateLocalAlternative({ geo, rejection_history: rejectionHistory });
         console.log(`[HADE stability] fallback rejection — no cache, using generateLocalAlternative`);
         console.log("[HADE UI DECISION]", local.id, local.title);
+        console.log("[HADE PIPELINE]", {
+          degraded: isDegradedRef.current,
+          hasPlaces: false,
+          placesCount: 0,
+          usingFallback: local?.is_fallback === true,
+        });
         setDecision({ ...local });
         setResponse({
           decision: { ...local },

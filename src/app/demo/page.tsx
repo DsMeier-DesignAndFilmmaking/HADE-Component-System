@@ -89,11 +89,13 @@ function DesktopDebugDemo() {
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         const geo = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        console.log("[HADE GEO SOURCE]", { lat: geo.lat, lng: geo.lng, source: "browser" });
         setUserGeo(geo);
         setGeo(geo);
         setGeoStatus("idle");
       },
       () => {
+        console.log("[HADE GEO SOURCE]", { lat: null, lng: null, source: "unknown" });
         setGeoStatus("denied");
       },
       { timeout: 8000, maximumAge: 60_000 }

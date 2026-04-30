@@ -40,19 +40,26 @@ export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
   const [selectedChip, setSelectedChip] = useState<ActivityChip | null>(null);
   const [selectedTime, setSelectedTime] = useState<TimeOption | null>(null);
   const [feed, setFeed] = useState<SpontaneousObject[]>([]);
-  const [location, setLocation] = useState<{ lat: number; lng: number }>({ lat: 0, lng: 0 });
+  const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
 
   useEffect(() => {
-    if (!navigator.geolocation) return;
+    if (!navigator.geolocation) {
+      console.log("[HADE GEO SOURCE]", { lat: null, lng: null, source: "unknown" });
+      return;
+    }
 
     navigator.geolocation.getCurrentPosition(
       (position) => {
-        setLocation({
+        const geo = {
           lat: position.coords.latitude,
           lng: position.coords.longitude,
-        });
+        };
+        console.log("[HADE GEO SOURCE]", { lat: geo.lat, lng: geo.lng, source: "browser" });
+        setLocation(geo);
       },
-      () => undefined,
+      () => {
+        console.log("[HADE GEO SOURCE]", { lat: null, lng: null, source: "unknown" });
+      },
       { enableHighAccuracy: false, maximumAge: 60_000, timeout: 5_000 },
     );
   }, []);
@@ -75,7 +82,7 @@ export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
       type: "ugc_event",
       title: chip.title,
       time_window: { start, end },
-      location,
+      location: location ?? { lat: 0, lng: 0 },
       radius: 150,
       going_count: 0,
       maybe_count: 0,

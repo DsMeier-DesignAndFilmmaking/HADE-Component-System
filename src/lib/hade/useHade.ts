@@ -18,6 +18,63 @@ import agentData from "@/config/agent_definitions.json";
 const definitions = agentData as AgentDefinitions;
 const agents = definitions.agents;
 
+// ─── Geo fallback helpers ─────────────────────────────────────────────────────
+
+const GEO_STORAGE_KEY = "hade_last_known_geo";
+
+/** San Francisco — a reasonable coastal default far from (0,0). */
+const DEFAULT_GEO = { lat: 37.7749, lng: -122.4194 };
+
+function saveLastKnownGeo(geo: { lat: number; lng: number }): void {
+  try {
+    localStorage.setItem(GEO_STORAGE_KEY, JSON.stringify(geo));
+  } catch {
+    // localStorage unavailable (private mode, quota, SSR guard)
+  }
+}
+
+function loadLastKnownGeo(): { lat: number; lng: number } | null {
+  try {
+    const raw = localStorage.getItem(GEO_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { lat?: unknown; lng?: unknown };
+    const lat = parsed.lat;
+    const lng = parsed.lng;
+    if (
+      typeof lat === "number" && typeof lng === "number" &&
+      Number.isFinite(lat) && Number.isFinite(lng) &&
+      !(lat === 0 && lng === 0)
+    ) {
+      return { lat, lng };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+async function resolveIPGeo(): Promise<{ lat: number; lng: number } | null> {
+  try {
+    const res = await fetch("https://ipapi.co/json/", {
+      signal: AbortSignal.timeout(3_000),
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as { latitude?: unknown; longitude?: unknown };
+    const lat = data.latitude;
+    const lng = data.longitude;
+    if (
+      typeof lat === "number" && typeof lng === "number" &&
+      Number.isFinite(lat) && Number.isFinite(lng) &&
+      !(lat === 0 && lng === 0)
+    ) {
+      return { lat, lng };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 type Urgency = "low" | "medium" | "high";
 type Status = "idle" | "loading" | "ready" | "error";
 
@@ -74,40 +131,109 @@ export function useHade(config?: UseHadeConfig): UseHadeReturn {
 
   useEffect(() => {
     let cancelled = false;
+
+    /**
+     * Fallback chain — runs when navigator.geolocation is unavailable or denied.
+     *
+     * Priority:
+     *   1. Scenario geo  — developer URL param override (intentional hardcode)
+     *   2. IP geolocation — ipapi.co, 3 s timeout
+     *   3. Last known    — localStorage from previous successful browser fix
+     *   4. Default       — San Francisco; always produces a usable coordinate
+     */
+    const applyFallbackGeo = async () => {
+      // 1. Scenario override (dev only)
+      if (scenario?.geo) {
+        console.log("[HADE GEO SOURCE]", {
+          lat: scenario.geo.lat,
+          lng: scenario.geo.lng,
+          source: "fallback",
+        });
+        if (!cancelled) {
+          setUserGeo(scenario.geo);
+          setGeo(scenario.geo);
+          setGeoReady(true);
+        }
+        return;
+      }
+
+      console.warn("[HADE GEO FALLBACK] Using fallback location");
+
+      // 2. IP-based geolocation
+      const ipGeo = await resolveIPGeo();
+      if (cancelled) return;
+      if (ipGeo) {
+        console.log("[HADE GEO SOURCE]", { lat: ipGeo.lat, lng: ipGeo.lng, source: "ip_fallback" });
+        setUserGeo(ipGeo);
+        setGeo(ipGeo);
+        setGeoReady(true);
+        return;
+      }
+
+      // 3. Last known location from localStorage
+      const lastKnown = loadLastKnownGeo();
+      if (lastKnown) {
+        console.log("[HADE GEO SOURCE]", { lat: lastKnown.lat, lng: lastKnown.lng, source: "last_known" });
+        if (!cancelled) {
+          setUserGeo(lastKnown);
+          setGeo(lastKnown);
+          setGeoReady(true);
+        }
+        return;
+      }
+
+      // 4. Hard default — always produces a non-zero usable coordinate
+      console.log("[HADE GEO SOURCE]", { lat: DEFAULT_GEO.lat, lng: DEFAULT_GEO.lng, source: "default" });
+      if (!cancelled) {
+        setUserGeo(DEFAULT_GEO);
+        setGeo(DEFAULT_GEO);
+        setGeoReady(true);
+      }
+    };
+
     if (!navigator.geolocation) {
-      // Geolocation API unavailable (e.g., insecure context) — mark ready with null geo.
-      // The decide() effect guard checks context.geo and will not fire without it.
-      setGeoReady(true);
-      return;
+      void applyFallbackGeo();
+      return () => { cancelled = true; };
     }
+
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         if (cancelled) return;
         const geo = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        console.log("[HADE GEO SOURCE]", { lat: geo.lat, lng: geo.lng, source: "browser" });
+        saveLastKnownGeo(geo);
         setUserGeo(geo);
         setGeo(geo);
         setGeoReady(true);
       },
       () => {
         if (cancelled) return;
-        // Geo denied — use scenario demo geo when explicitly configured.
-        // Scenarios are author-set (developer URL param), so a hardcoded coordinate
-        // is intentional. Do NOT fall back for real users with no scenario active.
-        if (scenario?.geo) {
-          setUserGeo(scenario.geo);
-          setGeo(scenario.geo);
-        }
-        setGeoReady(true);
+        void applyFallbackGeo();
       },
       { timeout: 8000, maximumAge: 60_000 },
     );
+
     return () => { cancelled = true; };
-  }, [setGeo]);
+  }, [setGeo, scenario]);
 
   // ── Auto-fire on mount ───────────────────────────────────────────────────
+  // Guard order:
+  //   1. firedRef — prevent double-fire across re-renders
+  //   2. geoReady — geolocation API has resolved (success or denied)
+  //   3. context.geo?.lat && context.geo?.lng — real non-zero coordinates present
+  //      Mirrors the Places validation gate: rejects null, undefined, and (0, 0).
 
   useEffect(() => {
-    if (firedRef.current || !geoReady || !context.geo) return;
+    if (firedRef.current) return;
+    if (!geoReady) return;
+    if (!context.geo?.lat || !context.geo?.lng) {
+      console.warn("[HADE GEO] Decision blocked — geo not ready or invalid", context.geo);
+      return;
+    }
+    console.log("[HADE GEO] Triggering decision with verified geo", {
+      lat: context.geo.lat,
+      lng: context.geo.lng,
+    });
     firedRef.current = true;
     void decide({
       ...scenario?.request,

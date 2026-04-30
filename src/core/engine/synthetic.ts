@@ -287,6 +287,12 @@ async function getPlaces(params: {
   targetCategories: string[];
   radius: number;
 }): Promise<PlaceOption[]> {
+  console.log("[HADE TRACE] Places fetch executing at: src/core/engine/synthetic.ts", {
+    geo: params.geo,
+    intent: params.intent,
+    target_categories: params.targetCategories,
+    radius_meters: params.radius,
+  });
   return fetchNearbyGrounded({
     geo: params.geo,
     intent: params.intent,
