@@ -748,6 +748,11 @@ export interface PlaceOption {
   rating?: number;
   /** Normalised price level: 0 (free) – 4 (very expensive) */
   price_level?: number;
+  /**
+   * Raw Google Place type tokens (e.g. "restaurant", "night_club").
+   * Absent for UGC candidates — use that as the bypass signal in domain filters.
+   */
+  types?: string[];
   /** True when this candidate originated from the UGC store. UGC entries
    *  bypass the Google-taxonomy category filter in synthetic.ts. */
   isUGC?: boolean;

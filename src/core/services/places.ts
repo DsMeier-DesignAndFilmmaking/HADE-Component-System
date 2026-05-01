@@ -229,6 +229,7 @@ function toPlaceOption(
       place.priceLevel !== undefined
         ? PRICE_LEVEL_MAP[place.priceLevel]
         : undefined,
+    types: place.types,
   };
 }
 

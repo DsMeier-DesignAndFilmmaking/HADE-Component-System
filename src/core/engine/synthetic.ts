@@ -31,7 +31,7 @@ import {
 import { getNodeTrustScore } from "@/lib/hade/weights";
 import { getDistanceCopy } from "@/lib/hade/ugcCopy";
 import { getNearbyUGC } from "@/lib/hade/ugc";
-import { getDomainConfig, type DomainConfig } from "@/core/domain/config";
+import { getDomainConfig, type ExtendedDomainConfig, type ScoringWeights } from "@/core/domain/domainConfigs";
 import { RADIUS } from "@/core/constants/radius";
 import type { DecisionCandidate } from "@/core/types/decision";
 import type {
@@ -148,6 +148,8 @@ export interface RankedCandidate {
   category: string;
   address?: string;
   rating?: number;
+  /** Raw Google Place type tokens. Absent for UGC candidates — used by domain type filter. */
+  types?: string[];
 }
 
 /** All intermediate values produced by scoreSpontaneousCandidate, for trace logging. */
@@ -328,6 +330,7 @@ function placeToCandidate(place: PlaceOption, origin: GeoLocation, now: number):
     category: place.category,
     address: place.address,
     rating: place.rating,
+    types: place.types,
   };
 }
 
@@ -339,6 +342,47 @@ function mergeCandidates(...groups: RankedCandidate[][]): RankedCandidate[] {
     }
   }
   return [...byId.values()];
+}
+
+// ─── Domain type filter ───────────────────────────────────────────────────────
+
+/**
+ * Removes Google Places candidates whose raw `types` array has no overlap with
+ * `config.allowedPlaceTypes`. UGC candidates (no `types` field) always pass.
+ *
+ * Fail-soft:
+ *   • Undefined config → resolve to default via getDomainConfig(undefined).
+ *   • Empty/missing allowlist → return candidates unchanged.
+ *   • Allowlist would empty the pool → return original candidates (never crash ranking).
+ */
+function filterCandidatesByDomain(
+  candidates: RankedCandidate[],
+  config: ExtendedDomainConfig | undefined,
+): RankedCandidate[] {
+  // Safe fallback — defaults to DINING when config is missing for any reason
+  const safeConfig = config ?? getDomainConfig(undefined);
+  console.log("[HADE MODE]", safeConfig.id);
+  console.log("[HADE FILTER] before:", candidates.length);
+
+  const allowed = safeConfig.allowedPlaceTypes;
+  if (!allowed || allowed.length === 0) {
+    console.log("[HADE FILTER] after:", candidates.length);
+    return candidates;
+  }
+
+  const allowedSet = new Set(allowed);
+  const filtered = candidates.filter(
+    (c) =>
+      // UGC candidates have no types — always admit them
+      !c.types ||
+      c.types.length === 0 ||
+      c.types.some((t) => allowedSet.has(t)),
+  );
+
+  // Fail-soft: never return an empty pool due to the allowlist
+  const result = filtered.length > 0 ? filtered : candidates;
+  console.log("[HADE FILTER] after:", result.length);
+  return result;
 }
 
 // ─── Time-window filter ───────────────────────────────────────────────────────
@@ -373,7 +417,8 @@ function filterByTimeWindow(candidates: RankedCandidate[], now: number): RankedC
 function scoreSpontaneousCandidate(
   candidate: RankedCandidate,
   now: number,
-  weights?: DomainConfig["scoringWeights"],
+  weights?: ScoringWeights,
+  explorationBias = 0,
 ): SpontaneousScoreBreakdown {
   const { obj, distance_meters } = candidate;
 
@@ -400,20 +445,22 @@ function scoreSpontaneousCandidate(
     distanceScore      * w.distance +
     trustScore         * w.trust;
 
+  const jitter = explorationBias > 0 ? (Math.random() - 0.5) * explorationBias * 0.2 : 0;
   return {
     timeProximityScore,
     distanceScore,
     socialScore,
     trustScore,
     userStateBonus,
-    finalScore: clamp(baseScore + userStateBonus, 0, 1),
+    finalScore: clamp(baseScore + userStateBonus + jitter, 0, 1),
   };
 }
 
 export async function rankSpontaneousObjects(
   candidates: RankedCandidate[],
   now: number = Date.now(),
-  weights?: DomainConfig["scoringWeights"],
+  weights?: ScoringWeights,
+  explorationBias = 0,
 ): Promise<Array<{ candidate: RankedCandidate; score: number; breakdown: SpontaneousScoreBreakdown }>> {
   const scoredCandidates = await Promise.all(
     candidates.map(async (candidate) => {
@@ -423,7 +470,7 @@ export async function rankSpontaneousObjects(
         ...candidate,
         obj: { ...candidate.obj, trust_score: effectiveTrust },
       };
-      const breakdown = scoreSpontaneousCandidate(candidateWithTrust, now, weights);
+      const breakdown = scoreSpontaneousCandidate(candidateWithTrust, now, weights, explorationBias);
       return { candidate: candidateWithTrust, score: breakdown.finalScore, breakdown };
     }),
   );
@@ -509,7 +556,10 @@ export async function generateSyntheticDecision(
     const ugcInjectedCount = ugcCandidates.length;
 
     // ── Step 2: Merge SpontaneousObject arrays ────────────────────────────────
-    const mergedCandidates = mergeCandidates(ugcCandidates, placeCandidates);
+    const mergedCandidates = filterCandidatesByDomain(
+      mergeCandidates(ugcCandidates, placeCandidates),
+      config,
+    );
 
     // ── Step 3: HARD EXCLUSION of rejected objects ────────────────────────────
     // "Not This" must guarantee a rejected venue is NEVER returned again in the
@@ -572,8 +622,25 @@ export async function generateSyntheticDecision(
       );
     }
 
+    // ── Step 4.5: Apply rejection sensitivity ────────────────────────────────
+    // Each rejection entry's pivot_reason may shift scoring weights so the
+    // engine steers away from the same failure mode on subsequent requests.
+    let effectiveWeights = { ...config.scoringWeights };
+    if (Array.isArray(rawRejections)) {
+      for (const entry of rawRejections) {
+        const reason =
+          entry && typeof entry === "object" && "pivot_reason" in entry
+            ? (entry as { pivot_reason: unknown }).pivot_reason
+            : null;
+        if (typeof reason === "string") {
+          const transformer = config.rejectionSensitivity[reason];
+          if (transformer) effectiveWeights = transformer(effectiveWeights);
+        }
+      }
+    }
+
     // ── Step 5: Score and rank ────────────────────────────────────────────────
-    const sorted = await rankSpontaneousObjects(timeWindowCandidates, now, config.scoringWeights);
+    const sorted = await rankSpontaneousObjects(timeWindowCandidates, now, effectiveWeights, config.explorationBias);
 
     const best = sorted[0];
     if (!best) return { ok: false };
@@ -609,8 +676,10 @@ export async function generateSyntheticDecision(
       geo: { lat: bestObj.location.lat, lng: bestObj.location.lng },
       distance_meters: bestDistance,
       eta_minutes: Math.max(1, Math.ceil(bestDistance / 80)),
-      rationale: config.copy.buildRationale({ vibe: bestVibe, category: bestCategory, distance_meters: bestDistance }),
-      why_now: config.copy.buildWhyNow(ctx),
+      ...config.narrative(
+        { title: bestObj.title, category: bestCategory, distance_meters: bestDistance, vibe_tag: bestObj.vibe_tag, address: best.candidate.address },
+        ctx,
+      ),
       confidence: 0.65,
       situation_summary: situationSummary,
       ...(best.candidate.address ? { neighborhood: best.candidate.address } : {}),
@@ -654,7 +723,8 @@ export async function generateSyntheticDecision(
         intent: intent ?? "any",
         radius,
         domain: config.id,
-        weights: config.scoringWeights,
+        weights: effectiveWeights,
+        explorationBias: config.explorationBias,
       },
       candidates: {
         google_count: googleCount,
