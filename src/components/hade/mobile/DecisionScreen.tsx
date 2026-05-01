@@ -8,7 +8,7 @@ import { useHadeAdaptiveContext } from "@/lib/hade/hooks";
 import { useHade } from "@/lib/hade/useHade";
 import { computeTemporalState, getUGCPivotReasons } from "@/lib/hade/ugcCopy";
 import { HeroDecisionCard } from "./HeroDecisionCard";
-
+import { ModeToggle } from "./ModeToggle";
 import { SecondaryActions } from "./SecondaryActions";
 import { RefineSheet } from "./RefineSheet";
 import { VibeSheet } from "./VibeSheet";
@@ -67,6 +67,10 @@ function DebugOverlay({ decision }: { decision: DecisionViewModel }) {
     ? "bg-orange-500/90 text-white"
     : "bg-blue-500/90 text-white";
 
+  const sourceShort = decision.engine_source
+    ? decision.engine_source.replace("cold_start_", "cs/").replace("_fallback", "/fb")
+    : "—";
+
   return (
     <div className="fixed right-3 top-14 z-50 flex flex-col items-end gap-1.5">
       <button
@@ -80,6 +84,11 @@ function DebugOverlay({ decision }: { decision: DecisionViewModel }) {
       {expanded && (
         <div className="w-44 rounded-xl border border-white/10 bg-ink/90 px-3 py-2.5 font-mono text-[10px] leading-relaxed text-white/90 shadow-xl backdrop-blur-sm">
           <div className="flex justify-between">
+            <span className="text-white/50">engine</span>
+            <span className="text-emerald-400 text-right max-w-[100px] truncate">{sourceShort}</span>
+          </div>
+
+          <div className="mt-1 flex justify-between">
             <span className="text-white/50">is_ugc</span>
             <span className={decision.is_ugc ? "text-orange-400" : "text-blue-400"}>
               {decision.is_ugc ? "true" : "false"}
@@ -133,7 +142,8 @@ export function DecisionScreen({ scenarioId }: DecisionScreenProps) {
     decision,
     status,
     error,
-    isFallback,
+    mode,
+    setMode,
     regenerate,
     refine,
   } = useHade({ scenarioId });
@@ -381,6 +391,12 @@ export function DecisionScreen({ scenarioId }: DecisionScreenProps) {
               ))}
             </div>
           )}
+
+          <ModeToggle
+            mode={mode}
+            onChange={setMode}
+            disabled={status === "loading"}
+          />
 
           <button
             type="button"

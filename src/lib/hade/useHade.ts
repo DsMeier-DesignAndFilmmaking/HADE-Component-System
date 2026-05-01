@@ -85,6 +85,8 @@ export interface UseHadeConfig {
   scenarioId?: string | null;
 }
 
+export type DomainMode = "dining" | "social" | "travel";
+
 export interface UseHadeReturn {
   decision: DecisionViewModel | null;
   reasoning: string[];
@@ -95,6 +97,10 @@ export interface UseHadeReturn {
   meta: HadeAPIMeta | null;
   /** Convenience alias for decision.is_fallback. True when served from Tier 3 static stub. */
   isFallback: boolean;
+  /** Currently active domain mode. */
+  mode: DomainMode;
+  /** Switch domain mode and immediately re-fetch with the new mode. */
+  setMode: (mode: DomainMode) => void;
   regenerate: () => void;
   refine: (input: {
     intent?: Intent | null;
@@ -119,6 +125,8 @@ export function useHade(config?: UseHadeConfig): UseHadeReturn {
 
   const [userGeo, setUserGeo] = useState<GeoLocation | null>(null);
   const [geoReady, setGeoReady] = useState(false);
+  const [mode, setModeState] = useState<DomainMode>("dining");
+  const modeRef = useRef<DomainMode>("dining");
   const firedRef = useRef(false);
 
   const scenario = config?.scenarioId ? getScenario(config.scenarioId) : null;
@@ -242,6 +250,7 @@ export function useHade(config?: UseHadeConfig): UseHadeReturn {
       ...scenario?.request,
       persona: activeAgent,
       settings: { ...settings, ...scenario?.settings },
+      mode: modeRef.current,
     });
   }, [geoReady, context.geo, decide, activeAgent, settings, scenario]);
 
@@ -287,10 +296,24 @@ export function useHade(config?: UseHadeConfig): UseHadeReturn {
         ...scenario?.request,
         persona: activeAgent,
         settings: { ...settings, ...scenario?.settings },
+        mode: modeRef.current,
       });
       firedRef.current = true;
     }
   }, [response, pivot, decide, scenario, activeAgent, settings]);
+
+  const setMode = useCallback((newMode: DomainMode) => {
+    modeRef.current = newMode;
+    setModeState(newMode);
+    firedRef.current = false;
+    void decide({
+      ...scenario?.request,
+      persona: activeAgent,
+      settings: { ...settings, ...scenario?.settings },
+      mode: newMode,
+    });
+    firedRef.current = true;
+  }, [decide, scenario, activeAgent, settings]);
 
   const refine = useCallback(
     async (input: { intent?: Intent | null; urgency?: Urgency }) => {
@@ -330,6 +353,8 @@ export function useHade(config?: UseHadeConfig): UseHadeReturn {
     error,
     meta,
     isFallback,
+    mode,
+    setMode,
     regenerate,
     refine,
     getAlternative,

@@ -557,6 +557,7 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
         },
         node_hints:          nodeHints.length > 0 ? nodeHints : undefined,
         candidate_categories: req?.candidate_categories ?? ctx.candidate_categories,
+        mode:                 req?.mode,
       };
 
       // 2. Validate before any side effects. Logs a specific warning for the

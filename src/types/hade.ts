@@ -201,6 +201,8 @@ export interface DecideRequest {
   custom_candidates?: SpontaneousObject[];
   /** Domain-specific Google Place types to fetch. Bypasses intent-derived category mapping. */
   candidate_categories?: string[];
+  /** Domain mode: "dining" | "social" | "travel". Defaults to "dining" in the engine. */
+  mode?: string;
 }
 
 /**

@@ -479,6 +479,7 @@ export async function generateSyntheticDecision(
     const situationSummary = generateSituationSummary(ctx);
     const domainMode = (body as { mode?: unknown }).mode as string | undefined;
     const config = getDomainConfig(domainMode);
+    console.log("[HADE MODE]", config.id);
 
     const callerCategories = (body as { candidate_categories?: unknown }).candidate_categories;
     const categories =
@@ -486,7 +487,6 @@ export async function generateSyntheticDecision(
         ? (callerCategories as string[])
         : config.categoryResolver(ctx);
     const primaryCategory = categories[0] ?? "broad";
-
     console.log("[HADE DEBUG] categories:", categories);
 
     console.log(`[HADE Tier 2] domain=${config.id} intent="${intent ?? "any"}" category="${primaryCategory}"`);
@@ -609,7 +609,7 @@ export async function generateSyntheticDecision(
       geo: { lat: bestObj.location.lat, lng: bestObj.location.lng },
       distance_meters: bestDistance,
       eta_minutes: Math.max(1, Math.ceil(bestDistance / 80)),
-      rationale: `A ${bestVibe} ${bestCategory} a short walk from here.`,
+      rationale: config.copy.buildRationale({ vibe: bestVibe, category: bestCategory, distance_meters: bestDistance }),
       why_now: config.copy.buildWhyNow(ctx),
       confidence: 0.65,
       situation_summary: situationSummary,
@@ -654,6 +654,7 @@ export async function generateSyntheticDecision(
         intent: intent ?? "any",
         radius,
         domain: config.id,
+        weights: config.scoringWeights,
       },
       candidates: {
         google_count: googleCount,

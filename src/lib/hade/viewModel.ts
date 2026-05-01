@@ -48,6 +48,8 @@ export interface DecisionViewModel {
   // ── Source metadata ──────────────────────────────────────────────────────────
   /** True when the decision was served from the Tier 3 static stub. */
   is_fallback: boolean;
+  /** Engine / pipeline source tag ("llm", "synthetic", "cold_start_synthetic", "cold_start_fallback", etc.). */
+  engine_source?: string;
 
   // ── UGC ─────────────────────────────────────────────────────────────────────
   /** True when the winning candidate was a user-created entity. */
@@ -153,7 +155,8 @@ export function buildDecisionViewModel(response: HadeResponse): DecisionViewMode
     cta_label: response.ux?.cta       ?? FALLBACK_CTA,
 
     // Source
-    is_fallback: dec.is_fallback === true || response.source === "fallback" || response.source === "static_fallback",
+    is_fallback:   dec.is_fallback === true || response.source === "fallback" || response.source === "static_fallback",
+    engine_source: response.source,
 
     // UGC
     is_ugc:       isUGC,
