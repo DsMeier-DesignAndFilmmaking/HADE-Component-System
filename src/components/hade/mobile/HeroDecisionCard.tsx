@@ -2,9 +2,17 @@
 
 import { useMemo } from "react";
 import type { SpontaneousObject } from "@/types/hade";
+import type { DomainMode } from "@/lib/hade/useHade";
+
+const MODE_LABEL: Record<DomainMode, { icon: string; text: string }> = {
+  dining: { icon: "🍽", text: "Eat Easy" },
+  social: { icon: "⚡", text: "Something Happening" },
+  travel: { icon: "🌍", text: "Explore" },
+};
 
 interface HeroDecisionCardProps {
   object: SpontaneousObject;
+  mode?: DomainMode;
   onGoing?: () => void;
   onMaybe?: () => void;
   onNotThis?: () => void;
@@ -32,6 +40,7 @@ function isLive(object: SpontaneousObject): boolean {
 
 export function HeroDecisionCard({
   object,
+  mode,
   onGoing,
   onMaybe,
   onNotThis,
@@ -42,14 +51,22 @@ export function HeroDecisionCard({
   return (
     <section className="relative flex flex-col rounded-3xl bg-surface p-6 shadow-soft">
 
-      <div className="flex items-center gap-2">
-        <span className="text-xs font-semibold uppercase tracking-[0.18em] text-ink/40">
-          Your move
-        </span>
-        {live && (
-          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-emerald-600">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-            Live
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-semibold uppercase tracking-[0.18em] text-ink/40">
+            Your move
+          </span>
+          {live && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-emerald-600">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+              Live
+            </span>
+          )}
+        </div>
+        {mode && (
+          <span className="inline-flex items-center gap-1 rounded-full bg-ink/5 px-2.5 py-1 text-[11px] font-medium text-ink/50">
+            <span aria-hidden="true">{MODE_LABEL[mode].icon}</span>
+            {MODE_LABEL[mode].text}
           </span>
         )}
       </div>

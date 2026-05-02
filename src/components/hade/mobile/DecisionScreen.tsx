@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { DomainMode } from "@/lib/hade/useHade";
 import { AnimatePresence, motion } from "framer-motion";
 import type { Intent, VibeTag } from "@/types/hade";
 import type { DecisionViewModel } from "@/lib/hade/viewModel";
@@ -16,6 +17,13 @@ import { UgcVerificationSheet } from "./UgcVerificationSheet";
 import { LoadingState } from "./LoadingState";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { ActivityCreationView } from "./ActivityCreationView";
+import { CompareModesSheet } from "./CompareModesSheet";
+
+const MODE_MESSAGES: Record<DomainMode, string> = {
+  dining:  "Finding something good to eat...",
+  social:  "Looking for something happening...",
+  travel:  "Exploring what's nearby...",
+};
 
 type Urgency = "low" | "medium" | "high";
 type PivotReason = "Too crowded" | "Wrong vibe" | "Too far" | "Overpriced";
@@ -137,7 +145,7 @@ interface DecisionScreenProps {
 }
 
 export function DecisionScreen({ scenarioId }: DecisionScreenProps) {
-  const { emitVibeSignal, pivot } = useHadeAdaptiveContext();
+  const { emitVibeSignal, pivot, context: adaptiveContext } = useHadeAdaptiveContext();
   const {
     decision,
     status,
@@ -153,6 +161,11 @@ export function DecisionScreen({ scenarioId }: DecisionScreenProps) {
   const [showVibeSheet, setShowVibeSheet] = useState(false);
   const [showVerificationSheet, setShowVerificationSheet] = useState(false);
   const [showCreationFlow, setShowCreationFlow] = useState(false);
+  const [showCompareModes, setShowCompareModes] = useState(false);
+  const [pendingMode, setPendingMode] = useState<DomainMode | null>(null);
+  const [modeMessage, setModeMessage] = useState<string | null>(null);
+  const modeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const [rejectionCount, setRejectionCount] = useState(0);
   const [rejectionHistory, setRejectionHistory] = useState<Array<{ venueId: string; reason: string; timestamp: number }>>([]);
   const [decisionHistory, setDecisionHistory] = useState<DecisionViewModel[]>([]);
@@ -166,6 +179,35 @@ export function DecisionScreen({ scenarioId }: DecisionScreenProps) {
       reasons: rejectionHistory.map((r) => r.reason),
     });
   }, [rejectionHistory]);
+
+  // Clear mode transition state once the new decision lands.
+  useEffect(() => {
+    if (status === "ready") {
+      setModeMessage(null);
+      setPendingMode(null);
+    }
+  }, [status]);
+
+  // Cancel pending mode timer on unmount.
+  useEffect(() => {
+    return () => {
+      if (modeTimerRef.current) clearTimeout(modeTimerRef.current);
+    };
+  }, []);
+
+  const handleModeChange = useCallback(
+    (newMode: DomainMode) => {
+      if (modeTimerRef.current) clearTimeout(modeTimerRef.current);
+      setPendingMode(newMode);
+      setModeMessage("Reframing...");
+      modeTimerRef.current = setTimeout(() => {
+        setModeMessage(MODE_MESSAGES[newMode]);
+        setMode(newMode);
+        modeTimerRef.current = null;
+      }, 400);
+    },
+    [setMode],
+  );
 
   // Push each new decision onto the history stack so "Previous" can navigate back.
   // We track by id so rapid re-renders don't push duplicates.
@@ -345,7 +387,24 @@ export function DecisionScreen({ scenarioId }: DecisionScreenProps) {
         </div>
       )}
 
-      {(status === "loading" || (status !== "error" && !displayDecision)) && <LoadingState />}
+      {modeMessage && status === "loading" ? (
+        <div className="flex flex-1 items-center justify-center">
+          <AnimatePresence mode="wait">
+            <motion.p
+              key={modeMessage}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.2, ease: "easeOut" }}
+              className="text-center text-base font-medium text-ink/50"
+            >
+              {modeMessage}
+            </motion.p>
+          </AnimatePresence>
+        </div>
+      ) : (
+        (status === "loading" || (status !== "error" && !displayDecision)) && <LoadingState />
+      )}
 
       {status === "ready" && displayDecision && (
         <>
@@ -360,6 +419,7 @@ export function DecisionScreen({ scenarioId }: DecisionScreenProps) {
               <ErrorBoundary name="HeroDecisionCard">
                 <HeroDecisionCard
                   object={displayDecision.object}
+                  mode={pendingMode ?? mode}
                   onGoing={handleGo}
                   onMaybe={handleMaybe}
                   onNotThis={handleNotThis}
@@ -393,10 +453,18 @@ export function DecisionScreen({ scenarioId }: DecisionScreenProps) {
           )}
 
           <ModeToggle
-            mode={mode}
-            onChange={setMode}
-            disabled={status === "loading"}
+            mode={pendingMode ?? mode}
+            onChange={handleModeChange}
+            disabled={false}
           />
+
+          <button
+            type="button"
+            onClick={() => setShowCompareModes(true)}
+            className="min-h-[42px] rounded-xl border border-line bg-white/60 px-4 text-sm font-semibold text-ink/70 transition-colors active:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
+          >
+            Compare Modes
+          </button>
 
           <button
             type="button"
@@ -416,6 +484,15 @@ export function DecisionScreen({ scenarioId }: DecisionScreenProps) {
           )}
         </div>
       </div>
+
+      <ErrorBoundary name="CompareModesSheet" onReset={() => setShowCompareModes(false)}>
+        <CompareModesSheet
+          open={showCompareModes}
+          geo={adaptiveContext.geo}
+          context={adaptiveContext}
+          onClose={() => setShowCompareModes(false)}
+        />
+      </ErrorBoundary>
 
       <ErrorBoundary name="RefineSheet" onReset={() => setRefineOpen(false)}>
         <RefineSheet

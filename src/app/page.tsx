@@ -6,6 +6,7 @@ import { Layout } from "@/components/layout";
 import DecisionFlowDiagram from "@/components/hade/diagrams/DecisionFlowDiagram";
 import AgenticOrchestrationDiagram from "@/components/hade/diagrams/AgenticOrchestrationDiagram";
 import { HadeButton } from "@/components/hade/buttons/HadeButton";
+import { GuidedDemoSection } from "@/components/hade/GuidedDemoSection";
 
 const HADE_LAYERS = [
   {
@@ -268,6 +269,11 @@ export default function HomePage() {
     </div>
   </div>
 </section>
+
+        {/* GUIDED DEMO */}
+        <div className="border-t border-border">
+          <GuidedDemoSection />
+        </div>
 
         {/* AGENTIC STRATUM */}
         <div className="mx-auto max-w-7xl px-6">

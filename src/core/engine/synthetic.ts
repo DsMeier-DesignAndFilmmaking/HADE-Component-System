@@ -159,6 +159,8 @@ export interface SpontaneousScoreBreakdown {
   socialScore: number;
   trustScore: number;
   userStateBonus: number;
+  /** +boost / -penalty applied based on domain ↔ Google place-type alignment. */
+  domainTypeBonus: number;
   finalScore: number;
 }
 
@@ -382,6 +384,9 @@ function filterCandidatesByDomain(
   // Fail-soft: never return an empty pool due to the allowlist
   const result = filtered.length > 0 ? filtered : candidates;
   console.log("[HADE FILTER] after:", result.length);
+  if (process.env.NODE_ENV !== "production") {
+    console.log("[HADE FILTERED COUNT]", result.length);
+  }
   return result;
 }
 
@@ -403,6 +408,34 @@ function filterByTimeWindow(candidates: RankedCandidate[], now: number): RankedC
 // ─── Ranking formula ──────────────────────────────────────────────────────────
 
 /**
+ * Per-domain Google-type boost lists. A candidate whose types intersect this
+ * set receives DOMAIN_TYPE_BOOST; otherwise it receives DOMAIN_TYPE_PENALTY.
+ * UGC candidates (no `types`) are neutral — bonus = 0.
+ *
+ * These values are intentionally large enough to flip rankings for candidates
+ * with similar base scores, ensuring the same input produces visibly different
+ * outputs across dining / social / travel.
+ */
+const DOMAIN_BOOST_TYPES: Record<string, string[]> = {
+  dining: ["restaurant", "cafe", "bakery"],
+  social: ["bar", "night_club", "park"],
+  travel: ["tourist_attraction", "museum", "landmark"],
+};
+const DOMAIN_TYPE_BOOST   = 0.25;
+const DOMAIN_TYPE_PENALTY = -0.20;
+
+function computeDomainTypeBonus(
+  types: string[] | undefined,
+  domainId: string | undefined,
+): number {
+  // UGC (no types) and unknown domains are domain-neutral
+  if (!domainId || !types || types.length === 0) return 0;
+  const boostList = DOMAIN_BOOST_TYPES[domainId];
+  if (!boostList) return 0;
+  return types.some((t) => boostList.includes(t)) ? DOMAIN_TYPE_BOOST : DOMAIN_TYPE_PENALTY;
+}
+
+/**
  * Scores a SpontaneousObject candidate using the new ranking formula:
  *
  *   time_proximity (0.45) — inverse decay from window start; 1 if starting now
@@ -410,6 +443,7 @@ function filterByTimeWindow(candidates: RankedCandidate[], now: number): RankedC
  *   social_score   (0.15) — going_count normalised to [0, 1] (50 = max)
  *   trust_score    (0.10) — persisted trust value from SpontaneousObject
  *   user_state     (+0.10 / +0.05) — additive bonus for confirmed RSVP
+ *   domain_type    (+0.25 / −0.20) — additive bias based on domain ↔ Google type alignment
  *
  * Venues with no UGC history default to trust_score=0.5 and going_count=0,
  * so they score identically to the neutral baseline — no crash, no bias.
@@ -419,6 +453,7 @@ function scoreSpontaneousCandidate(
   now: number,
   weights?: ScoringWeights,
   explorationBias = 0,
+  domainId?: string,
 ): SpontaneousScoreBreakdown {
   const { obj, distance_meters } = candidate;
 
@@ -445,14 +480,17 @@ function scoreSpontaneousCandidate(
     distanceScore      * w.distance +
     trustScore         * w.trust;
 
+  const domainTypeBonus = computeDomainTypeBonus(candidate.types, domainId);
   const jitter = explorationBias > 0 ? (Math.random() - 0.5) * explorationBias * 0.2 : 0;
+
   return {
     timeProximityScore,
     distanceScore,
     socialScore,
     trustScore,
     userStateBonus,
-    finalScore: clamp(baseScore + userStateBonus + jitter, 0, 1),
+    domainTypeBonus,
+    finalScore: clamp(baseScore + userStateBonus + domainTypeBonus + jitter, 0, 1),
   };
 }
 
@@ -461,6 +499,7 @@ export async function rankSpontaneousObjects(
   now: number = Date.now(),
   weights?: ScoringWeights,
   explorationBias = 0,
+  domainId?: string,
 ): Promise<Array<{ candidate: RankedCandidate; score: number; breakdown: SpontaneousScoreBreakdown }>> {
   const scoredCandidates = await Promise.all(
     candidates.map(async (candidate) => {
@@ -470,7 +509,7 @@ export async function rankSpontaneousObjects(
         ...candidate,
         obj: { ...candidate.obj, trust_score: effectiveTrust },
       };
-      const breakdown = scoreSpontaneousCandidate(candidateWithTrust, now, weights, explorationBias);
+      const breakdown = scoreSpontaneousCandidate(candidateWithTrust, now, weights, explorationBias, domainId);
       return { candidate: candidateWithTrust, score: breakdown.finalScore, breakdown };
     }),
   );
@@ -640,10 +679,20 @@ export async function generateSyntheticDecision(
     }
 
     // ── Step 5: Score and rank ────────────────────────────────────────────────
-    const sorted = await rankSpontaneousObjects(timeWindowCandidates, now, effectiveWeights, config.explorationBias);
+    const sorted = await rankSpontaneousObjects(
+      timeWindowCandidates,
+      now,
+      effectiveWeights,
+      config.explorationBias,
+      config.id,
+    );
 
     const best = sorted[0];
     if (!best) return { ok: false };
+
+    if (process.env.NODE_ENV !== "production") {
+      console.log("[HADE TOP RESULT TYPES]", best.candidate.types ?? []);
+    }
 
     const bestObj = best.candidate.obj;
     const bestDistance = best.candidate.distance_meters ?? 0;
@@ -685,6 +734,14 @@ export async function generateSyntheticDecision(
       ...(best.candidate.address ? { neighborhood: best.candidate.address } : {}),
       ...ugcMeta,
     };
+
+    if (process.env.NODE_ENV !== "production") {
+      console.log("[HADE FINAL MODE RESULT]", {
+        mode: config.id,
+        name: decision.venue_name,
+        types: best.candidate.types ?? [],
+      });
+    }
 
     // ── Assemble DecideResponse ───────────────────────────────────────────────
     const fallbackObjects = timeWindowCandidates.map((c) => c.obj);
@@ -744,6 +801,7 @@ export async function generateSyntheticDecision(
         socialScore:        r3(breakdown.socialScore),
         trustScore:         r3(breakdown.trustScore),
         userStateBonus:     r3(breakdown.userStateBonus),
+        domainTypeBonus:    r3(breakdown.domainTypeBonus),
         finalScore:         r3(breakdown.finalScore),
       })),
       selected: {
