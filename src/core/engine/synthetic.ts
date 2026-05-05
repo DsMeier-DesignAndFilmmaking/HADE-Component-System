@@ -68,7 +68,7 @@ type SyntheticResult =
       explanation_signals?: ExplanationSignals;
       topCandidate?: DecisionCandidate;
     }
-  | { ok: false };
+  | { ok: false; reason?: string };
 
 // ─── Intent / radius helpers ──────────────────────────────────────────────────
 
@@ -379,6 +379,15 @@ function mergeCandidates(...groups: RankedCandidate[][]): RankedCandidate[] {
  *   • Empty/missing allowlist → return candidates unchanged.
  *   • Allowlist would empty the pool → return original candidates (never crash ranking).
  */
+// Category-level domain gate for UGC / custom candidates (no Google types field).
+// Mirrors DOMAIN_TYPE_WHITELIST in filtering.ts but operates on HADE category tokens
+// (the normalized strings set by normalizeCategory() in places.ts).
+const DOMAIN_CATEGORY_WHITELIST: Record<string, Set<string>> = {
+  dining: new Set(["restaurant", "cafe", "bar", "bakery", "meal_takeaway", "meal_delivery"]),
+  social: new Set(["bar", "night_club", "nightclub", "park", "event_venue", "venue", "movie_theater", "theater"]),
+  travel: new Set(["tourist_attraction", "museum", "art_gallery", "gallery", "landmark", "amusement_park"]),
+};
+
 function filterCandidatesByDomain(
   candidates: RankedCandidate[],
   config: ExtendedDomainConfig | undefined,
@@ -390,25 +399,34 @@ function filterCandidatesByDomain(
 
   const allowed = safeConfig.allowedPlaceTypes;
   if (!allowed || allowed.length === 0) {
+    console.warn("[HADE FILTER] allowedPlaceTypes missing for domain:", safeConfig.id);
     console.log("[HADE FILTER] after:", candidates.length);
     return candidates;
   }
 
   const allowedSet = new Set(allowed);
-  const filtered = candidates.filter(
-    (c) =>
-      // UGC candidates have no types — always admit them
-      !c.types ||
-      c.types.length === 0 ||
-      c.types.some((t) => allowedSet.has(t)),
-  );
+  const ugcAllowed = DOMAIN_CATEGORY_WHITELIST[safeConfig.id];
 
-  // Fail-soft: never return an empty pool due to the allowlist
-  const result = filtered.length > 0 ? filtered : candidates;
-  console.log("[HADE FILTER] after:", result.length);
+  const filtered = candidates.filter((c) => {
+    // Has Google types → use allowedPlaceTypes gate (same as filterByDomain)
+    if (c.types && c.types.length > 0) {
+      return c.types.some((t) => allowedSet.has(t));
+    }
+    // No types (UGC / custom) → gate by normalized category string
+    if (ugcAllowed && c.category) {
+      return ugcAllowed.has(c.category);
+    }
+    // Unknown category and no types — admit rather than silently drop
+    return true;
+  });
+
+  // No fail-soft: an empty filtered pool is a real signal — let the upstream
+  // empty-pool guard handle it. Restoring the unfiltered pool here was the
+  // primary path by which off-domain candidates reached scoring.
+  console.log("[HADE FILTER] after:", filtered.length);
   // Always emit — required for cross-domain differentiation diagnostics.
-  console.log("[HADE FILTERED COUNT]", result.length);
-  return result;
+  console.log("[HADE FILTERED COUNT]", filtered.length);
+  return filtered;
 }
 
 // ─── Time-window filter ───────────────────────────────────────────────────────
@@ -709,9 +727,14 @@ export async function generateSyntheticDecision(
       : await getPlacesCandidates(ctx, categories);
     const filteredPlaces = filterByDomain(places, config.id);
 
-    if (!filteredPlaces || filteredPlaces.length === 0) {
-      console.warn("[HADE] No candidates after filtering — aborting decision");
-      return { ok: false };
+    console.log("[HADE FILTER ENFORCED]", {
+      mode: config.id,
+      input: places.length,
+      output: filteredPlaces.length,
+    });
+
+    if (filteredPlaces.length === 0) {
+      return { ok: false, reason: "no_domain_candidates" };
     }
 
     // ── Rejection pre-filter: strip already-rejected Places before conversion ──
@@ -871,7 +894,22 @@ export async function generateSyntheticDecision(
     }
 
     // ── Assemble DecideResponse ───────────────────────────────────────────────
-    const fallbackObjects = timeWindowCandidates.map((c) => c.obj);
+    // fallbackObjects derives from timeWindowCandidates, which is the terminal
+    // end of the filtered pipeline:
+    //   filteredPlaces → freshCandidates → placeCandidates
+    //   → mergedCandidates (filterCandidatesByDomain) → admittedCandidates
+    //   → timeWindowCandidates
+    // No unfiltered data can reach this point — the guard at the filterByDomain
+    // call site returns { ok: false } before we get here if filteredPlaces is empty.
+    const fallbackObjects = filteredPlaces.length > 0
+      ? timeWindowCandidates.map((c) => c.obj)
+      : [];
+
+    console.log("[HADE FALLBACK SOURCE]", {
+      usingFiltered: true,
+      count: fallbackObjects.length,
+    });
+
     const data: DecideResponse = {
       decision,
       context_snapshot: {

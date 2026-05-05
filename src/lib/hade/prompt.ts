@@ -190,6 +190,8 @@ export const GOLD_PATH_CONTEXT: HadeContext = {
   rejection_history: [],
 };
 
+
+
 /**
  * Expected Situation Summary for GOLD_PATH_CONTEXT:
  * "Evening on a prime weekend, couple, high energy, adventurous,
