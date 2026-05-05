@@ -26,7 +26,10 @@ function makeDecideResponse(venueId = "venue-real"): DecideResponse {
       eta_minutes: 5,
       rationale: "Good fit.",
       why_now: "Friday evening.",
+      why_this: "Open tonight and a 5-min walk.",
+      decision_frame: "Solid pick for this evening — easy and close.",
       confidence: 0.85,
+      confidence_label: "Strong pick",
       situation_summary: "Evening on a weekday, solo, medium energy.",
     },
     context_snapshot: {

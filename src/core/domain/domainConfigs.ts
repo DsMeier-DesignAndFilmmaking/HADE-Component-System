@@ -22,8 +22,12 @@ export type NarrativePlace = {
 };
 
 export type NarrativeResult = {
-  rationale: string;
-  why_now:   string;
+  rationale:      string;
+  why_now:        string;
+  /** ≤12 words; references time-of-day, user state, or a context signal. */
+  why_this:       string;
+  /** One-sentence recommendation frame. */
+  decision_frame: string;
 };
 
 export type ExtendedDomainConfig = {
@@ -72,6 +76,23 @@ function timeOfDayOf(ctx: any): string | undefined {
   return ctx?.time_of_day as string | undefined;
 }
 
+function userStateOf(ctx: any): { energy?: string; openness?: string } {
+  return {
+    energy:   ctx?.state?.energy   as string | undefined,
+    openness: ctx?.state?.openness as string | undefined,
+  };
+}
+
+function timePhrase(t?: string): string {
+  switch (t) {
+    case "morning":    return "this morning";
+    case "afternoon":  return "this afternoon";
+    case "evening":    return "tonight";
+    case "late_night": return "right now";
+    default:           return "right now";
+  }
+}
+
 // ─── Dining ──────────────────────────────────────────────────────────────────
 //
 // Dominant signal: distance (0.50) — the closest good option wins.
@@ -89,16 +110,20 @@ const DINING_CONFIG: ExtendedDomainConfig = {
     return mapIntentToPlacesCategory(intent ?? "", timeOfDay);
   },
 
-  scoringWeights: { distance: 0.50, trust: 0.30, time: 0.10, social: 0.10 },
+  // Dining priorities: rating + proximity dominate. Time/social are tertiary.
+  scoringWeights: { distance: 0.45, trust: 0.45, time: 0.05, social: 0.05 },
 
   explorationBias: 0.05,
 
+  // Canonical MUST-include set (spec) + nearest Google Place type synonym.
   allowedPlaceTypes: [
+    // canonical
     "restaurant",
     "cafe",
     "bakery",
-    "meal_takeaway",
     "bar",
+    // Google synonyms
+    "meal_takeaway",
   ],
 
   rejectionSensitivity: {
@@ -117,9 +142,19 @@ const DINING_CONFIG: ExtendedDomainConfig = {
   },
 
   narrative(place, ctx) {
-    const dist = distLabel(place.distance_meters);
-    const vibe = place.vibe_tag ?? place.category;
+    const dist  = distLabel(place.distance_meters);
+    const vibe  = place.vibe_tag ?? place.category;
+    const when  = timePhrase(timeOfDayOf(ctx));
+    const state = userStateOf(ctx);
+
     const rationale = `A ${vibe} ${place.category} ${dist}.`;
+
+    const why_this =
+      state.energy === "low"
+        ? `Low effort, close enough to walk ${when}.`
+        : `Open ${when} and ${dist} — easy call.`;
+
+    const decision_frame = "Low effort, nearby, and open — easy win.";
 
     let why_now: string;
     switch (intentOf(ctx)) {
@@ -129,7 +164,7 @@ const DINING_CONFIG: ExtendedDomainConfig = {
       case "scene": why_now = "Lively atmosphere, just around the corner."; break;
       default:      why_now = "Close by and open. Good moment to go.";
     }
-    return { rationale, why_now };
+    return { rationale, why_now, why_this, decision_frame };
   },
 };
 
@@ -162,16 +197,21 @@ const SOCIAL_CONFIG: ExtendedDomainConfig = {
     return [...SOCIAL_PLACE_TYPES];
   },
 
-  scoringWeights: { social: 0.60, time: 0.20, distance: 0.10, trust: 0.10 },
+  // Social priorities: liveliness (social) + group fit dominate. Group-fit
+  // bonus is applied additively in scoreSpontaneousCandidate.
+  scoringWeights: { social: 0.65, time: 0.20, distance: 0.10, trust: 0.05 },
 
   explorationBias: 0.15,
 
+  // Canonical MUST-include set (spec) + nearest Google Place type synonym.
   allowedPlaceTypes: [
-    "bar",
-    "night_club",
+    // canonical
     "park",
     "event_venue",
-    "cafe",
+    "bar",
+    "public_space",
+    // Google synonym for "public_space"
+    "community_center",
   ],
 
   rejectionSensitivity: {
@@ -191,7 +231,11 @@ const SOCIAL_CONFIG: ExtendedDomainConfig = {
   narrative(place, ctx) {
     const dist = distLabel(place.distance_meters);
     const cat  = capitalize(place.category);
+    const when = timePhrase(timeOfDayOf(ctx));
+
     const rationale = `${cat} with a crowd — ${dist} and heating up.`;
+    const why_this  = `Crowd is already there ${when}.`;
+    const decision_frame = "Energy is peaking nearby — go where the night is.";
 
     let why_now: string;
     switch (intentOf(ctx)) {
@@ -201,7 +245,7 @@ const SOCIAL_CONFIG: ExtendedDomainConfig = {
       case "chill": why_now = "Surprisingly buzzing — more alive than it looks."; break;
       default:      why_now = "High energy right now. Don't sit this one out.";
     }
-    return { rationale, why_now };
+    return { rationale, why_now, why_this, decision_frame };
   },
 };
 
@@ -233,15 +277,23 @@ const TRAVEL_CONFIG: ExtendedDomainConfig = {
     return [...TRAVEL_PLACE_TYPES];
   },
 
-  scoringWeights: { trust: 0.60, distance: 0.20, social: 0.10, time: 0.10 },
+  // Travel priorities: uniqueness (trust as quality proxy) + visual appeal
+  // dominate. Uniqueness bonus is applied additively in scoreSpontaneousCandidate.
+  scoringWeights: { trust: 0.65, distance: 0.20, time: 0.10, social: 0.05 },
 
   explorationBias: 0.10,
 
+  // Canonical MUST-include set (spec) + Google Place type synonyms.
   allowedPlaceTypes: [
-    "tourist_attraction",
-    "museum",
-    "park",
+    // canonical
     "landmark",
+    "museum",
+    "attraction",
+    "viewpoint",
+    // Google synonyms
+    "tourist_attraction",
+    "historical_landmark",
+    "observation_deck",
   ],
 
   rejectionSensitivity: {
@@ -258,12 +310,22 @@ const TRAVEL_CONFIG: ExtendedDomainConfig = {
     }),
   },
 
-  narrative(place) {
-    const dist = distLabel(place.distance_meters);
-    const vibe = place.vibe_tag ?? place.category;
+  narrative(place, ctx) {
+    const dist  = distLabel(place.distance_meters);
+    const vibe  = place.vibe_tag ?? place.category;
+    const state = userStateOf(ctx);
+
     const rationale = `Top-rated ${vibe} ${place.category} — ${dist}.`;
-    const why_now   = "Highly rated and worth the trip — best choice in range.";
-    return { rationale, why_now };
+
+    const why_this =
+      state.openness === "open"
+        ? `Worth the trip — fits your exploring mood.`
+        : `Top-rated nearby option in your range.`;
+
+    const decision_frame = "Best-rated spot in range — go discover something good.";
+    const why_now = "Highly rated and worth the trip — best choice in range.";
+
+    return { rationale, why_now, why_this, decision_frame };
   },
 };
 

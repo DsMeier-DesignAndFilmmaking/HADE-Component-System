@@ -213,7 +213,10 @@ export const GOLD_PATH_EXPECTED_DECISION: Omit<
     "Saturday prime for two with high energy and 2 hours — this is exactly where you go. Walk there, no plan needed.",
   why_now:
     "Weekend prime energy with an open evening window is exactly what this place is built for.",
+  why_this: "Saturday prime, walking distance, your high-energy mood.",
+  decision_frame: "Right energy for the night — walk over, no plan needed.",
   confidence: 0.84,
+  confidence_label: "Strong pick",
   situation_summary:
     "Evening on a prime weekend, couple, high energy, adventurous, no specific intent (likely eat), 2-hour window, walking distance only, medium budget.",
 };

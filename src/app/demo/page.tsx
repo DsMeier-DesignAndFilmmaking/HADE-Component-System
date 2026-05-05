@@ -19,6 +19,7 @@ import { Layout } from "@/components/layout";
 import { LocationHUD } from "@/components/hade/LocationHUD";
 import { CommunitySignalToggle } from "@/components/hade/community/CommunitySignalToggle";
 import { DecisionScreen } from "@/components/hade/mobile/DecisionScreen";
+import { GuidedDemoEntry } from "@/components/hade/mobile/GuidedDemoEntry";
 import { LoadingState } from "@/components/hade/mobile/LoadingState";
 
 // Protocol Imports - Hardened Data from Notion Sync
@@ -80,6 +81,10 @@ function DesktopDebugDemo() {
   const [refineUrgency, setRefineUrgency] = useState<"low" | "medium" | "high">("medium");
   const [loading, setLoading] = useState(false);
 
+  // ─── Reframing State ────────────────────────────────────────────────────────
+  const [isReframing, setIsReframing] = useState(false);
+  const [pivotLabel, setPivotLabel] = useState<string | undefined>(undefined);
+
   useEffect(() => {
     if (!navigator.geolocation) {
       setGeoStatus("denied");
@@ -112,6 +117,17 @@ function DesktopDebugDemo() {
     } finally {
       setLoading(false);
     }
+  };
+
+  // ─── Not This handler — shows reframing state before pivot ─────────────────
+  const handleNotThis = async (reason = "Not This", label?: string) => {
+    setIsReframing(true);
+    setPivotLabel(label);
+    // Deliberate pause: feels like the system is thinking, not just reloading.
+    await new Promise<void>((r) => setTimeout(r, 300 + Math.random() * 300));
+    setIsReframing(false);
+    setPivotLabel(undefined);
+    pivot(reason);
   };
 
   const resolveUiState = (): UiState | null => {
@@ -432,6 +448,9 @@ function DesktopDebugDemo() {
           <DecisionCard
             object={decisionObject}
             className="mt-6"
+            isReframing={isReframing}
+            pivotLabel={pivotLabel}
+            onNotThis={() => void handleNotThis("Not This")}
           />
 
           {/* ── Debug Panel — visible only when settings.debug is enabled ──── */}
@@ -544,6 +563,7 @@ function DemoRouter() {
   const params = useSearchParams();
   const debug = params.get("debug") === "1";
   const scenarioId = params.get("scenario");
+  const [selectedMode, setSelectedMode] = useState<import("@/lib/hade/useHade").DomainMode | null>(null);
 
   if (debug) {
     return (
@@ -553,9 +573,17 @@ function DemoRouter() {
     );
   }
 
+  if (!selectedMode) {
+    return (
+      <Layout>
+        <GuidedDemoEntry onSelect={setSelectedMode} />
+      </Layout>
+    );
+  }
+
   return (
     <Layout>
-      <DecisionScreen scenarioId={scenarioId} />
+      <DecisionScreen scenarioId={scenarioId} initialMode={selectedMode} />
     </Layout>
   );
 }

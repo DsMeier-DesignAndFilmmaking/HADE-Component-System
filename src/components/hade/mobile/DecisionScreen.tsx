@@ -10,7 +10,7 @@ import { useHade } from "@/lib/hade/useHade";
 import { computeTemporalState, getUGCPivotReasons } from "@/lib/hade/ugcCopy";
 import { HeroDecisionCard } from "./HeroDecisionCard";
 import { ModeToggle } from "./ModeToggle";
-import { SecondaryActions } from "./SecondaryActions";
+import { OtherModesPanel } from "./OtherModesPanel";
 import { RefineSheet } from "./RefineSheet";
 import { VibeSheet } from "./VibeSheet";
 import { UgcVerificationSheet } from "./UgcVerificationSheet";
@@ -142,9 +142,10 @@ function DebugOverlay({ decision }: { decision: DecisionViewModel }) {
 
 interface DecisionScreenProps {
   scenarioId?: string | null;
+  initialMode?: DomainMode;
 }
 
-export function DecisionScreen({ scenarioId }: DecisionScreenProps) {
+export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps) {
   const { emitVibeSignal, pivot, context: adaptiveContext } = useHadeAdaptiveContext();
   const {
     decision,
@@ -154,7 +155,7 @@ export function DecisionScreen({ scenarioId }: DecisionScreenProps) {
     setMode,
     regenerate,
     refine,
-  } = useHade({ scenarioId });
+  } = useHade({ scenarioId, initialMode });
 
   const [refineOpen, setRefineOpen] = useState(false);
   const [showPivotReasons, setShowPivotReasons] = useState(false);
@@ -169,6 +170,12 @@ export function DecisionScreen({ scenarioId }: DecisionScreenProps) {
   const [rejectionCount, setRejectionCount] = useState(0);
   const [rejectionHistory, setRejectionHistory] = useState<Array<{ venueId: string; reason: string; timestamp: number }>>([]);
   const [decisionHistory, setDecisionHistory] = useState<DecisionViewModel[]>([]);
+  const [overflowOpen, setOverflowOpen] = useState(false);
+  const [showOtherModes, setShowOtherModes] = useState(false);
+
+  // ─── Reframing state ────────────────────────────────────────────────────────
+  const [isReframing, setIsReframing] = useState(false);
+  const [pivotLabel, setPivotLabel] = useState<string | undefined>(undefined);
   // When "Previous" is pressed we restore a past card without calling pivot().
   // This local override takes precedence over the live decision from useHade.
   const [previousOverride, setPreviousOverride] = useState<DecisionViewModel | null>(null);
@@ -301,13 +308,13 @@ export function DecisionScreen({ scenarioId }: DecisionScreenProps) {
   );
 
   const handleNotThis = useCallback(() => {
-    setShowPivotReasons(true);
+    setShowPivotReasons((prev) => !prev);
   }, []);
 
-  const handleMaybe = useCallback(() => {
+  const handleSave = useCallback(() => {
     const target = previousOverride ?? decision;
     if (!target) return;
-    console.log("[HADE] Maybe →", target.title);
+    console.log("[HADE] Save →", target.title);
   }, [decision, previousOverride]);
 
   const handleReject = useCallback(
@@ -318,11 +325,9 @@ export function DecisionScreen({ scenarioId }: DecisionScreenProps) {
         { venueId, reason, timestamp: Date.now() },
       ]);
       setRejectionCount((count) => count + 1);
+      setShowPivotReasons(false);
 
-      if (!decision) {
-        setShowPivotReasons(false);
-        return;
-      }
+      if (!decision) return;
 
       const tags = toVibeTags(mapReasonToTags(reason));
       if (tags.length > 0) {
@@ -331,8 +336,15 @@ export function DecisionScreen({ scenarioId }: DecisionScreenProps) {
 
       console.log("[HADE] Reject triggered", { venueId: decision.id, reason });
 
-      pivot(reason);
-      setShowPivotReasons(false);
+      // Show reframing state for 300–600ms — feels deliberate, not instant.
+      setIsReframing(true);
+      setPivotLabel(`Adjusting for: ${reason}`);
+      const delay = 300 + Math.random() * 300;
+      setTimeout(() => {
+        setIsReframing(false);
+        setPivotLabel(undefined);
+        pivot(reason);
+      }, delay);
     },
     [decision, emitVibeSignal, pivot],
   );
@@ -372,7 +384,7 @@ export function DecisionScreen({ scenarioId }: DecisionScreenProps) {
   }
 
   return (
-    <div className="mx-auto flex h-[100dvh] w-full max-w-[430px] flex-col bg-background px-5 pt-6 pb-safe-floor">
+    <div className="mx-auto flex min-h-[100dvh] w-full max-w-[430px] flex-col bg-background px-5 pt-6 pb-[260px]">
       {status === "error" && (
         <div className="flex flex-1 flex-col items-center justify-center gap-4">
           <p className="text-base text-ink/70">Something got in the way.</p>
@@ -408,25 +420,53 @@ export function DecisionScreen({ scenarioId }: DecisionScreenProps) {
 
       {status === "ready" && displayDecision && (
         <>
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={displayDecision.id}
-              initial={{ x: previousOverride ? -32 : 32, opacity: 0 }}
-              animate={{ x: 0, opacity: 1 }}
-              exit={{ x: previousOverride ? 32 : -32, opacity: 0 }}
-              transition={{ duration: 0.24, ease: "easeOut" }}
+          {/* ModeToggle lives above the card — domain navigation, not a CTA */}
+          <ModeToggle
+            mode={pendingMode ?? mode}
+            onChange={handleModeChange}
+            disabled={false}
+          />
+
+          <div className="mt-4">
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={displayDecision.id}
+                initial={{ x: previousOverride ? -32 : 32, opacity: 0 }}
+                animate={{ x: 0, opacity: 1 }}
+                exit={{ x: previousOverride ? 32 : -32, opacity: 0 }}
+                transition={{ duration: 0.24, ease: "easeOut" }}
+              >
+                <ErrorBoundary name="HeroDecisionCard">
+                  <HeroDecisionCard
+                    object={displayDecision.object}
+                    mode={pendingMode ?? mode}
+                    isReframing={isReframing}
+                    pivotLabel={pivotLabel}
+                  />
+                </ErrorBoundary>
+              </motion.div>
+            </AnimatePresence>
+          </div>
+
+          {/* "See other modes" — peek behind the system */}
+          <div className="mt-5 flex justify-center">
+            <button
+              type="button"
+              onClick={() => setShowOtherModes((v) => !v)}
+              className="flex items-center gap-1 rounded-full border border-line/50 bg-white/50 px-4 py-2 text-xs font-medium text-ink/45 transition-colors active:bg-white active:text-ink/70 focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
             >
-              <ErrorBoundary name="HeroDecisionCard">
-                <HeroDecisionCard
-                  object={displayDecision.object}
-                  mode={pendingMode ?? mode}
-                  onGoing={handleGo}
-                  onMaybe={handleMaybe}
-                  onNotThis={handleNotThis}
-                />
-              </ErrorBoundary>
-            </motion.div>
-          </AnimatePresence>
+              {showOtherModes ? "Hide" : "See other modes"}
+              <span aria-hidden="true" className="text-[10px]">
+                {showOtherModes ? "↑" : "↓"}
+              </span>
+            </button>
+          </div>
+
+          <OtherModesPanel
+            geo={adaptiveContext.geo}
+            context={adaptiveContext}
+            open={showOtherModes}
+          />
 
           {process.env.NODE_ENV !== "production" && (
             <DebugOverlay decision={displayDecision} />
@@ -434,9 +474,51 @@ export function DecisionScreen({ scenarioId }: DecisionScreenProps) {
         </>
       )}
 
-      {/* Pinned Action Container — always rendered */}
-      <div className="fixed bottom-0 left-0 right-0 z-10 mx-auto w-full max-w-[430px] border-t border-line/10 bg-background/80 px-5 pb-safe-floor pt-4 backdrop-blur-md">
-        <div className="flex flex-col gap-4">
+      {/* ── Pinned CTA bar — thumb-reach zone ──────────────────────────────── */}
+      <div className="fixed bottom-0 left-0 right-0 z-10 mx-auto w-full max-w-[430px] border-t border-line/10 bg-background/90 px-5 pb-safe-floor pt-3 backdrop-blur-md">
+        <div className="flex flex-col gap-2">
+
+          {/* Utility row: Previous (contextual) + overflow */}
+          <div className="flex items-center justify-between h-7">
+            <button
+              type="button"
+              onClick={handlePrevious}
+              disabled={decisionHistory.length <= 1}
+              className="flex items-center gap-1 text-xs text-ink/40 transition-colors active:text-ink/70 disabled:opacity-0 focus:outline-none focus-visible:text-ink/70"
+            >
+              ← Previous
+            </button>
+            <button
+              type="button"
+              onClick={() => setOverflowOpen((v) => !v)}
+              className="flex h-7 w-7 items-center justify-center rounded-full text-sm text-ink/35 transition-colors active:text-ink/60 focus:outline-none focus-visible:text-ink/60"
+              aria-label="More options"
+            >
+              ···
+            </button>
+          </div>
+
+          {/* Overflow panel — Compare Modes + Add Note */}
+          {overflowOpen && (
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => { setShowCompareModes(true); setOverflowOpen(false); }}
+                className="h-10 rounded-xl border border-line bg-white/60 px-3 text-xs font-medium text-ink/60 transition-colors active:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
+              >
+                Compare Modes
+              </button>
+              <button
+                type="button"
+                onClick={() => { setShowCreationFlow(true); setOverflowOpen(false); }}
+                className="h-10 rounded-xl border border-line bg-white/60 px-3 text-xs font-medium text-ink/60 transition-colors active:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
+              >
+                Add Note
+              </button>
+            </div>
+          )}
+
+          {/* Pivot reasons — expands above primary on "Not this" tap */}
           {showPivotReasons && displayDecision && (
             <div className="grid grid-cols-2 gap-2">
               {pivotReasons.map((reason) => (
@@ -444,7 +526,7 @@ export function DecisionScreen({ scenarioId }: DecisionScreenProps) {
                   key={reason}
                   type="button"
                   onClick={() => handleReject(reason)}
-                  className="min-h-[42px] rounded-xl border border-line bg-white/60 px-3 text-xs font-medium text-ink/70 transition-colors active:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
+                  className="h-10 rounded-xl border border-line bg-white/60 px-3 text-xs font-medium text-ink/70 transition-colors active:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
                 >
                   {reason}
                 </button>
@@ -452,36 +534,46 @@ export function DecisionScreen({ scenarioId }: DecisionScreenProps) {
             </div>
           )}
 
-          <ModeToggle
-            mode={pendingMode ?? mode}
-            onChange={handleModeChange}
-            disabled={false}
-          />
-
+          {/* PRIMARY — Go Now */}
           <button
             type="button"
-            onClick={() => setShowCompareModes(true)}
-            className="min-h-[42px] rounded-xl border border-line bg-white/60 px-4 text-sm font-semibold text-ink/70 transition-colors active:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
+            onClick={handleGo}
+            disabled={!displayDecision}
+            className="h-14 w-full rounded-2xl bg-blue-600 text-base font-bold text-white transition-colors hover:bg-blue-700 active:bg-blue-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 disabled:opacity-40"
           >
-            Compare Modes
+            Go Now
           </button>
 
+          {/* SECONDARY + TERTIARY */}
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => setRefineOpen(true)}
+              disabled={!displayDecision}
+              className="h-11 rounded-xl border border-line bg-white/60 text-sm font-semibold text-ink transition-colors active:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-line disabled:opacity-40"
+            >
+              Refine
+            </button>
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={!displayDecision}
+              className="h-11 rounded-xl border border-line bg-white/60 text-sm font-medium text-ink/50 transition-colors active:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-line disabled:opacity-40"
+            >
+              Save
+            </button>
+          </div>
+
+          {/* REJECTION — text-only, lowest visual weight */}
           <button
             type="button"
-            onClick={() => setShowCreationFlow(true)}
-            className="min-h-[42px] rounded-xl bg-ink px-4 text-sm font-semibold text-white transition-colors active:bg-ink/85 focus:outline-none focus-visible:ring-2 focus-visible:ring-ink/30"
+            onClick={handleNotThis}
+            disabled={!displayDecision}
+            className="w-full py-0.5 text-sm text-ink/35 transition-colors active:text-ink/60 focus:outline-none focus-visible:text-ink/60 disabled:opacity-0"
           >
-            Add Spontaneous Note
+            Not this
           </button>
 
-          {status === "ready" && displayDecision && (
-            <SecondaryActions
-              onPrevious={handlePrevious}
-              hasPrevious={decisionHistory.length > 1}
-              onRefine={() => setRefineOpen(true)}
-              disabled={false}
-            />
-          )}
         </div>
       </div>
 

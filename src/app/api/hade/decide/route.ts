@@ -790,7 +790,10 @@ function buildOfflineResponse(
         eta_minutes: Math.max(1, Math.ceil(best.dist / 80)), // 80 m/min walking
         rationale: "Based on a recent nearby suggestion.",
         why_now: "Cached from a recent session — showing the best nearby option.",
+        why_this: "Closest cached option while you're offline.",
+        decision_frame: "Working from cache — your closest known good spot.",
         confidence: 0.55,
+        confidence_label: "Exploratory" as const,
         situation_summary: "Offline cache decision",
       },
       context_snapshot: {

@@ -81,11 +81,13 @@ async function resolveIPGeo(): Promise<{ lat: number; lng: number } | null> {
 type Urgency = "low" | "medium" | "high";
 type Status = "idle" | "loading" | "ready" | "error";
 
+export type DomainMode = "dining" | "social" | "travel";
+
 export interface UseHadeConfig {
   scenarioId?: string | null;
+  /** Pre-select a domain mode on mount (e.g. from the guided entry screen). */
+  initialMode?: DomainMode;
 }
-
-export type DomainMode = "dining" | "social" | "travel";
 
 export interface UseHadeReturn {
   decision: DecisionViewModel | null;
@@ -125,8 +127,8 @@ export function useHade(config?: UseHadeConfig): UseHadeReturn {
 
   const [userGeo, setUserGeo] = useState<GeoLocation | null>(null);
   const [geoReady, setGeoReady] = useState(false);
-  const [mode, setModeState] = useState<DomainMode>("dining");
-  const modeRef = useRef<DomainMode>("dining");
+  const [mode, setModeState] = useState<DomainMode>(config?.initialMode ?? "dining");
+  const modeRef = useRef<DomainMode>(config?.initialMode ?? "dining");
   const firedRef = useRef(false);
 
   const scenario = config?.scenarioId ? getScenario(config.scenarioId) : null;

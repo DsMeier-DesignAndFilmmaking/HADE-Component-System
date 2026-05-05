@@ -1,4 +1,4 @@
-export type HadeSDKStatus = "loading" | "ready";
+export type HadeSDKStatus = "loading" | "ready" | "reframing";
 
 export interface HadeSDKDecision {
   title: string;
@@ -13,6 +13,8 @@ export interface HadeSDKResponse {
   decision: HadeSDKDecision | null;
   reasoning: HadeSDKReasoning;
   confidence: number;
+  /** Shown during "reframing" status — e.g. "Adjusting for: Too far" */
+  pivotLabel?: string;
 }
 
 export interface HadeRefineInput {

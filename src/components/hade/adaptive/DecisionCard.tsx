@@ -14,6 +14,10 @@ interface DecisionCardProps {
   onGoing?: () => void;
   onMaybe?: () => void;
   onNotThis?: () => void;
+  /** When true, replaces card content with the reframing microcopy. */
+  isReframing?: boolean;
+  /** Shown below the reframing headline — e.g. "Adjusting for: Too far" */
+  pivotLabel?: string;
   className?: string;
 }
 
@@ -74,6 +78,8 @@ export function DecisionCard({
   onGoing,
   onMaybe,
   onNotThis,
+  isReframing = false,
+  pivotLabel,
   className = "",
 }: DecisionCardProps) {
   const timeLabel = getTimeLabel(object.time_window.start);
@@ -90,76 +96,95 @@ export function DecisionCard({
     >
       <HadeCard glow={false}>
 
-        {/* ── Header ─────────────────────────────────────────────────────────── */}
-        <div className="flex items-start justify-between gap-4 mb-4">
-          <div className="min-w-0">
-
-            {/* Label row */}
-            <div className="flex items-center gap-2 mb-1">
-              <p className="font-mono text-xs uppercase tracking-widest text-accent">
-                Your move
-              </p>
-              {live && (
-                <span className="inline-flex items-center gap-1 rounded bg-green-500/10 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider font-semibold text-green-400">
-                  <span
-                    className="inline-block h-1.5 w-1.5 rounded-full bg-green-400 animate-pulse"
-                    aria-hidden="true"
-                  />
-                  live
-                </span>
-              )}
-            </div>
-
-            {/* Title */}
-            <HadeHeading level={3}>{object.title}</HadeHeading>
-
-            {/* Time + participation */}
-            <HadeText variant="caption" color="muted" className="mt-1">
-              {timeLabel}
-              {" · "}
-              {goingLabel}
-              {distanceText ? ` · ${distanceText}` : ""}
-            </HadeText>
-
-          </div>
-        </div>
-
-        {/* ── UGC vibe chips ─────────────────────────────────────────────────── */}
-        {vibeChips.length > 0 && (
-          <div className="mb-4 flex flex-nowrap items-center gap-2 overflow-hidden">
-            {vibeChips.map((chip) => (
-              <span
-                key={chip.key}
-                className="inline-flex shrink-0 items-center gap-1 rounded-full border border-line bg-surface px-2.5 py-1 text-[11px] font-medium text-ink/70"
-              >
-                <span aria-hidden="true">{chip.icon}</span>
-                <span>{chip.label}</span>
+        {/* ── Reframing overlay ─────────────────────────────────────────────── */}
+        {isReframing ? (
+          <div className="flex flex-col gap-2 py-2" aria-live="polite" aria-busy="true">
+            <p className="font-mono text-xs uppercase tracking-widest text-accent/60">
+              Reframing...
+            </p>
+            <HadeHeading level={3} className="text-ink/40">
+              Reframing based on your feedback...
+            </HadeHeading>
+            {pivotLabel && (
+              <span className="inline-flex w-fit items-center rounded-full border border-accent/20 bg-accent/5 px-3 py-1 font-mono text-[11px] text-accent">
+                {pivotLabel}
               </span>
-            ))}
-            {locationNode && locationNode.signal_count > 0 && (
-              <p className="font-mono text-[10px] text-ink/30 shrink-0">
-                {locationNode.signal_count} signals
-              </p>
             )}
           </div>
-        )}
+        ) : (
+          <>
+            {/* ── Header ───────────────────────────────────────────────────── */}
+            <div className="flex items-start justify-between gap-4 mb-4">
+              <div className="min-w-0">
 
-        {/* ── CTAs ───────────────────────────────────────────────────────────── */}
-        <div className="flex items-center gap-2 pt-3 border-t border-line">
-          <HadeButton variant="primary" size="sm" onClick={onGoing}>
-            Let's Go
-          </HadeButton>
-          <HadeButton variant="secondary" size="sm" onClick={onMaybe}>
-            Maybe
-          </HadeButton>
-          <button
-            type="button"
-            onClick={onNotThis}
-            className="ml-auto rounded-lg border border-line bg-surface px-3 py-1.5 text-xs font-semibold text-ink/60 transition-colors hover:text-ink"
-          >
-            Not This
-          </button>
-        </div>
+                {/* Label row */}
+                <div className="flex items-center gap-2 mb-1">
+                  <p className="font-mono text-xs uppercase tracking-widest text-accent">
+                    Your move
+                  </p>
+                  {live && (
+                    <span className="inline-flex items-center gap-1 rounded bg-green-500/10 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider font-semibold text-green-400">
+                      <span
+                        className="inline-block h-1.5 w-1.5 rounded-full bg-green-400 animate-pulse"
+                        aria-hidden="true"
+                      />
+                      live
+                    </span>
+                  )}
+                </div>
+
+                {/* Title */}
+                <HadeHeading level={3}>{object.title}</HadeHeading>
+
+                {/* Time + participation */}
+                <HadeText variant="caption" color="muted" className="mt-1">
+                  {timeLabel}
+                  {" · "}
+                  {goingLabel}
+                  {distanceText ? ` · ${distanceText}` : ""}
+                </HadeText>
+
+              </div>
+            </div>
+
+            {/* ── UGC vibe chips ─────────────────────────────────────────── */}
+            {vibeChips.length > 0 && (
+              <div className="mb-4 flex flex-nowrap items-center gap-2 overflow-hidden">
+                {vibeChips.map((chip) => (
+                  <span
+                    key={chip.key}
+                    className="inline-flex shrink-0 items-center gap-1 rounded-full border border-line bg-surface px-2.5 py-1 text-[11px] font-medium text-ink/70"
+                  >
+                    <span aria-hidden="true">{chip.icon}</span>
+                    <span>{chip.label}</span>
+                  </span>
+                ))}
+                {locationNode && locationNode.signal_count > 0 && (
+                  <p className="font-mono text-[10px] text-ink/30 shrink-0">
+                    {locationNode.signal_count} signals
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* ── CTAs ─────────────────────────────────────────────────────── */}
+            <div className="flex items-center gap-2 pt-3 border-t border-line">
+              <HadeButton variant="primary" size="sm" onClick={onGoing}>
+                Let's Go
+              </HadeButton>
+              <HadeButton variant="secondary" size="sm" onClick={onMaybe}>
+                Maybe
+              </HadeButton>
+              <button
+                type="button"
+                onClick={onNotThis}
+                className="ml-auto rounded-lg border border-line bg-surface px-3 py-1.5 text-xs font-semibold text-ink/60 transition-colors hover:text-ink"
+              >
+                Not This
+              </button>
+            </div>
+          </>
+        )}
 
       </HadeCard>
     </motion.div>

@@ -206,6 +206,12 @@ export interface DecideRequest {
 }
 
 /**
+ * Scannable trust label for the decision.
+ * Derived from the composite scoring breakdown — see deriveConfidenceLabel.
+ */
+export type ConfidenceLabel = "Strong pick" | "Good fit" | "Exploratory";
+
+/**
  * The single decision returned by the backend.
  * No fallbacks. No primary+secondary. One decision.
  *
@@ -224,6 +230,12 @@ export interface HadeDecision extends Partial<SpontaneousObject> {
   // LLM output — contextually grounded, non-generic
   rationale: string;            // 1–2 sentences, references a context factor
   why_now: string;              // what made this right specifically NOW
+  /** ≤12 words. References time-of-day, user state, or a context signal. */
+  why_this: string;
+  /** Scannable trust badge derived from the composite score. */
+  confidence_label: ConfidenceLabel;
+  /** One sentence framing the pick as a recommendation. */
+  decision_frame: string;
   confidence: number;           // 0–1 composite score
 
   // The anchor sentence that drove this decision

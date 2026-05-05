@@ -16,13 +16,13 @@ interface DecisionViewProps {
 
 export function DecisionView({ config, onGo = () => undefined }: DecisionViewProps) {
   const hade = useHade(config);
-  const { decision, reasoning, status, regenerate, refine } = hade;
+  const { decision, reasoning, status, pivotLabel, regenerate, refine } = hade;
   const [isRefineOpen, setIsRefineOpen] = useState(false);
 
   return (
     <main className="hade-web-root">
       <section className="hade-web-shell">
-        <DecisionCard decision={decision} status={status} />
+        <DecisionCard decision={decision} status={status} pivotLabel={pivotLabel} />
         <ReasoningList reasoning={reasoning} />
         <div className="hade-web-actions">
           <PrimaryCTAButton onGo={() => onGo(decision)} />

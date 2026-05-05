@@ -35,6 +35,7 @@ import { getDomainConfig, type ExtendedDomainConfig, type ScoringWeights } from 
 import { RADIUS } from "@/core/constants/radius";
 import type { DecisionCandidate } from "@/core/types/decision";
 import type {
+  ConfidenceLabel,
   GeoLocation,
   HadeContext,
   HadeDebugPayload,
@@ -139,6 +140,21 @@ function clamp(value: number, min: number, max: number): number {
 /** Rounds to 3 decimal places — keeps trace logs readable without precision loss. */
 const r3 = (v: number) => Math.round(v * 1000) / 1000;
 
+/**
+ * Map a 0–1 composite score to a scannable trust label.
+ * Synthetic (Tier 2) is fallback-tier and caps at "Good fit".
+ * "Strong pick" is reserved for the LLM (Tier 1) path.
+ */
+function deriveConfidenceLabel(score: number, isFallback = false): ConfidenceLabel {
+  if (isFallback) {
+    if (score >= 0.40) return "Good fit";
+    return "Exploratory";
+  }
+  if (score >= 0.65) return "Strong pick";
+  if (score >= 0.40) return "Good fit";
+  return "Exploratory";
+}
+
 // ─── SpontaneousObject pipeline types ─────────────────────────────────────────
 
 /** Working unit during ranking: SpontaneousObject + optional distance/display metadata. */
@@ -161,6 +177,10 @@ export interface SpontaneousScoreBreakdown {
   userStateBonus: number;
   /** +boost / -penalty applied based on domain ↔ Google place-type alignment. */
   domainTypeBonus: number;
+  /** SOCIAL-only: bonus when going_count aligns with the user's group size. */
+  groupFitBonus: number;
+  /** TRAVEL-only: bonus for landmarks/viewpoints/high-quality unique attractions. */
+  uniquenessBonus: number;
   finalScore: number;
 }
 
@@ -384,9 +404,8 @@ function filterCandidatesByDomain(
   // Fail-soft: never return an empty pool due to the allowlist
   const result = filtered.length > 0 ? filtered : candidates;
   console.log("[HADE FILTER] after:", result.length);
-  if (process.env.NODE_ENV !== "production") {
-    console.log("[HADE FILTERED COUNT]", result.length);
-  }
+  // Always emit — required for cross-domain differentiation diagnostics.
+  console.log("[HADE FILTERED COUNT]", result.length);
   return result;
 }
 
@@ -417,9 +436,18 @@ function filterByTimeWindow(candidates: RankedCandidate[], now: number): RankedC
  * outputs across dining / social / travel.
  */
 const DOMAIN_BOOST_TYPES: Record<string, string[]> = {
-  dining: ["restaurant", "cafe", "bakery"],
-  social: ["bar", "night_club", "park"],
-  travel: ["tourist_attraction", "museum", "landmark"],
+  // Mirrors the canonical MUST-include sets in domainConfigs.allowedPlaceTypes.
+  dining: ["restaurant", "cafe", "bakery", "bar"],
+  social: ["park", "event_venue", "bar", "public_space", "community_center"],
+  travel: [
+    "landmark",
+    "museum",
+    "attraction",
+    "viewpoint",
+    "tourist_attraction",
+    "historical_landmark",
+    "observation_deck",
+  ],
 };
 const DOMAIN_TYPE_BOOST   = 0.25;
 const DOMAIN_TYPE_PENALTY = -0.20;
@@ -433,6 +461,57 @@ function computeDomainTypeBonus(
   const boostList = DOMAIN_BOOST_TYPES[domainId];
   if (!boostList) return 0;
   return types.some((t) => boostList.includes(t)) ? DOMAIN_TYPE_BOOST : DOMAIN_TYPE_PENALTY;
+}
+
+/**
+ * SOCIAL-only group-fit bonus.
+ *
+ *   • Crowd venues (going_count >= 5) match groups of 3+ → +0.10
+ *   • Quiet venues (going_count <= 2) match solo (group_size === 1) → +0.05
+ *   • Mismatch (e.g. solo + heavy crowd, or large group + empty venue) → 0
+ *
+ * Other domains are not affected.
+ */
+function computeGroupFitBonus(
+  obj: SpontaneousObject,
+  groupSize: number | undefined,
+  domainId: string | undefined,
+): number {
+  if (domainId !== "social" || !groupSize || groupSize < 1) return 0;
+  const going = obj.going_count ?? 0;
+  if (groupSize >= 3 && going >= 5) return 0.10;
+  if (groupSize === 1 && going <= 2) return 0.05;
+  return 0;
+}
+
+/**
+ * TRAVEL-only uniqueness + visual-appeal bonus.
+ *
+ *   • Visual-appeal types (landmarks, monuments, viewpoints, observation decks) → +0.10
+ *   • High-quality / "unique" trust score (>= 0.80, ~4.5+ rating proxy)         → +0.05
+ *
+ * The two stack — a high-rated landmark gets the full +0.15.
+ */
+const UNIQUE_TRAVEL_TYPES = new Set([
+  "landmark",
+  "historical_landmark",
+  "monument",
+  "viewpoint",
+  "observation_deck",
+  "scenic_lookout",
+  "art_gallery",
+]);
+
+function computeUniquenessBonus(
+  types: string[] | undefined,
+  trustScore: number,
+  domainId: string | undefined,
+): number {
+  if (domainId !== "travel") return 0;
+  let bonus = 0;
+  if (types && types.some((t) => UNIQUE_TRAVEL_TYPES.has(t))) bonus += 0.10;
+  if (trustScore >= 0.80) bonus += 0.05;
+  return bonus;
 }
 
 /**
@@ -454,6 +533,7 @@ function scoreSpontaneousCandidate(
   weights?: ScoringWeights,
   explorationBias = 0,
   domainId?: string,
+  groupSize?: number,
 ): SpontaneousScoreBreakdown {
   const { obj, distance_meters } = candidate;
 
@@ -480,7 +560,9 @@ function scoreSpontaneousCandidate(
     distanceScore      * w.distance +
     trustScore         * w.trust;
 
-  const domainTypeBonus = computeDomainTypeBonus(candidate.types, domainId);
+  const domainTypeBonus  = computeDomainTypeBonus(candidate.types, domainId);
+  const groupFitBonus    = computeGroupFitBonus(obj, groupSize, domainId);
+  const uniquenessBonus  = computeUniquenessBonus(candidate.types, trustScore, domainId);
   const jitter = explorationBias > 0 ? (Math.random() - 0.5) * explorationBias * 0.2 : 0;
 
   return {
@@ -490,7 +572,13 @@ function scoreSpontaneousCandidate(
     trustScore,
     userStateBonus,
     domainTypeBonus,
-    finalScore: clamp(baseScore + userStateBonus + domainTypeBonus + jitter, 0, 1),
+    groupFitBonus,
+    uniquenessBonus,
+    finalScore: clamp(
+      baseScore + userStateBonus + domainTypeBonus + groupFitBonus + uniquenessBonus + jitter,
+      0,
+      1,
+    ),
   };
 }
 
@@ -500,6 +588,7 @@ export async function rankSpontaneousObjects(
   weights?: ScoringWeights,
   explorationBias = 0,
   domainId?: string,
+  groupSize?: number,
 ): Promise<Array<{ candidate: RankedCandidate; score: number; breakdown: SpontaneousScoreBreakdown }>> {
   const scoredCandidates = await Promise.all(
     candidates.map(async (candidate) => {
@@ -509,7 +598,14 @@ export async function rankSpontaneousObjects(
         ...candidate,
         obj: { ...candidate.obj, trust_score: effectiveTrust },
       };
-      const breakdown = scoreSpontaneousCandidate(candidateWithTrust, now, weights, explorationBias, domainId);
+      const breakdown = scoreSpontaneousCandidate(
+        candidateWithTrust,
+        now,
+        weights,
+        explorationBias,
+        domainId,
+        groupSize,
+      );
       return { candidate: candidateWithTrust, score: breakdown.finalScore, breakdown };
     }),
   );
@@ -685,6 +781,7 @@ export async function generateSyntheticDecision(
       effectiveWeights,
       config.explorationBias,
       config.id,
+      ctx.social?.group_size,
     );
 
     const best = sorted[0];
@@ -730,6 +827,7 @@ export async function generateSyntheticDecision(
         ctx,
       ),
       confidence: 0.65,
+      confidence_label: deriveConfidenceLabel(best.breakdown.finalScore, true),
       situation_summary: situationSummary,
       ...(best.candidate.address ? { neighborhood: best.candidate.address } : {}),
       ...ugcMeta,
@@ -802,6 +900,8 @@ export async function generateSyntheticDecision(
         trustScore:         r3(breakdown.trustScore),
         userStateBonus:     r3(breakdown.userStateBonus),
         domainTypeBonus:    r3(breakdown.domainTypeBonus),
+        groupFitBonus:      r3(breakdown.groupFitBonus),
+        uniquenessBonus:    r3(breakdown.uniquenessBonus),
         finalScore:         r3(breakdown.finalScore),
       })),
       selected: {
