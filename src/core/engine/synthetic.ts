@@ -21,6 +21,7 @@
 import "server-only";
 
 import { getPlacesCandidates } from "@/core/adapters/placesAdapter";
+import { fetchMultiQueryGrounded, DOMAIN_CATEGORY_BUCKETS, DOMAIN_RADIUS_M } from "@/core/services/places";
 import { mapIntentToPlacesCategory } from "@/core/utils/intentMapper";
 import {
   buildContext,
@@ -672,43 +673,9 @@ export async function generateSyntheticDecision(
     const primaryCategory = categories[0] ?? "broad";
     console.log("[HADE DEBUG] categories:", categories);
 
-    console.log(`[HADE Tier 2] domain=${config.id} intent="${intent ?? "any"}" category="${primaryCategory}"`);
-
-    // ── Step 1: Fetch UGC (primary) and Places (fallback) ─────────────────────
-    const now = Date.now();
-    const ugcCandidates = await getUGCObjects(body, geoHint, radius, now);
-
-    console.log(
-      `[hade-synthetic ${reqId}] fetching places` +
-        ` (intent=${intent ?? "any"}, radius=${radius}m, category=${primaryCategory})`,
-    );
-
-    const places = await getPlacesCandidates(ctx, categories);
-    const filteredPlaces = filterByDomain(places, config.id);
-
-    if (!filteredPlaces || filteredPlaces.length === 0) {
-      console.warn("[HADE] No candidates after filtering — aborting decision");
-      return { ok: false };
-    }
-
-    const placeCandidates = filteredPlaces
-      .map((place) => placeToCandidate(place, geoHint, now))
-      .filter((candidate): candidate is RankedCandidate => candidate !== null);
-
-    const googleCount = placeCandidates.length;
-    const ugcInjectedCount = ugcCandidates.length;
-
-    // ── Step 2: Merge SpontaneousObject arrays ────────────────────────────────
-    const mergedCandidates = filterCandidatesByDomain(
-      mergeCandidates(ugcCandidates, placeCandidates),
-      config,
-    );
-
-    // ── Step 3: HARD EXCLUSION of rejected objects ────────────────────────────
-    // "Not This" must guarantee a rejected venue is NEVER returned again in the
-    // same session. Filter BEFORE conversion so rejected IDs cannot reach ranking.
+    // ── Pre-extract rejected IDs — reused in Places pre-filter and Step 3 ──────
     const rawRejections = (body as { rejection_history?: unknown }).rejection_history;
-    const rejected = new Set<string>(
+    const rejectedIds = new Set<string>(
       Array.isArray(rawRejections)
         ? rawRejections
             .map((entry) => {
@@ -723,19 +690,72 @@ export async function generateSyntheticDecision(
         : [],
     );
 
-    const admittedCandidates = rejected.size > 0
-      ? mergedCandidates.filter((candidate) => !rejected.has(candidate.obj.id))
+    console.log(`[HADE Tier 2] domain=${config.id} intent="${intent ?? "any"}" category="${primaryCategory}"`);
+
+    // ── Step 1: Fetch UGC (primary) and Places (fallback) ─────────────────────
+    const now = Date.now();
+    const ugcCandidates = await getUGCObjects(body, geoHint, radius, now);
+
+    const domainRadius = DOMAIN_RADIUS_M[config.id] ?? radius;
+    const domainBuckets = DOMAIN_CATEGORY_BUCKETS[config.id];
+
+    console.log(
+      `[hade-synthetic ${reqId}] fetching places` +
+        ` (intent=${intent ?? "any"}, radius=${domainRadius}m, category=${primaryCategory})`,
+    );
+
+    const places = domainBuckets && geoHint
+      ? await fetchMultiQueryGrounded({ geo: geoHint, categoryBuckets: domainBuckets, radius_meters: domainRadius })
+      : await getPlacesCandidates(ctx, categories);
+    const filteredPlaces = filterByDomain(places, config.id);
+
+    if (!filteredPlaces || filteredPlaces.length === 0) {
+      console.warn("[HADE] No candidates after filtering — aborting decision");
+      return { ok: false };
+    }
+
+    // ── Rejection pre-filter: strip already-rejected Places before conversion ──
+    const freshCandidates = rejectedIds.size > 0
+      ? filteredPlaces.filter((p) => !rejectedIds.has(p.id))
+      : filteredPlaces;
+
+    console.log("[HADE FRESH COUNT]", freshCandidates.length);
+
+    if (freshCandidates.length === 0) {
+      console.warn("[HADE] No fresh candidates after rejection — aborting decision");
+      return { ok: false };
+    }
+
+    const placeCandidates = freshCandidates
+      .map((place) => placeToCandidate(place, geoHint, now))
+      .filter((candidate): candidate is RankedCandidate => candidate !== null);
+
+    const googleCount = placeCandidates.length;
+    const ugcInjectedCount = ugcCandidates.length;
+
+    // ── Step 2: Merge SpontaneousObject arrays ────────────────────────────────
+    const mergedCandidates = filterCandidatesByDomain(
+      mergeCandidates(ugcCandidates, placeCandidates),
+      config,
+    );
+
+    // ── Step 3: HARD EXCLUSION of rejected objects ────────────────────────────
+    // "Not This" must guarantee a rejected venue is NEVER returned again in the
+    // same session. rejectedIds was extracted early and already applied to Places;
+    // this second pass catches any UGC candidates that slipped through the merge.
+    const admittedCandidates = rejectedIds.size > 0
+      ? mergedCandidates.filter((candidate) => !rejectedIds.has(candidate.obj.id))
       : mergedCandidates;
 
     if (admittedCandidates.length === 0) {
       console.warn(
         `[hade-synthetic ${reqId}] all ${mergedCandidates.length} candidate(s) rejected` +
-          ` (rejection_history size=${rejected.size}) — falling through to Tier 3`,
+          ` (rejection_history size=${rejectedIds.size}) — falling through to Tier 3`,
       );
       return { ok: false };
     }
 
-    if (rejected.size > 0) {
+    if (rejectedIds.size > 0) {
       const excluded = mergedCandidates.length - admittedCandidates.length;
       if (excluded > 0) {
         console.log(
@@ -932,7 +952,7 @@ export async function generateSyntheticDecision(
     const debugPayload: HadeDebugPayload = {
       candidates_evaluated: timeWindowCandidates.length,
       ugc_injected: ugcInjectedCount,
-      rejection_applied: rejected.size > 0,
+      rejection_applied: rejectedIds.size > 0,
       final_reasoning: finalReasoning,
       scoring_breakdown: top3.map(({ candidate, breakdown }) => ({
         venue_id:        candidate.obj.id,

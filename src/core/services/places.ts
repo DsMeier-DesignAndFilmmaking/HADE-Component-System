@@ -254,6 +254,22 @@ const DEFAULT_RADIUS_M = 800;
 const DEFAULT_MAX_RESULTS = 20;
 const REQUEST_TIMEOUT_MS = 6_000;
 
+// ─── Domain radius constants ──────────────────────────────────────────────────
+
+export const DOMAIN_RADIUS_M: Record<string, number> = {
+  dining: 2500,
+  social: 3500,
+  travel: 4000,
+};
+
+// ─── Domain category buckets ──────────────────────────────────────────────────
+
+export const DOMAIN_CATEGORY_BUCKETS: Record<string, string[][]> = {
+  dining: [["restaurant"], ["cafe"], ["bar"], ["meal_takeaway"]],
+  social: [["bar"], ["night_club"], ["park"], ["event_venue"]],
+  travel: [["tourist_attraction"], ["museum"], ["art_gallery"], ["landmark"]],
+};
+
 // ─── Main export ──────────────────────────────────────────────────────────────
 
 /**
@@ -404,4 +420,43 @@ export async function fetchNearbyGrounded(
     console.error("[HADE PLACES ERROR]", err);
     return [];
   }
+}
+
+/**
+ * Fires one Places query per category bucket in parallel, then merges and
+ * deduplicates results by place id. Use this instead of fetchNearbyGrounded
+ * when you need a broader candidate pool before domain filtering.
+ *
+ * @returns Deduplicated PlaceOption[] — always resolves; returns [] on error.
+ */
+export async function fetchMultiQueryGrounded(opts: {
+  geo: GeoLocation;
+  categoryBuckets: string[][];
+  radius_meters: number;
+  open_now?: boolean;
+}): Promise<PlaceOption[]> {
+  const { geo, categoryBuckets, radius_meters, open_now = true } = opts;
+
+  const results = await Promise.all(
+    categoryBuckets.map((bucket) =>
+      fetchNearbyGrounded({ geo, target_categories: bucket, radius_meters, open_now }),
+    ),
+  );
+
+  const seen = new Set<string>();
+  const merged: PlaceOption[] = [];
+  for (const batch of results) {
+    for (const place of batch) {
+      if (!seen.has(place.id)) {
+        seen.add(place.id);
+        merged.push(place);
+      }
+    }
+  }
+
+  console.log(
+    `[HADE MULTI-QUERY] ${categoryBuckets.length} queries → ${merged.length} unique candidates (radius=${radius_meters}m)`,
+  );
+
+  return merged;
 }
