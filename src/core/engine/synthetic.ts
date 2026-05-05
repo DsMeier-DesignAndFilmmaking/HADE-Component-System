@@ -32,6 +32,7 @@ import { getNodeTrustScore } from "@/lib/hade/weights";
 import { getDistanceCopy } from "@/lib/hade/ugcCopy";
 import { getNearbyUGC } from "@/lib/hade/ugc";
 import { getDomainConfig, type ExtendedDomainConfig, type ScoringWeights } from "@/core/domain/domainConfigs";
+import { filterByDomain } from "@/core/domain/filtering";
 import { RADIUS } from "@/core/constants/radius";
 import type { DecisionCandidate } from "@/core/types/decision";
 import type {
@@ -683,7 +684,14 @@ export async function generateSyntheticDecision(
     );
 
     const places = await getPlacesCandidates(ctx, categories);
-    const placeCandidates = places
+    const filteredPlaces = filterByDomain(places, config.id);
+
+    if (!filteredPlaces || filteredPlaces.length === 0) {
+      console.warn("[HADE] No candidates after filtering — aborting decision");
+      return { ok: false };
+    }
+
+    const placeCandidates = filteredPlaces
       .map((place) => placeToCandidate(place, geoHint, now))
       .filter((candidate): candidate is RankedCandidate => candidate !== null);
 
@@ -775,6 +783,7 @@ export async function generateSyntheticDecision(
     }
 
     // ── Step 5: Score and rank ────────────────────────────────────────────────
+    console.log("[HADE SCORING INPUT COUNT]", timeWindowCandidates.length);
     const sorted = await rankSpontaneousObjects(
       timeWindowCandidates,
       now,
