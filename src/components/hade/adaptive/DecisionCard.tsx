@@ -6,6 +6,7 @@ import { HadeCard } from "@/components/hade/layout/HadeCard";
 import { HadeButton } from "@/components/hade/buttons/HadeButton";
 import { HadeHeading } from "@/components/hade/typography/HadeHeading";
 import { HadeText } from "@/components/hade/typography/HadeText";
+import { computeTemporalState, TEMPORAL_COPY } from "@/lib/hade/ugcCopy";
 
 interface DecisionCardProps {
   object: SpontaneousObject;
@@ -14,6 +15,10 @@ interface DecisionCardProps {
   onGoing?: () => void;
   onMaybe?: () => void;
   onNotThis?: () => void;
+  /** Called when user taps "Join" on a ugc_event card (strong intent signal). */
+  onJoin?: () => void;
+  /** Called when user taps "I'm Interested" on a ugc_event card (light intent signal). */
+  onInterested?: () => void;
   /** When true, replaces card content with the reframing microcopy. */
   isReframing?: boolean;
   /** Shown below the reframing headline — e.g. "Adjusting for: Too far" */
@@ -69,6 +74,18 @@ function deriveVibeChips(locationNode?: LocationNode) {
   });
 }
 
+function getUGCTemporalCopy(object: SpontaneousObject): string | null {
+  try {
+    const state = computeTemporalState(
+      new Date(object.expires_at).toISOString(),
+      new Date(object.created_at).toISOString(),
+    );
+    return state !== "suppressed" ? TEMPORAL_COPY[state] : null;
+  } catch {
+    return null;
+  }
+}
+
 // ─── Animation variants ───────────────────────────────────────────────────────
 
 const chipContainerVariants: Variants = {
@@ -90,14 +107,20 @@ export function DecisionCard({
   onGoing,
   onMaybe,
   onNotThis,
+  onJoin,
+  onInterested,
   isReframing = false,
   pivotLabel,
   className = "",
 }: DecisionCardProps) {
-  const timeLabel = getTimeLabel(object.time_window.start);
+  const isUGC = object.type === "ugc_event";
+
+  const timeLabel  = isUGC
+    ? (getUGCTemporalCopy(object) ?? getTimeLabel(object.time_window.start))
+    : getTimeLabel(object.time_window.start);
   const goingLabel = getGoingLabel(object.going_count);
-  const live = isLiveNow(object.time_window.start, object.time_window.end);
-  const vibeChips = deriveVibeChips(locationNode);
+  const live       = isLiveNow(object.time_window.start, object.time_window.end);
+  const vibeChips  = deriveVibeChips(locationNode);
   const showCommunityBadge = (locationNode?.trust_score ?? 0) > 0.5 || vibeChips.length > 0;
 
   return (
@@ -132,10 +155,17 @@ export function DecisionCard({
 
                 {/* Label row */}
                 <div className="flex items-center gap-2 mb-1">
-                  <p className="font-mono text-xs uppercase tracking-widest text-accent">
-                    Your move
-                  </p>
-                  {live && (
+                  {isUGC ? (
+                    <span className="inline-flex items-center gap-1.5 font-mono text-xs uppercase tracking-widest text-accent">
+                      <span aria-hidden="true">👥</span>
+                      Community Meetup
+                    </span>
+                  ) : (
+                    <p className="font-mono text-xs uppercase tracking-widest text-accent">
+                      Your move
+                    </p>
+                  )}
+                  {!isUGC && live && (
                     <span className="inline-flex items-center gap-1 rounded bg-green-500/10 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider font-semibold text-green-400">
                       <span
                         className="inline-block h-1.5 w-1.5 rounded-full bg-green-400 animate-pulse"
@@ -148,6 +178,13 @@ export function DecisionCard({
 
                 {/* Title */}
                 <HadeHeading level={3}>{object.title}</HadeHeading>
+
+                {/* UGC rationale */}
+                {isUGC && (
+                  <p className="mt-1 text-xs text-ink/50">
+                    A HADE user recently started a {object.title} here.
+                  </p>
+                )}
 
                 {/* Time + participation */}
                 <HadeText variant="caption" color="muted" className="mt-1">
@@ -209,12 +246,25 @@ export function DecisionCard({
 
             {/* ── CTAs ─────────────────────────────────────────────────────── */}
             <div className="flex items-center gap-2 pt-3 border-t border-line">
-              <HadeButton variant="primary" size="sm" onClick={onGoing}>
-                Let's Go
-              </HadeButton>
-              <HadeButton variant="secondary" size="sm" onClick={onMaybe}>
-                Maybe
-              </HadeButton>
+              {isUGC ? (
+                <>
+                  <HadeButton variant="primary" size="sm" onClick={onJoin ?? onGoing}>
+                    Join
+                  </HadeButton>
+                  <HadeButton variant="secondary" size="sm" onClick={onInterested ?? onMaybe}>
+                    I'm Interested
+                  </HadeButton>
+                </>
+              ) : (
+                <>
+                  <HadeButton variant="primary" size="sm" onClick={onGoing}>
+                    Let's Go
+                  </HadeButton>
+                  <HadeButton variant="secondary" size="sm" onClick={onMaybe}>
+                    Maybe
+                  </HadeButton>
+                </>
+              )}
               <button
                 type="button"
                 onClick={onNotThis}

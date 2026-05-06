@@ -3,12 +3,17 @@
 import { useMemo } from "react";
 import type { SpontaneousObject } from "@/types/hade";
 import type { DomainMode } from "@/lib/hade/useHade";
+import { TEMPORAL_COPY, type TemporalState } from "@/lib/hade/ugcCopy";
+
+// ─── Constants ────────────────────────────────────────────────────────────────
 
 const MODE_LABEL: Record<DomainMode, { icon: string; text: string }> = {
   dining: { icon: "🍽", text: "Eat Easy" },
   social: { icon: "⚡", text: "Something Happening" },
   travel: { icon: "🌍", text: "Explore" },
 };
+
+// ─── Props ────────────────────────────────────────────────────────────────────
 
 interface HeroDecisionCardProps {
   object: SpontaneousObject;
@@ -17,13 +22,20 @@ interface HeroDecisionCardProps {
   isReframing?: boolean;
   /** Specific adjustment label — e.g. "Adjusting for: Too far" */
   pivotLabel?: string;
+  /** Pre-computed UGC temporal state from DecisionViewModel. */
+  temporalState?: TemporalState;
+  /** Called when user taps "Join" (strong intent — emits worth_it at 0.9). */
+  onJoin?: () => void;
+  /** Called when user taps "I'm Interested" (light intent — emits worth_it at 0.5). */
+  onInterested?: () => void;
 }
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function getTimeLabel(object: SpontaneousObject): string {
   const now = Date.now();
   const start = object.time_window?.start ?? now;
   if (start <= now) return "Happening now";
-
   const minutes = Math.max(1, Math.ceil((start - now) / 60_000));
   return `Starting in ${minutes} min`;
 }
@@ -39,14 +51,23 @@ function isLive(object: SpontaneousObject): boolean {
   return start <= now && now < end;
 }
 
+// ─── Component ────────────────────────────────────────────────────────────────
+
 export function HeroDecisionCard({
   object,
   mode,
   isReframing = false,
   pivotLabel,
+  temporalState,
+  onJoin,
+  onInterested,
 }: HeroDecisionCardProps) {
-  const timeLabel = useMemo(() => getTimeLabel(object), [object]);
-  const live = useMemo(() => isLive(object), [object]);
+  const timeLabel    = useMemo(() => getTimeLabel(object), [object]);
+  const live         = useMemo(() => isLive(object), [object]);
+  const isUGC        = object.type === "ugc_event";
+  const temporalCopy = temporalState && temporalState !== "suppressed"
+    ? TEMPORAL_COPY[temporalState]
+    : null;
 
   return (
     <section
@@ -71,19 +92,30 @@ export function HeroDecisionCard({
         </div>
       ) : (
         <>
+          {/* ── Header row ──────────────────────────────────────────────────── */}
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
-              <span className="text-xs font-semibold uppercase tracking-[0.18em] text-ink/40">
-                Your move
-              </span>
-              {live && (
-                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-emerald-600">
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                  Live
+              {isUGC ? (
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-accent/10 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-accent">
+                  <span aria-hidden="true">👥</span>
+                  Community
                 </span>
+              ) : (
+                <>
+                  <span className="text-xs font-semibold uppercase tracking-[0.18em] text-ink/40">
+                    Your move
+                  </span>
+                  {live && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-emerald-600">
+                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                      Live
+                    </span>
+                  )}
+                </>
               )}
             </div>
-            {mode && (
+
+            {mode && !isUGC && (
               <span className="inline-flex items-center gap-1 rounded-full bg-ink/5 px-2.5 py-1 text-[11px] font-medium text-ink/50">
                 <span aria-hidden="true">{MODE_LABEL[mode].icon}</span>
                 {MODE_LABEL[mode].text}
@@ -91,18 +123,47 @@ export function HeroDecisionCard({
             )}
           </div>
 
+          {/* ── Title ───────────────────────────────────────────────────────── */}
           <h1 className="mt-3 text-2xl font-semibold leading-tight text-ink">
             {object.title}
           </h1>
 
+          {/* ── UGC rationale ───────────────────────────────────────────────── */}
+          {isUGC && (
+            <p className="mt-1.5 text-sm text-ink/55">
+              A HADE user recently started a {object.title} here.
+            </p>
+          )}
+
+          {/* ── Meta chips ──────────────────────────────────────────────────── */}
           <div className="mt-4 flex flex-wrap gap-2">
             <span className="rounded-full border border-line bg-white/70 px-3 py-1 text-xs font-medium text-ink/70">
-              {timeLabel}
+              {isUGC && temporalCopy ? temporalCopy : timeLabel}
             </span>
             <span className="rounded-full border border-line bg-white/70 px-3 py-1 text-xs font-medium text-ink/70">
               {getGoingLabel(object.going_count ?? 0)}
             </span>
           </div>
+
+          {/* ── UGC inline CTAs ─────────────────────────────────────────────── */}
+          {isUGC && (
+            <div className="mt-4 flex gap-2">
+              <button
+                type="button"
+                onClick={onJoin}
+                className="flex-1 h-10 rounded-xl bg-accent text-sm font-semibold text-white transition-opacity active:opacity-80 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              >
+                Join
+              </button>
+              <button
+                type="button"
+                onClick={onInterested}
+                className="flex-1 h-10 rounded-xl border border-line bg-white/70 text-sm font-medium text-ink/70 transition-colors active:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
+              >
+                I'm Interested
+              </button>
+            </div>
+          )}
         </>
       )}
     </section>

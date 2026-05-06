@@ -410,11 +410,13 @@ function filterCandidatesByDomain(
   const ugcAllowed = DOMAIN_CATEGORY_WHITELIST[safeConfig.id];
 
   const filtered = candidates.filter((c) => {
+    // UGC events are community social content — always admitted regardless of domain
+    if (c.obj.type === "ugc_event") return true;
     // Has Google types → use allowedPlaceTypes gate (same as filterByDomain)
     if (c.types && c.types.length > 0) {
       return c.types.some((t) => allowedSet.has(t));
     }
-    // No types (UGC / custom) → gate by normalized category string
+    // No types (custom / unknown) → gate by normalized category string
     if (ugcAllowed && c.category) {
       return ugcAllowed.has(c.category);
     }
@@ -735,9 +737,16 @@ export async function generateSyntheticDecision(
         ` (intent=${intent ?? "any"}, radius=${domainRadius}m, category=${primaryCategory})`,
     );
 
-    const places = domainBuckets && geoHint
-      ? await fetchMultiQueryGrounded({ geo: geoHint, categoryBuckets: domainBuckets, radius_meters: domainRadius })
-      : await getPlacesCandidates(ctx, categories);
+    let places: PlaceOption[];
+    try {
+      places = domainBuckets && geoHint
+        ? await fetchMultiQueryGrounded({ geo: geoHint, categoryBuckets: domainBuckets, radius_meters: domainRadius })
+        : await getPlacesCandidates(ctx, categories);
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      console.warn(`[hade-synthetic ${reqId}] Places fetch failed (${detail}) — continuing with UGC-only`);
+      places = [];
+    }
     const filteredPlaces = filterByDomain(places, config.id);
 
     console.log("[HADE FILTER ENFORCED]", {
@@ -746,8 +755,11 @@ export async function generateSyntheticDecision(
       output: filteredPlaces.length,
     });
 
-    if (filteredPlaces.length === 0) {
+    if (filteredPlaces.length === 0 && ugcCandidates.length === 0) {
       return { ok: false, reason: "no_domain_candidates" };
+    }
+    if (filteredPlaces.length === 0) {
+      console.log(`[hade-synthetic ${reqId}] no Places results — proceeding with ${ugcCandidates.length} UGC candidate(s)`);
     }
 
     // ── Rejection pre-filter: strip already-rejected Places before conversion ──
@@ -757,7 +769,7 @@ export async function generateSyntheticDecision(
 
     console.log("[HADE FRESH COUNT]", freshCandidates.length);
 
-    if (freshCandidates.length === 0) {
+    if (freshCandidates.length === 0 && ugcCandidates.length === 0) {
       console.warn("[HADE] No fresh candidates after rejection — aborting decision");
       return { ok: false };
     }

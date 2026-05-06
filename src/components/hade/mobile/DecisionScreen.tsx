@@ -377,6 +377,20 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
     [emitVibeSignal],
   );
 
+  const handleJoin = useCallback(() => {
+    const target = previousOverride ?? decision;
+    if (!target) return;
+    emitVibeSignal(target.id, ["worth_it"] as VibeTag[], "positive", 0.9);
+    console.log("[HADE] Join →", target.title);
+  }, [decision, previousOverride, emitVibeSignal]);
+
+  const handleInterested = useCallback(() => {
+    const target = previousOverride ?? decision;
+    if (!target) return;
+    emitVibeSignal(target.id, ["worth_it"] as VibeTag[], "positive", 0.5);
+    console.log("[HADE] Interested →", target.title);
+  }, [decision, previousOverride, emitVibeSignal]);
+
   // UgcVerificationSheet handlers
   const handleVerificationClose = useCallback(() => {
     setShowVerificationSheet(false);
@@ -459,6 +473,9 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
                     mode={pendingMode ?? mode}
                     isReframing={isReframing}
                     pivotLabel={pivotLabel}
+                    temporalState={displayDecision.temporal_state}
+                    onJoin={handleJoin}
+                    onInterested={handleInterested}
                   />
                 </ErrorBoundary>
               </motion.div>
