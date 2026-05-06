@@ -1,9 +1,9 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useRef, useState } from "react";
 import type { SpontaneousObject } from "@/types/hade";
 import type { DomainMode } from "@/lib/hade/useHade";
-import { TEMPORAL_COPY, type TemporalState } from "@/lib/hade/ugcCopy";
+import { TEMPORAL_COPY, getActiveForCopy, type TemporalState } from "@/lib/hade/ugcCopy";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -28,6 +28,8 @@ interface HeroDecisionCardProps {
   onJoin?: () => void;
   /** Called when user taps "I'm Interested" (light intent — emits worth_it at 0.5). */
   onInterested?: () => void;
+  /** Called when user submits an Add Vibe note. */
+  onAddVibe?: (text: string) => void;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -61,13 +63,20 @@ export function HeroDecisionCard({
   temporalState,
   onJoin,
   onInterested,
+  onAddVibe,
 }: HeroDecisionCardProps) {
+  const [vibeOpen, setVibeOpen]   = useState(false);
+  const [vibeText, setVibeText]   = useState("");
+  const [vibeSent, setVibeSent]   = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
   const timeLabel    = useMemo(() => getTimeLabel(object), [object]);
   const live         = useMemo(() => isLive(object), [object]);
   const isUGC        = object.type === "ugc_event";
-  const temporalCopy = temporalState && temporalState !== "suppressed"
-    ? TEMPORAL_COPY[temporalState]
-    : null;
+  const temporalCopy = useMemo(() => {
+    const activeFor = getActiveForCopy(object.expires_at);
+    if (activeFor) return activeFor;
+    return temporalState && temporalState !== "suppressed" ? TEMPORAL_COPY[temporalState] : null;
+  }, [object.expires_at, temporalState]);
 
   return (
     <section
@@ -166,6 +175,59 @@ export function HeroDecisionCard({
           )}
         </>
       )}
+      {/* ── Add Vibe ────────────────────────────────────────────────────────── */}
+      {!isReframing && (
+        <div className="mt-4 border-t border-line/50 pt-3">
+          {vibeOpen ? (
+            <div className="flex gap-2">
+              <input
+                ref={inputRef}
+                type="text"
+                value={vibeText}
+                onChange={(e) => setVibeText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && vibeText.trim()) {
+                    onAddVibe?.(vibeText.trim());
+                    setVibeText("");
+                    setVibeSent(true);
+                    setVibeOpen(false);
+                    setTimeout(() => setVibeSent(false), 3000);
+                  }
+                  if (e.key === "Escape") { setVibeOpen(false); setVibeText(""); }
+                }}
+                placeholder="What feels off or missing?"
+                autoFocus
+                className="flex-1 rounded-xl border border-line bg-white/70 px-3.5 py-2 text-sm text-ink placeholder:text-ink/30 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20 min-h-[44px]"
+              />
+              <button
+                type="button"
+                disabled={!vibeText.trim()}
+                onClick={() => {
+                  if (!vibeText.trim()) return;
+                  onAddVibe?.(vibeText.trim());
+                  setVibeText("");
+                  setVibeSent(true);
+                  setVibeOpen(false);
+                  setTimeout(() => setVibeSent(false), 3000);
+                }}
+                className="min-h-[44px] rounded-xl bg-accent px-4 text-sm font-semibold text-white transition-opacity disabled:opacity-35 focus:outline-none active:opacity-80"
+              >
+                Send
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => { setVibeOpen(true); setTimeout(() => inputRef.current?.focus(), 50); }}
+              className="w-full text-left text-sm font-medium text-ink/40 transition-colors hover:text-ink/60 focus:outline-none focus-visible:text-ink/60 min-h-[44px] flex items-center gap-2"
+            >
+              <span className="text-base" aria-hidden="true">{vibeSent ? "✓" : "+"}</span>
+              {vibeSent ? "Vibe added" : "Already here? Share the Vibe"}
+            </button>
+          )}
+        </div>
+      )}
+
     </section>
   );
 }

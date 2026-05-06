@@ -167,6 +167,7 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
   const [toastTag, setToastTag] = useState<string | null>(null);
   const [showVerificationSheet, setShowVerificationSheet] = useState(false);
   const [showCreationFlow, setShowCreationFlow] = useState(false);
+  const [liveToast, setLiveToast] = useState(false);
   const [showCompareModes, setShowCompareModes] = useState(false);
   const [pendingMode, setPendingMode] = useState<DomainMode | null>(null);
   const [modeMessage, setModeMessage] = useState<string | null>(null);
@@ -213,6 +214,13 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
     const id = setTimeout(() => setToastTag(null), 2500);
     return () => clearTimeout(id);
   }, [toastTag]);
+
+  // Auto-dismiss the "You're live" toast after 2.5 s.
+  useEffect(() => {
+    if (!liveToast) return;
+    const id = setTimeout(() => setLiveToast(false), 2500);
+    return () => clearTimeout(id);
+  }, [liveToast]);
 
   const handleModeChange = useCallback(
     (newMode: DomainMode) => {
@@ -391,6 +399,30 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
     console.log("[HADE] Interested →", target.title);
   }, [decision, previousOverride, emitVibeSignal]);
 
+  const handleVibeText = useCallback((text: string) => {
+    const target = previousOverride ?? decision;
+    if (!target) return;
+    const sentiment = /off|bad|wrong|miss|weird|slow|dead|empty/i.test(text) ? "negative" : "positive";
+    const tag: VibeTag = sentiment === "negative" ? "skip_it" : "good_energy";
+    emitVibeSignal(target.id, [tag], sentiment, 0.6);
+    console.log("[HADE] Vibe →", { venueId: target.id, text, tag, sentiment });
+  }, [decision, previousOverride, emitVibeSignal]);
+
+  // "Add Vibe" — direct VibeSheet entry without the 15-min Go timer.
+  // Populates visitRef from the currently displayed card so handleSubmit
+  // always has a valid venueId even in zero-query / cold-start state.
+  const handleRateSpot = useCallback(() => {
+    const target = previousOverride ?? decision;
+    if (!target) return;
+    visitRef.current = {
+      venueId:   target.id,
+      venueName: target.title,
+      pressedAt: Date.now(),
+      isUGC:     target.is_ugc ?? false,
+    };
+    setShowVibeSheet(true);
+  }, [decision, previousOverride]);
+
   // UgcVerificationSheet handlers
   const handleVerificationClose = useCallback(() => {
     setShowVerificationSheet(false);
@@ -476,11 +508,24 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
                     temporalState={displayDecision.temporal_state}
                     onJoin={handleJoin}
                     onInterested={handleInterested}
+                    onAddVibe={handleVibeText}
                   />
                 </ErrorBoundary>
               </motion.div>
             </AnimatePresence>
           </div>
+
+          {/* ── Start something ──────────────────────────────────────────── */}
+          <button
+            type="button"
+            onClick={() => setShowCreationFlow(true)}
+            className="mt-4 w-full flex flex-col items-center gap-0.5 rounded-2xl bg-accent py-4 transition-opacity active:opacity-80 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          >
+            <span className="text-sm font-bold text-white">
+              + Start something
+            </span>
+            <span className="text-[11px] text-white/60">Create a hangout nearby</span>
+          </button>
 
           {/* "See other modes" — peek behind the system */}
           <div className="mt-5 flex justify-center">
@@ -547,7 +592,7 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
                 onClick={() => { setShowCreationFlow(true); setOverflowOpen(false); }}
                 className="h-10 rounded-xl border border-line bg-white/60 px-3 text-xs font-medium text-ink/60 transition-colors active:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
               >
-                Add Note
+                Start Meetup
               </button>
             </div>
           )}
@@ -651,7 +696,11 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
                   >
                     Close
                   </button>
-                  <ActivityCreationView onCreate={() => setShowCreationFlow(false)} />
+                  <ActivityCreationView onCreate={() => {
+                    setShowCreationFlow(false);
+                    setLiveToast(true);
+                    navigator.vibrate?.(50);
+                  }} />
                 </div>
               </ErrorBoundary>
             </motion.div>
@@ -685,6 +734,32 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
             className="fixed bottom-[calc(env(safe-area-inset-bottom,0px)+80px)] inset-x-0 mx-auto w-fit max-w-xs z-[60] rounded-xl border border-line bg-surface px-4 py-2.5 text-sm text-ink shadow-md pointer-events-none"
           >
             📡 Signal Enqueued: {formatVibeLabel(toastTag)} (+0.2 influence)
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── "You're live" confirmation toast ───────────────────────────────── */}
+      <AnimatePresence>
+        {liveToast && (
+          <motion.div
+            key="live-toast"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 16 }}
+            transition={{ type: "spring", stiffness: 380, damping: 30 }}
+            className="fixed bottom-[calc(env(safe-area-inset-bottom,0px)+200px)] inset-x-4 z-[60] mx-auto max-w-[390px] rounded-2xl bg-ink px-5 py-4 shadow-xl pointer-events-none"
+          >
+            <div className="flex items-center gap-3.5">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-500/20">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                  <path d="M3 8.5L6.5 12L13 5" stroke="#10b981" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-white">You&apos;re live</p>
+                <p className="text-xs text-white/55">Others nearby can now join</p>
+              </div>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>

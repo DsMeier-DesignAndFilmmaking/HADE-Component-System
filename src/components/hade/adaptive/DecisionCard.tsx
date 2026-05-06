@@ -6,7 +6,7 @@ import { HadeCard } from "@/components/hade/layout/HadeCard";
 import { HadeButton } from "@/components/hade/buttons/HadeButton";
 import { HadeHeading } from "@/components/hade/typography/HadeHeading";
 import { HadeText } from "@/components/hade/typography/HadeText";
-import { computeTemporalState, TEMPORAL_COPY } from "@/lib/hade/ugcCopy";
+import { computeTemporalState, TEMPORAL_COPY, getActiveForCopy } from "@/lib/hade/ugcCopy";
 
 interface DecisionCardProps {
   object: SpontaneousObject;
@@ -76,6 +76,8 @@ function deriveVibeChips(locationNode?: LocationNode) {
 
 function getUGCTemporalCopy(object: SpontaneousObject): string | null {
   try {
+    const activeFor = getActiveForCopy(object.expires_at);
+    if (activeFor) return activeFor;
     const state = computeTemporalState(
       new Date(object.expires_at).toISOString(),
       new Date(object.created_at).toISOString(),

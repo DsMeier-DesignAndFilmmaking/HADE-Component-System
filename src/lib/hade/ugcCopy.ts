@@ -31,6 +31,20 @@ export const TEMPORAL_COPY: Record<Exclude<TemporalState, "suppressed">, string>
   wrapping_up:    "Wrapping up soon",
 };
 
+/**
+ * Returns a precise "Active for X more mins/hrs" string when the event
+ * expires within 2 hours. Returns null otherwise (caller falls back to
+ * TEMPORAL_COPY). Accepts epoch ms from SpontaneousObject.expires_at.
+ */
+export function getActiveForCopy(expiresAt: number | undefined): string | null {
+  if (expiresAt === undefined) return null;
+  const mins = Math.round((expiresAt - Date.now()) / 60_000);
+  if (mins <= 0) return null;
+  if (mins < 60)  return `Active for ${mins} more min${mins === 1 ? "" : "s"}`;
+  if (mins < 120) return `Active for ${Math.round(mins / 60 * 10) / 10} more hr`;
+  return null;
+}
+
 // 5-minute bucket matches backend bucketedNowMs() — prevents label flicker
 const BUCKET_MS     = 5 * 60 * 1000;
 const SUPPRESS_MS   = 15 * 60 * 1000;
