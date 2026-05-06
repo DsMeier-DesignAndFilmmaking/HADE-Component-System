@@ -68,6 +68,10 @@ function toVibeTags(tags: string[]): VibeTag[] {
   return tags.filter((tag): tag is VibeTag => allowed.has(tag as VibeTag));
 }
 
+function formatVibeLabel(tag: string): string {
+  return tag.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
 function DebugOverlay({ decision }: { decision: DecisionViewModel }) {
   const [expanded, setExpanded] = useState(false);
   const pct = Math.round(decision.confidence * 100);
@@ -160,6 +164,7 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
   const [refineOpen, setRefineOpen] = useState(false);
   const [showPivotReasons, setShowPivotReasons] = useState(false);
   const [showVibeSheet, setShowVibeSheet] = useState(false);
+  const [toastTag, setToastTag] = useState<string | null>(null);
   const [showVerificationSheet, setShowVerificationSheet] = useState(false);
   const [showCreationFlow, setShowCreationFlow] = useState(false);
   const [showCompareModes, setShowCompareModes] = useState(false);
@@ -201,6 +206,13 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
       if (modeTimerRef.current) clearTimeout(modeTimerRef.current);
     };
   }, []);
+
+  // Auto-dismiss the HADE Trace micro-toast after 2.5 s.
+  useEffect(() => {
+    if (!toastTag) return;
+    const id = setTimeout(() => setToastTag(null), 2500);
+    return () => clearTimeout(id);
+  }, [toastTag]);
 
   const handleModeChange = useCallback(
     (newMode: DomainMode) => {
@@ -354,10 +366,15 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
   }, []);
 
   const handleSubmit = useCallback(
-    (_tags: string[], _sentiment: "positive" | "negative" | "neutral") => {
+    (tags: string[], sentiment: "positive" | "negative" | "neutral") => {
+      const venueId = visitRef.current?.venueId;
+      if (venueId && tags.length > 0) {
+        emitVibeSignal(venueId, tags as VibeTag[], sentiment, 0.9);
+        setToastTag(tags[0] ?? null);
+      }
       setShowVibeSheet(false);
     },
-    [],
+    [emitVibeSignal],
   );
 
   // UgcVerificationSheet handlers
@@ -636,6 +653,22 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
               onSubmit={handleSubmit}
             />
           </ErrorBoundary>
+        )}
+      </AnimatePresence>
+
+      {/* ── HADE Trace micro-toast ──────────────────────────────────────────── */}
+      <AnimatePresence>
+        {toastTag && (
+          <motion.div
+            key="vibe-toast"
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 12 }}
+            transition={{ type: "spring", stiffness: 400, damping: 28 }}
+            className="fixed bottom-[calc(env(safe-area-inset-bottom,0px)+80px)] inset-x-0 mx-auto w-fit max-w-xs z-[60] rounded-xl border border-line bg-surface px-4 py-2.5 text-sm text-ink shadow-md pointer-events-none"
+          >
+            📡 Signal Enqueued: {formatVibeLabel(toastTag)} (+0.2 influence)
+          </motion.div>
         )}
       </AnimatePresence>
 

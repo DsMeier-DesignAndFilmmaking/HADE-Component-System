@@ -9,6 +9,8 @@ export type ScoringWeights = {
   distance: number;
   social:   number;
   trust:    number;
+  /** UGC vibe weight: recency-decayed mean of weight_map entries (0.1–0.9). Defaults to 0.05. */
+  vibe?:    number;
 };
 
 export type WeightTransformer = (w: ScoringWeights) => ScoringWeights;
@@ -111,7 +113,7 @@ const DINING_CONFIG: ExtendedDomainConfig = {
   },
 
   // Dining priorities: rating + proximity dominate. Time/social are tertiary.
-  scoringWeights: { distance: 0.45, trust: 0.45, time: 0.05, social: 0.05 },
+  scoringWeights: { distance: 0.45, trust: 0.40, time: 0.05, social: 0.05, vibe: 0.05 },
 
   explorationBias: 0.05,
 
@@ -199,7 +201,7 @@ const SOCIAL_CONFIG: ExtendedDomainConfig = {
 
   // Social priorities: liveliness (social) + group fit dominate. Group-fit
   // bonus is applied additively in scoreSpontaneousCandidate.
-  scoringWeights: { social: 0.65, time: 0.20, distance: 0.10, trust: 0.05 },
+  scoringWeights: { social: 0.65, time: 0.15, distance: 0.10, trust: 0.05, vibe: 0.05 },
 
   explorationBias: 0.15,
 
@@ -279,7 +281,7 @@ const TRAVEL_CONFIG: ExtendedDomainConfig = {
 
   // Travel priorities: uniqueness (trust as quality proxy) + visual appeal
   // dominate. Uniqueness bonus is applied additively in scoreSpontaneousCandidate.
-  scoringWeights: { trust: 0.65, distance: 0.20, time: 0.10, social: 0.05 },
+  scoringWeights: { trust: 0.60, distance: 0.20, time: 0.10, social: 0.05, vibe: 0.05 },
 
   explorationBias: 0.10,
 

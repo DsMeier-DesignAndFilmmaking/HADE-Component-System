@@ -354,6 +354,12 @@ export interface HadeResponse {
     vibe_match: "strong" | "moderate" | "none";
     social_proof: "high" | "moderate" | "none";
   };
+  /**
+   * The LocationNode for the recommended venue — populated when the venue has
+   * an existing weight entry in the registry. Null when no UGC signals have
+   * been recorded yet for this venue. Absent on static fallback paths.
+   */
+  decision_node?: LocationNode | null;
 }
 
 // ─── Debug Payload ────────────────────────────────────────────────────────────

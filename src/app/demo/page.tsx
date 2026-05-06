@@ -450,6 +450,7 @@ function DesktopDebugDemo() {
             className="mt-6"
             isReframing={isReframing}
             pivotLabel={pivotLabel}
+            locationNode={response.decision_node ?? undefined}
             onNotThis={() => void handleNotThis("Not This")}
           />
 

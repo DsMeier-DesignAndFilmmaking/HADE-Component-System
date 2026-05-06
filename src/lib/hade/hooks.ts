@@ -652,6 +652,7 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
           debug: data.debug ?? undefined,
           source: hadeSource,
           ...(data.explanation_signals ? { explanation_signals: data.explanation_signals } : {}),
+          ...(data.decision_node !== undefined ? { decision_node: data.decision_node } : {}),
         };
         const pipelinePlaces = Array.isArray(data.fallback_places) ? data.fallback_places : [];
         console.log("[HADE PIPELINE]", {
@@ -662,6 +663,14 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
         });
         setDecision({ ...safeDecision });
         setResponse(shaped);
+        console.log("[hade-trace]", JSON.stringify({
+          event:        "decision_node_received",
+          venue_id:     safeDecision.id,
+          has_node:     data.decision_node !== null && data.decision_node !== undefined,
+          signal_count: data.decision_node?.signal_count ?? 0,
+          version:      data.decision_node?.version ?? null,
+          source:       hadeSource,
+        }));
         if (Array.isArray(data.fallback_places) && data.fallback_places.length > 0) {
           const realPlaces = (data.fallback_places as SpontaneousObject[]).filter(
             (p) => !p.id.startsWith("fallback-") && !p.id.startsWith("offline-"),

@@ -29,7 +29,7 @@ import {
   haversineDistanceMeters,
   inferIntentFromTime,
 } from "@/lib/hade/engine";
-import { getNodeTrustScore } from "@/lib/hade/weights";
+import { getNodeTrustScore, getNodeVibeScore } from "@/lib/hade/weights";
 import { getDistanceCopy } from "@/lib/hade/ugcCopy";
 import { getNearbyUGC } from "@/lib/hade/ugc";
 import { getDomainConfig, type ExtendedDomainConfig, type ScoringWeights } from "@/core/domain/domainConfigs";
@@ -176,6 +176,8 @@ export interface SpontaneousScoreBreakdown {
   distanceScore: number;
   socialScore: number;
   trustScore: number;
+  /** Recency-decayed mean of UGC weight_map entries. 0.5 = neutral (no UGC). */
+  vibeScore: number;
   userStateBonus: number;
   /** +boost / -penalty applied based on domain ↔ Google place-type alignment. */
   domainTypeBonus: number;
@@ -550,6 +552,7 @@ function computeUniquenessBonus(
 function scoreSpontaneousCandidate(
   candidate: RankedCandidate,
   now: number,
+  vibeScore: number,
   weights?: ScoringWeights,
   explorationBias = 0,
   domainId?: string,
@@ -573,12 +576,13 @@ function scoreSpontaneousCandidate(
     obj.user_state === "going" ? 0.10 :
     obj.user_state === "maybe" ? 0.05 : 0;
 
-  const w = weights ?? { time: 0.60, social: 0.25, distance: 0.10, trust: 0.05 };
+  const w = weights ?? { time: 0.55, social: 0.25, distance: 0.10, trust: 0.05, vibe: 0.05 };
   const baseScore =
-    timeProximityScore * w.time     +
-    socialScore        * w.social   +
-    distanceScore      * w.distance +
-    trustScore         * w.trust;
+    timeProximityScore * w.time          +
+    socialScore        * w.social        +
+    distanceScore      * w.distance      +
+    trustScore         * w.trust         +
+    vibeScore          * (w.vibe ?? 0.05);
 
   const domainTypeBonus  = computeDomainTypeBonus(candidate.types, domainId);
   const groupFitBonus    = computeGroupFitBonus(obj, groupSize, domainId);
@@ -590,6 +594,7 @@ function scoreSpontaneousCandidate(
     distanceScore,
     socialScore,
     trustScore,
+    vibeScore,
     userStateBonus,
     domainTypeBonus,
     groupFitBonus,
@@ -612,15 +617,23 @@ export async function rankSpontaneousObjects(
 ): Promise<Array<{ candidate: RankedCandidate; score: number; breakdown: SpontaneousScoreBreakdown }>> {
   const scoredCandidates = await Promise.all(
     candidates.map(async (candidate) => {
-      const nodeTrust = await getNodeTrustScore(candidate.obj.id);
+      const [nodeTrust, nodeVibe] = await Promise.all([
+        getNodeTrustScore(candidate.obj.id),
+        getNodeVibeScore(candidate.obj.id),
+      ]);
       const effectiveTrust = (candidate.obj.trust_score + nodeTrust) / 2;
       const candidateWithTrust: RankedCandidate = {
         ...candidate,
         obj: { ...candidate.obj, trust_score: effectiveTrust },
       };
+      const vibeWeight = weights?.vibe ?? 0.05;
+      console.log(
+        `[hade-trace] Vibe Weight Applied: ${candidate.obj.id} -> Score: ${nodeVibe.toFixed(3)} (Impact: +${(nodeVibe * vibeWeight).toFixed(3)})`,
+      );
       const breakdown = scoreSpontaneousCandidate(
         candidateWithTrust,
         now,
+        nodeVibe,
         weights,
         explorationBias,
         domainId,

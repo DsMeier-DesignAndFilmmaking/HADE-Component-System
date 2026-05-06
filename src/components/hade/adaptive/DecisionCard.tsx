@@ -1,6 +1,6 @@
 "use client";
 
-import { motion } from "framer-motion";
+import { type Variants, motion } from "framer-motion";
 import type { LocationNode, SpontaneousObject, VibeTag } from "@/types/hade";
 import { HadeCard } from "@/components/hade/layout/HadeCard";
 import { HadeButton } from "@/components/hade/buttons/HadeButton";
@@ -69,6 +69,18 @@ function deriveVibeChips(locationNode?: LocationNode) {
   });
 }
 
+// ─── Animation variants ───────────────────────────────────────────────────────
+
+const chipContainerVariants: Variants = {
+  hidden: {},
+  visible: { transition: { staggerChildren: 0.06, delayChildren: 0.05 } },
+};
+
+const chipItemVariants: Variants = {
+  hidden:   { opacity: 0, scale: 0.8 },
+  visible:  { opacity: 1, scale: 1, transition: { type: "spring", stiffness: 500, damping: 28 } },
+};
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function DecisionCard({
@@ -86,6 +98,7 @@ export function DecisionCard({
   const goingLabel = getGoingLabel(object.going_count);
   const live = isLiveNow(object.time_window.start, object.time_window.end);
   const vibeChips = deriveVibeChips(locationNode);
+  const showCommunityBadge = (locationNode?.trust_score ?? 0) > 0.5 || vibeChips.length > 0;
 
   return (
     <motion.div
@@ -147,23 +160,50 @@ export function DecisionCard({
               </div>
             </div>
 
-            {/* ── UGC vibe chips ─────────────────────────────────────────── */}
-            {vibeChips.length > 0 && (
-              <div className="mb-4 flex flex-nowrap items-center gap-2 overflow-hidden">
-                {vibeChips.map((chip) => (
+            {/* ── Community Signal & UGC Vibe Chips ──────────────────────── */}
+            {showCommunityBadge && (
+              <div className="mb-4 flex flex-col gap-2">
+
+                {/* Pulsing community validation badge */}
+                <div className="flex items-center gap-1.5">
                   <span
-                    key={chip.key}
-                    className="inline-flex shrink-0 items-center gap-1 rounded-full border border-line bg-surface px-2.5 py-1 text-[11px] font-medium text-ink/70"
-                  >
-                    <span aria-hidden="true">{chip.icon}</span>
-                    <span>{chip.label}</span>
-                  </span>
-                ))}
-                {locationNode && locationNode.signal_count > 0 && (
-                  <p className="font-mono text-[10px] text-ink/30 shrink-0">
-                    {locationNode.signal_count} signals
+                    className="inline-block h-1.5 w-1.5 rounded-full bg-accent animate-pulse"
+                    aria-hidden="true"
+                  />
+                  <p className="font-mono text-[10px] uppercase tracking-widest text-ink/40">
+                    Validated by community &#39;Vibe&#39; signals.
                   </p>
+                </div>
+
+                {/* Stagger-in chip row — only rendered when chips exist */}
+                {vibeChips.length > 0 && (
+                  <motion.div
+                    variants={chipContainerVariants}
+                    initial="hidden"
+                    animate="visible"
+                    className="flex flex-nowrap items-center gap-2 overflow-hidden"
+                  >
+                    {vibeChips.map((chip) => (
+                      <motion.span
+                        key={chip.key}
+                        variants={chipItemVariants}
+                        className="inline-flex shrink-0 items-center gap-1 rounded-full border border-line bg-surface px-2.5 py-1 text-[11px] font-medium text-ink/70"
+                      >
+                        <span aria-hidden="true">{chip.icon}</span>
+                        <span>{chip.label}</span>
+                      </motion.span>
+                    ))}
+                    {locationNode && locationNode.signal_count > 0 && (
+                      <motion.p
+                        variants={chipItemVariants}
+                        className="font-mono text-[10px] text-ink/30 shrink-0"
+                      >
+                        {locationNode.signal_count} signals
+                      </motion.p>
+                    )}
+                  </motion.div>
                 )}
+
               </div>
             )}
 

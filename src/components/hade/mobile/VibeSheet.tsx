@@ -2,8 +2,6 @@
 
 import { useState } from "react";
 import { motion } from "framer-motion";
-import type { VibeTag } from "@/types/hade";
-import { useHadeAdaptiveContext } from "@/lib/hade/hooks";
 
 // ─── Tag definitions ──────────────────────────────────────────────────────────
 
@@ -57,8 +55,7 @@ type Props = {
   onSubmit:  (tags: string[], sentiment: "positive" | "negative" | "neutral") => void;
 };
 
-export function VibeSheet({ venueId, venueName, isUGC = false, onDismiss, onSubmit }: Props) {
-  const { emitVibeSignal } = useHadeAdaptiveContext();
+export function VibeSheet({ venueId: _venueId, venueName, isUGC = false, onDismiss, onSubmit }: Props) {
   const [selected, setSelected]   = useState<Set<Tag>>(new Set());
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted]   = useState(false);
@@ -75,18 +72,11 @@ export function VibeSheet({ venueId, venueName, isUGC = false, onDismiss, onSubm
     });
   };
 
-  const handleSubmit = async () => {
+  const handleSubmit = () => {
     if (selected.size === 0 || submitting || submitted) return;
     setSubmitting(true);
-
     const tags      = Array.from(selected);
     const sentiment = deriveSentiment(tags);
-
-    // Queue-based signal (high-intent strength = 0.9). The SignalQueue posts
-    // a properly batched { signals: VibeSignal[] } payload to /api/hade/signal
-    // on the next idle frame — no direct fetch needed here.
-    emitVibeSignal(venueId, tags as VibeTag[], sentiment, 0.9);
-
     setSubmitted(true);
     onSubmit(tags, sentiment);
   };
@@ -121,10 +111,14 @@ export function VibeSheet({ venueId, venueName, isUGC = false, onDismiss, onSubm
         {TAGS.map((tag) => {
           const isSelected = selected.has(tag);
           return (
-            <button
+            <motion.button
               key={tag}
               type="button"
               onClick={() => toggleTag(tag)}
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.93 }}
+              animate={isSelected ? { scale: [1, 1.1, 1] } : { scale: 1 }}
+              transition={{ type: "spring", stiffness: 500, damping: 30 }}
               className={`rounded-full border px-3.5 py-1.5 text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
                 isSelected
                   ? "border-accent bg-accentSoft text-accent"
@@ -132,7 +126,7 @@ export function VibeSheet({ venueId, venueName, isUGC = false, onDismiss, onSubm
               }`}
             >
               {TAG_LABELS[tag]}
-            </button>
+            </motion.button>
           );
         })}
       </div>
