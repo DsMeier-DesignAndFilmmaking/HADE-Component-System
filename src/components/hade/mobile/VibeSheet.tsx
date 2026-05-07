@@ -87,23 +87,23 @@ export function VibeSheet({ venueId: _venueId, venueName, isUGC = false, onDismi
       animate={{ y: 0 }}
       exit={{ y: "100%" }}
       transition={{ type: "spring", damping: 28, stiffness: 280 }}
-      className="fixed inset-x-0 bottom-0 z-50 rounded-t-2xl border-t border-line bg-background px-5 pt-5 pb-safe-floor"
+      className="fixed inset-x-0 bottom-0 z-50 rounded-t-[22px] border-t border-line bg-background px-4 pb-[max(12px,env(safe-area-inset-bottom,12px))] pt-3.5 min-[390px]:px-5"
     >
       {/* Drag handle */}
-      <div className="mx-auto mb-5 h-1 w-10 rounded-full bg-line" />
+      <div className="mx-auto mb-3 h-1 w-9 rounded-full bg-line" />
 
       {/* Header */}
-      <p className="font-mono text-xs uppercase tracking-widest text-accent mb-1">
+      <p className="mb-1 font-mono text-[10px] uppercase tracking-widest text-accent">
         How was it?
       </p>
-      <p className="text-base font-semibold text-ink mb-5">{venueName}</p>
+      <p className="mb-3 text-sm font-semibold leading-snug text-ink">{venueName}</p>
 
       {/* Tag chips */}
-      <div className="flex flex-wrap gap-2 mb-6">
+      <div className="mb-4 flex flex-wrap gap-1.5">
         {isUGC && (
           <span
             aria-label="Community — always selected"
-            className="inline-flex items-center rounded-full border border-accent/30 bg-accentSoft/60 px-3.5 py-1.5 text-sm font-medium text-accent/60 select-none"
+            className="inline-flex items-center rounded-full border border-accent/30 bg-accentSoft/60 px-3 py-1 text-[13px] font-medium text-accent/60 select-none"
           >
             Community
           </span>
@@ -119,7 +119,7 @@ export function VibeSheet({ venueId: _venueId, venueName, isUGC = false, onDismi
               whileTap={{ scale: 0.93 }}
               animate={isSelected ? { scale: [1, 1.1, 1] } : { scale: 1 }}
               transition={{ type: "spring", stiffness: 500, damping: 30 }}
-              className={`rounded-full border px-3.5 py-1.5 text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
+              className={`rounded-full border px-3 py-1 text-[13px] font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
                 isSelected
                   ? "border-accent bg-accentSoft text-accent"
                   : "border-line bg-surface text-ink/60"
@@ -132,11 +132,11 @@ export function VibeSheet({ venueId: _venueId, venueName, isUGC = false, onDismi
       </div>
 
       {/* Actions */}
-      <div className="flex gap-3">
+      <div className="flex gap-2">
         <button
           type="button"
           onClick={onDismiss}
-          className="flex-1 h-12 rounded-xl border border-line text-sm font-medium text-ink/50 transition-colors active:bg-line/20"
+          className="h-10 flex-1 rounded-xl border border-line text-sm font-medium text-ink/50 transition-colors active:bg-line/20"
         >
           Skip
         </button>
@@ -144,7 +144,7 @@ export function VibeSheet({ venueId: _venueId, venueName, isUGC = false, onDismi
           type="button"
           onClick={handleSubmit}
           disabled={selected.size === 0 || submitting || submitted}
-          className="flex-1 h-12 rounded-xl bg-accent text-sm font-semibold text-white transition-opacity disabled:opacity-40 active:opacity-80"
+          className="h-10 flex-1 rounded-xl bg-accent text-sm font-semibold text-white transition-opacity disabled:opacity-40 active:opacity-80"
         >
           {submitting ? "Sending…" : "Send"}
         </button>

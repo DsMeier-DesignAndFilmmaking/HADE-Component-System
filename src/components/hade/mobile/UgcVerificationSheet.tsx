@@ -78,7 +78,7 @@ export function UgcVerificationSheet({
         <>
           <motion.div
             key="scrim"
-            className="fixed inset-0 z-40 bg-ink/40"
+            className="fixed inset-0 z-40 bg-ink/30"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -105,27 +105,27 @@ export function UgcVerificationSheet({
                 ? { duration: 0 }
                 : { type: "spring", damping: 32, stiffness: 320 }
             }
-            className="fixed inset-x-0 bottom-0 z-50 flex flex-col rounded-t-3xl border-t border-line bg-surface shadow-panel"
+            className="fixed inset-x-0 bottom-0 z-50 flex flex-col rounded-t-[22px] border-t border-line bg-surface shadow-panel"
           >
-            <div className="flex justify-center pt-3 pb-1">
-              <span className="h-1 w-10 rounded-full bg-ink/15" aria-hidden="true" />
+            <div className="flex justify-center pb-0.5 pt-2.5">
+              <span className="h-1 w-9 rounded-full bg-ink/15" aria-hidden="true" />
             </div>
 
             {phase === "prompt" ? (
-              <div className="flex flex-col gap-5 px-6 pb-safe-floor pt-4">
+              <div className="flex flex-col gap-4 px-4 pb-[max(12px,env(safe-area-inset-bottom,12px))] pt-3 min-[390px]:px-5">
                 <div>
-                  <p className="text-[11px] font-medium uppercase tracking-widest text-ink/50">
+                  <p className="text-[10px] font-medium uppercase tracking-widest text-ink/50">
                     {copy.label}
                   </p>
-                  <p className="mt-1 text-base font-semibold text-ink">{venueName}</p>
+                  <p className="mt-1 text-sm font-semibold leading-snug text-ink">{venueName}</p>
                 </div>
 
-                <div className="flex flex-col gap-3">
+                <div className="flex flex-col gap-2">
                   <button
                     type="button"
                     onClick={handleYes}
                     disabled={busy}
-                    className="h-14 w-full rounded-2xl bg-accent text-[17px] font-semibold text-white shadow-soft transition-transform active:scale-[0.985] focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 disabled:opacity-40"
+                    className="h-11 w-full rounded-xl bg-accent text-sm font-semibold text-white shadow-soft transition-transform active:scale-[0.985] focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 disabled:opacity-40"
                   >
                     {copy.yes}
                   </button>
@@ -133,7 +133,7 @@ export function UgcVerificationSheet({
                     type="button"
                     onClick={handleNo}
                     disabled={busy}
-                    className="h-14 w-full rounded-2xl border border-line text-[17px] font-medium text-ink/70 transition-colors active:bg-line/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-40"
+                    className="h-11 w-full rounded-xl border border-line text-sm font-medium text-ink/70 transition-colors active:bg-line/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-40"
                   >
                     {copy.no}
                   </button>
@@ -141,16 +141,16 @@ export function UgcVerificationSheet({
                     type="button"
                     onClick={onClose}
                     disabled={busy}
-                    className="py-3 text-sm font-medium text-ink/40 transition-opacity active:opacity-60 disabled:opacity-20"
+                    className="py-1.5 text-[13px] font-medium text-ink/40 transition-opacity active:opacity-60 disabled:opacity-20"
                   >
                     Skip
                   </button>
                 </div>
               </div>
             ) : (
-              <div className="flex flex-col items-center gap-3 px-6 pb-safe-floor pt-6">
-                <p className="text-base font-semibold text-ink">{copy.confirmed}</p>
-                <p className="text-sm text-ink/50">{copy.detail}</p>
+              <div className="flex flex-col items-center gap-2 px-4 pb-[max(12px,env(safe-area-inset-bottom,12px))] pt-5">
+                <p className="text-sm font-semibold text-ink">{copy.confirmed}</p>
+                <p className="text-[13px] text-ink/50">{copy.detail}</p>
               </div>
             )}
           </motion.div>

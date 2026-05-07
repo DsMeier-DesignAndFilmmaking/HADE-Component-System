@@ -9,8 +9,6 @@ import { useHadeAdaptiveContext } from "@/lib/hade/hooks";
 import { useHade } from "@/lib/hade/useHade";
 import { computeTemporalState, getUGCPivotReasons } from "@/lib/hade/ugcCopy";
 import { HeroDecisionCard } from "./HeroDecisionCard";
-import { ModeToggle } from "./ModeToggle";
-import { OtherModesPanel } from "./OtherModesPanel";
 import { RefineSheet } from "./RefineSheet";
 import { VibeSheet } from "./VibeSheet";
 import { UgcVerificationSheet } from "./UgcVerificationSheet";
@@ -18,12 +16,6 @@ import { LoadingState } from "./LoadingState";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { ActivityCreationView } from "./ActivityCreationView";
 import { CompareModesSheet } from "./CompareModesSheet";
-
-const MODE_MESSAGES: Record<DomainMode, string> = {
-  dining:  "Finding something good to eat...",
-  social:  "Looking for something happening...",
-  travel:  "Exploring what's nearby...",
-};
 
 type Urgency = "low" | "medium" | "high";
 type PivotReason = "Too crowded" | "Wrong vibe" | "Too far" | "Overpriced";
@@ -34,6 +26,72 @@ const PIVOT_REASONS: PivotReason[] = [
   "Too far",
   "Overpriced",
 ];
+
+type LensId = "food" | "retail" | "mobility" | "entertainment" | "social" | "wellness";
+
+const LENS_OPTIONS: Array<{
+  id: LensId;
+  mode: DomainMode;
+  icon: string;
+  label: string;
+  context: string;
+  transitionCopy: string;
+}> = [
+  {
+    id: "food",
+    mode: "dining",
+    icon: "🍽",
+    label: "Food & Dining",
+    context: "Reduce decision fatigue nearby",
+    transitionCopy: "Optimizing for simplicity nearby",
+  },
+  {
+    id: "retail",
+    mode: "dining",
+    icon: "🛍",
+    label: "Retail & Shopping",
+    context: "Inspiration over endless searching",
+    transitionCopy: "Looking for something worth discovering",
+  },
+  {
+    id: "mobility",
+    mode: "travel",
+    icon: "🚇",
+    label: "Urban Mobility",
+    context: "What makes sense right here, right now",
+    transitionCopy: "Reading movement and density nearby",
+  },
+  {
+    id: "entertainment",
+    mode: "social",
+    icon: "🎭",
+    label: "Entertainment",
+    context: "Something worth doing tonight",
+    transitionCopy: "Looking for something happening now",
+  },
+  {
+    id: "social",
+    mode: "social",
+    icon: "👥",
+    label: "Social Interaction",
+    context: "Low-friction spontaneous connection",
+    transitionCopy: "Finding socially compatible energy",
+  },
+  {
+    id: "wellness",
+    mode: "travel",
+    icon: "🌿",
+    label: "Wellness",
+    context: "Context-aware nudges and resets",
+    transitionCopy: "Optimizing for a healthier next move",
+  },
+];
+
+const DEFAULT_LENS_BY_MODE: Record<DomainMode, LensId> = {
+  dining: "food",
+  social: "social",
+  travel: "mobility",
+};
 
 function mapReasonToTags(reason: string): string[] {
   switch (reason) {
@@ -169,15 +227,16 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
   const [showCreationFlow, setShowCreationFlow] = useState(false);
   const [liveToast, setLiveToast] = useState(false);
   const [showCompareModes, setShowCompareModes] = useState(false);
-  const [pendingMode, setPendingMode] = useState<DomainMode | null>(null);
-  const [modeMessage, setModeMessage] = useState<string | null>(null);
-  const modeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [activeLensId, setActiveLensId] = useState<LensId>(
+    DEFAULT_LENS_BY_MODE[initialMode ?? "dining"],
+  );
+  const [lensTransitioning, setLensTransitioning] = useState(false);
+  const lensTransitionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [rejectionCount, setRejectionCount] = useState(0);
   const [rejectionHistory, setRejectionHistory] = useState<Array<{ venueId: string; reason: string; timestamp: number }>>([]);
   const [decisionHistory, setDecisionHistory] = useState<DecisionViewModel[]>([]);
   const [overflowOpen, setOverflowOpen] = useState(false);
-  const [showOtherModes, setShowOtherModes] = useState(false);
 
   // ─── Reframing state ────────────────────────────────────────────────────────
   const [isReframing, setIsReframing] = useState(false);
@@ -193,21 +252,6 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
     });
   }, [rejectionHistory]);
 
-  // Clear mode transition state once the new decision lands.
-  useEffect(() => {
-    if (status === "ready") {
-      setModeMessage(null);
-      setPendingMode(null);
-    }
-  }, [status]);
-
-  // Cancel pending mode timer on unmount.
-  useEffect(() => {
-    return () => {
-      if (modeTimerRef.current) clearTimeout(modeTimerRef.current);
-    };
-  }, []);
-
   // Auto-dismiss the HADE Trace micro-toast after 2.5 s.
   useEffect(() => {
     if (!toastTag) return;
@@ -222,19 +266,15 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
     return () => clearTimeout(id);
   }, [liveToast]);
 
-  const handleModeChange = useCallback(
-    (newMode: DomainMode) => {
-      if (modeTimerRef.current) clearTimeout(modeTimerRef.current);
-      setPendingMode(newMode);
-      setModeMessage("Reframing...");
-      modeTimerRef.current = setTimeout(() => {
-        setModeMessage(MODE_MESSAGES[newMode]);
-        setMode(newMode);
-        modeTimerRef.current = null;
-      }, 400);
-    },
-    [setMode],
-  );
+  useEffect(() => {
+    if (status === "ready") setLensTransitioning(false);
+  }, [status]);
+
+  useEffect(() => {
+    return () => {
+      if (lensTransitionTimerRef.current) clearTimeout(lensTransitionTimerRef.current);
+    };
+  }, []);
 
   // Push each new decision onto the history stack so "Previous" can navigate back.
   // We track by id so rapid re-renders don't push duplicates.
@@ -263,6 +303,23 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
       return next;
     });
   }, []);
+
+  const handleLensSelect = useCallback(
+    (lens: (typeof LENS_OPTIONS)[number]) => {
+      if (lensTransitionTimerRef.current) clearTimeout(lensTransitionTimerRef.current);
+      setActiveLensId(lens.id);
+      setLensTransitioning(true);
+      setPreviousOverride(null);
+      setShowPivotReasons(false);
+      setOverflowOpen(false);
+      setMode(lens.mode);
+      lensTransitionTimerRef.current = setTimeout(() => {
+        setLensTransitioning(false);
+        lensTransitionTimerRef.current = null;
+      }, 1400);
+    },
+    [setMode],
+  );
 
   const visitRef = useRef<{
     venueId:   string;
@@ -436,6 +493,7 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
   // The card to display — previousOverride takes precedence while navigating back.
   // Once a new live decision arrives, the override is cleared automatically.
   const displayDecision = previousOverride ?? decision;
+  const activeLens = LENS_OPTIONS.find((lens) => lens.id === activeLensId) ?? LENS_OPTIONS[0];
 
   // Derived pivot reasons list — UGC-specific when applicable
   const pivotReasons: string[] = displayDecision?.is_ugc && displayDecision.ugc_meta
@@ -447,7 +505,7 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
   }
 
   return (
-    <div className="mx-auto flex min-h-[100dvh] w-full max-w-[430px] flex-col bg-background px-5 pt-6 pb-[260px]">
+    <div className="mx-auto flex min-h-[100dvh] w-full max-w-[430px] flex-col bg-background px-4 pb-[210px] pt-4 min-[390px]:px-5 min-[390px]:pt-5">
       {status === "error" && (
         <div className="flex flex-1 flex-col items-center justify-center gap-4">
           <p className="text-base text-ink/70">Something got in the way.</p>
@@ -462,35 +520,11 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
         </div>
       )}
 
-      {modeMessage && status === "loading" ? (
-        <div className="flex flex-1 items-center justify-center">
-          <AnimatePresence mode="wait">
-            <motion.p
-              key={modeMessage}
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -8 }}
-              transition={{ duration: 0.2, ease: "easeOut" }}
-              className="text-center text-base font-medium text-ink/50"
-            >
-              {modeMessage}
-            </motion.p>
-          </AnimatePresence>
-        </div>
-      ) : (
-        (status === "loading" || (status !== "error" && !displayDecision)) && <LoadingState />
-      )}
+      {!displayDecision && status !== "error" && <LoadingState />}
 
-      {status === "ready" && displayDecision && (
+      {status !== "error" && displayDecision && (
         <>
-          {/* ModeToggle lives above the card — domain navigation, not a CTA */}
-          <ModeToggle
-            mode={pendingMode ?? mode}
-            onChange={handleModeChange}
-            disabled={false}
-          />
-
-          <div className="mt-4">
+          <div>
             <AnimatePresence mode="wait">
               <motion.div
                 key={displayDecision.id}
@@ -502,9 +536,10 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
                 <ErrorBoundary name="HeroDecisionCard">
                   <HeroDecisionCard
                     object={displayDecision.object}
-                    mode={pendingMode ?? mode}
-                    isReframing={isReframing}
-                    pivotLabel={pivotLabel}
+                    mode={mode}
+                    contextLabel={activeLens.context}
+                    isReframing={isReframing || lensTransitioning}
+                    pivotLabel={lensTransitioning ? activeLens.transitionCopy : pivotLabel}
                     temporalState={displayDecision.temporal_state}
                     onJoin={handleJoin}
                     onInterested={handleInterested}
@@ -515,37 +550,47 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
             </AnimatePresence>
           </div>
 
+          <div className="mt-2.5 -mx-4 overflow-x-auto px-4 pb-1 [scrollbar-width:none] min-[390px]:-mx-5 min-[390px]:px-5 [&::-webkit-scrollbar]:hidden">
+            <div className="flex w-max gap-1.5">
+              {LENS_OPTIONS.map((lens) => {
+                const isActive = activeLensId === lens.id;
+
+                return (
+                  <button
+                    key={lens.id}
+                    type="button"
+                    onClick={() => handleLensSelect(lens)}
+                    disabled={lensTransitioning && isActive}
+                    className={`w-[146px] shrink-0 rounded-xl border px-2.5 py-2 text-left transition-all active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-line min-[390px]:w-[164px] ${
+                      isActive
+                        ? "border-ink/15 bg-white text-ink shadow-soft"
+                        : "border-line/50 bg-white/45 text-ink/55"
+                    }`}
+                  >
+                    <span className="flex items-center gap-1.5 text-[11px] font-semibold leading-none">
+                      <span aria-hidden="true">{lens.icon}</span>
+                      {lens.label}
+                    </span>
+                    <span className="mt-1 block line-clamp-2 text-[10px] leading-snug text-ink/42">
+                      {lens.context}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
           {/* ── Start something ──────────────────────────────────────────── */}
           <button
             type="button"
             onClick={() => setShowCreationFlow(true)}
-            className="mt-4 w-full flex flex-col items-center gap-0.5 rounded-2xl bg-accent py-4 transition-opacity active:opacity-80 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            className="mt-3 flex w-full flex-col items-center gap-0.5 rounded-xl bg-white py-2.5 transition-opacity active:opacity-80 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
           >
-            <span className="text-sm font-bold text-white">
+            <span className="text-[13px] font-bold text-blue">
               + Start something
             </span>
-            <span className="text-[11px] text-white/60">Create a hangout nearby</span>
+            <span className="text-[10px] text-black/55">Create a hangout nearby</span>
           </button>
-
-          {/* "See other modes" — peek behind the system */}
-          <div className="mt-5 flex justify-center">
-            <button
-              type="button"
-              onClick={() => setShowOtherModes((v) => !v)}
-              className="flex items-center gap-1 rounded-full border border-line/50 bg-white/50 px-4 py-2 text-xs font-medium text-ink/45 transition-colors active:bg-white active:text-ink/70 focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
-            >
-              {showOtherModes ? "Hide" : "See other modes"}
-              <span aria-hidden="true" className="text-[10px]">
-                {showOtherModes ? "↑" : "↓"}
-              </span>
-            </button>
-          </div>
-
-          <OtherModesPanel
-            geo={adaptiveContext.geo}
-            context={adaptiveContext}
-            open={showOtherModes}
-          />
 
           {process.env.NODE_ENV !== "production" && (
             <DebugOverlay decision={displayDecision} />
@@ -554,23 +599,23 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
       )}
 
       {/* ── Pinned CTA bar — thumb-reach zone ──────────────────────────────── */}
-      <div className="fixed bottom-0 left-0 right-0 z-10 mx-auto w-full max-w-[430px] border-t border-line/10 bg-background/90 px-5 pb-safe-floor pt-3 backdrop-blur-md">
-        <div className="flex flex-col gap-2">
+      <div className="fixed bottom-0 left-0 right-0 z-10 mx-auto w-full max-w-[430px] border-t border-line/10 bg-background/78 px-4 pb-[max(12px,env(safe-area-inset-bottom,12px))] pt-2.5 backdrop-blur-sm min-[390px]:px-5">
+        <div className="flex flex-col gap-1.5">
 
           {/* Utility row: Previous (contextual) + overflow */}
-          <div className="flex items-center justify-between h-7">
+          <div className="flex h-6 items-center justify-between">
             <button
               type="button"
               onClick={handlePrevious}
               disabled={decisionHistory.length <= 1}
-              className="flex items-center gap-1 text-xs text-ink/40 transition-colors active:text-ink/70 disabled:opacity-0 focus:outline-none focus-visible:text-ink/70"
+              className="flex items-center gap-1 text-[11px] text-ink/40 transition-colors active:text-ink/70 disabled:opacity-0 focus:outline-none focus-visible:text-ink/70"
             >
               ← Previous
             </button>
             <button
               type="button"
               onClick={() => setOverflowOpen((v) => !v)}
-              className="flex h-7 w-7 items-center justify-center rounded-full text-sm text-ink/35 transition-colors active:text-ink/60 focus:outline-none focus-visible:text-ink/60"
+              className="flex h-6 w-6 items-center justify-center rounded-full text-sm text-ink/35 transition-colors active:text-ink/60 focus:outline-none focus-visible:text-ink/60"
               aria-label="More options"
             >
               ···
@@ -579,18 +624,18 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
 
           {/* Overflow panel — Compare Modes + Add Note */}
           {overflowOpen && (
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-2 gap-1.5">
               <button
                 type="button"
                 onClick={() => { setShowCompareModes(true); setOverflowOpen(false); }}
-                className="h-10 rounded-xl border border-line bg-white/60 px-3 text-xs font-medium text-ink/60 transition-colors active:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
+                className="h-9 rounded-xl border border-line bg-white/60 px-3 text-[11px] font-medium text-ink/60 transition-colors active:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
               >
                 Compare Modes
               </button>
               <button
                 type="button"
                 onClick={() => { setShowCreationFlow(true); setOverflowOpen(false); }}
-                className="h-10 rounded-xl border border-line bg-white/60 px-3 text-xs font-medium text-ink/60 transition-colors active:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
+                className="h-9 rounded-xl border border-line bg-white/60 px-3 text-[11px] font-medium text-ink/60 transition-colors active:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
               >
                 Start Meetup
               </button>
@@ -599,13 +644,13 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
 
           {/* Pivot reasons — expands above primary on "Not this" tap */}
           {showPivotReasons && displayDecision && (
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-2 gap-1.5">
               {pivotReasons.map((reason) => (
                 <button
                   key={reason}
                   type="button"
                   onClick={() => handleReject(reason)}
-                  className="h-10 rounded-xl border border-line bg-white/60 px-3 text-xs font-medium text-ink/70 transition-colors active:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
+                  className="h-9 rounded-xl border border-line bg-white/60 px-3 text-[11px] font-medium text-ink/70 transition-colors active:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
                 >
                   {reason}
                 </button>
@@ -618,18 +663,18 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
             type="button"
             onClick={handleGo}
             disabled={!displayDecision}
-            className="h-14 w-full rounded-2xl bg-blue-600 text-base font-bold text-white transition-colors hover:bg-blue-700 active:bg-blue-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 disabled:opacity-40"
+            className="h-12 w-full rounded-2xl bg-blue-600 text-[15px] font-bold text-white transition-colors hover:bg-blue-700 active:bg-blue-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 disabled:opacity-40"
           >
             Go Now
           </button>
 
           {/* SECONDARY + TERTIARY */}
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-2 gap-1.5">
             <button
               type="button"
               onClick={() => setRefineOpen(true)}
               disabled={!displayDecision}
-              className="h-11 rounded-xl border border-line bg-white/60 text-sm font-semibold text-ink transition-colors active:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-line disabled:opacity-40"
+              className="h-9 rounded-xl border border-line bg-white/60 text-[13px] font-semibold text-ink transition-colors active:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-line disabled:opacity-40"
             >
               Refine
             </button>
@@ -637,7 +682,7 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
               type="button"
               onClick={handleSave}
               disabled={!displayDecision}
-              className="h-11 rounded-xl border border-line bg-white/60 text-sm font-medium text-ink/50 transition-colors active:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-line disabled:opacity-40"
+              className="h-9 rounded-xl border border-line bg-white/60 text-[13px] font-medium text-ink/50 transition-colors active:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-line disabled:opacity-40"
             >
               Save
             </button>
@@ -648,7 +693,7 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
             type="button"
             onClick={handleNotThis}
             disabled={!displayDecision}
-            className="w-full py-0.5 text-sm text-ink/35 transition-colors active:text-ink/60 focus:outline-none focus-visible:text-ink/60 disabled:opacity-0"
+            className="w-full py-0 text-[13px] text-ink/35 transition-colors active:text-ink/60 focus:outline-none focus-visible:text-ink/60 disabled:opacity-0"
           >
             Not this
           </button>
@@ -676,13 +721,13 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
       <AnimatePresence>
         {showCreationFlow && (
           <motion.div
-            className="fixed inset-0 z-30 flex items-end bg-black/30 px-4 pb-safe-floor"
+            className="fixed inset-0 z-30 flex items-end bg-black/25 px-3 pb-[max(10px,env(safe-area-inset-bottom,10px))]"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
           >
             <motion.div
-              className="mb-4 w-full max-w-[430px] mx-auto"
+              className="mx-auto mb-2 w-full max-w-[430px]"
               initial={{ y: 32 }}
               animate={{ y: 0 }}
               exit={{ y: 32 }}
@@ -692,7 +737,7 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
                   <button
                     type="button"
                     onClick={() => setShowCreationFlow(false)}
-                    className="absolute right-4 top-4 z-10 rounded-full bg-white/70 px-3 py-1 text-xs font-semibold text-ink/60"
+                    className="absolute right-3 top-3 z-10 rounded-full bg-white/80 px-2.5 py-1 text-[11px] font-semibold text-ink/60"
                   >
                     Close
                   </button>
@@ -731,7 +776,7 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 12 }}
             transition={{ type: "spring", stiffness: 400, damping: 28 }}
-            className="fixed bottom-[calc(env(safe-area-inset-bottom,0px)+80px)] inset-x-0 mx-auto w-fit max-w-xs z-[60] rounded-xl border border-line bg-surface px-4 py-2.5 text-sm text-ink shadow-md pointer-events-none"
+            className="pointer-events-none fixed bottom-[calc(env(safe-area-inset-bottom,0px)+152px)] inset-x-0 z-[60] mx-auto w-fit max-w-xs rounded-xl border border-line bg-surface px-3.5 py-2 text-[13px] text-ink shadow-md"
           >
             📡 Signal Enqueued: {formatVibeLabel(toastTag)} (+0.2 influence)
           </motion.div>
@@ -747,10 +792,10 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 16 }}
             transition={{ type: "spring", stiffness: 380, damping: 30 }}
-            className="fixed bottom-[calc(env(safe-area-inset-bottom,0px)+200px)] inset-x-4 z-[60] mx-auto max-w-[390px] rounded-2xl bg-ink px-5 py-4 shadow-xl pointer-events-none"
+            className="pointer-events-none fixed bottom-[calc(env(safe-area-inset-bottom,0px)+152px)] inset-x-4 z-[60] mx-auto max-w-[390px] rounded-2xl bg-ink px-4 py-3 shadow-xl"
           >
-            <div className="flex items-center gap-3.5">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-500/20">
+            <div className="flex items-center gap-3">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-500/20">
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
                   <path d="M3 8.5L6.5 12L13 5" stroke="#10b981" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
                 </svg>

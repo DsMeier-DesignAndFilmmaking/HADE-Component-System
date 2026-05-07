@@ -35,7 +35,7 @@ type Particle = {
   shape: "square" | "circle";
 };
 
-function makeParticles(count = 28): Particle[] {
+function makeParticles(count = 18): Particle[] {
   return Array.from({ length: count }, (_, i) => ({
     id:    i,
     x:     (Math.random() - 0.5) * 220,
@@ -219,7 +219,7 @@ export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
   }
 
   return (
-    <section className="relative overflow-hidden rounded-3xl bg-surface p-5 shadow-soft">
+    <section className="relative max-h-[82dvh] overflow-y-auto rounded-[22px] bg-surface p-4 shadow-soft">
 
       {/* ── Confetti burst ──────────────────────────────────────────────────── */}
       <AnimatePresence>
@@ -245,13 +245,13 @@ export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
       </AnimatePresence>
 
       {/* ── Header ──────────────────────────────────────────────────────────── */}
-      <div className="mb-5">
-        <p className="font-mono text-xs uppercase tracking-widest text-accent">New Meetup</p>
-        <h2 className="mt-0.5 text-xl font-semibold text-ink">
+      <div className="mb-4 pr-14">
+        <p className="font-mono text-[10px] uppercase tracking-widest text-accent">New Meetup</p>
+        <h2 className="mt-0.5 text-lg font-semibold leading-tight text-ink">
           {step === "what"    ? "What's happening?" :
            step === "vibe"    ? "What's the vibe?"  : "Any details?"}
         </h2>
-        <p className="mt-1 text-xs font-semibold uppercase tracking-[0.16em] text-ink/40">
+        <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-ink/40">
           Step {stepNumber} of 3
         </p>
       </div>
@@ -267,20 +267,20 @@ export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
             exit={{ opacity: 0, x: -12 }}
             transition={{ duration: 0.18, ease: "easeOut" }}
           >
-            <div className="relative mb-6 flex items-center">
+            <div className="relative mb-4 flex items-center">
               <input
                 type="text"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder="What's happening?"
                 autoFocus
-                className="w-full rounded-xl border border-line bg-white/70 px-4 py-3.5 pr-12 text-sm text-ink placeholder:text-ink/30 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
+                className="w-full rounded-xl border border-line bg-white/70 px-3.5 py-3 pr-11 text-sm text-ink placeholder:text-ink/30 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
               />
               <button
                 type="button"
                 onClick={startListening}
                 aria-label={listening ? "Stop listening" : "Speak to describe your event"}
-                className={`absolute right-3 flex h-8 w-8 items-center justify-center rounded-full text-base transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
+                className={`absolute right-2.5 flex h-8 w-8 items-center justify-center rounded-full text-base transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
                   listening
                     ? "animate-pulse bg-accent/20 ring-1 ring-accent/40"
                     : "text-ink/35 hover:text-ink/60"
@@ -294,7 +294,7 @@ export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
               type="button"
               disabled={!title.trim()}
               onClick={() => setStep("vibe")}
-              className="w-full h-13 rounded-2xl bg-black py-3.5 text-sm font-semibold text-white transition-opacity disabled:opacity-35 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent active:opacity-80"
+              className="h-11 w-full rounded-xl bg-black text-sm font-semibold text-white transition-opacity disabled:opacity-35 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent active:opacity-80"
             >
               Continue
             </button>
@@ -310,7 +310,7 @@ export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
             exit={{ opacity: 0, x: -12 }}
             transition={{ duration: 0.18, ease: "easeOut" }}
           >
-            <div className="flex flex-wrap gap-2.5 mb-6">
+            <div className="mb-4 grid grid-cols-2 gap-2">
               {VIBES.map((v) => {
                 const active = vibeId === v.id;
                 return (
@@ -319,7 +319,7 @@ export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
                     type="button"
                     whileTap={{ scale: 0.93 }}
                     onClick={() => setVibeId(active ? null : v.id)}
-                    className={`rounded-full border px-5 py-2.5 text-sm font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent min-h-[44px] ${
+                    className={`min-h-10 rounded-xl border px-3 py-2 text-sm font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
                       active
                         ? "border-accent bg-accent text-white"
                         : "border-line bg-white/70 text-ink/70"
@@ -335,14 +335,14 @@ export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
               <button
                 type="button"
                 onClick={() => setStep("what")}
-                className="min-h-[44px] rounded-xl border border-line bg-white/70 px-4 text-sm font-semibold text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
+                className="min-h-10 rounded-xl border border-line bg-white/70 px-4 text-sm font-semibold text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
               >
                 Back
               </button>
               <button
                 type="button"
                 onClick={() => setStep("details")}
-                className="min-h-[44px] flex-1 rounded-xl bg-black text-sm font-semibold text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-accent active:opacity-80"
+                className="min-h-10 flex-1 rounded-xl bg-black text-sm font-semibold text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-accent active:opacity-80"
               >
                 Continue
               </button>
@@ -360,10 +360,10 @@ export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
             transition={{ duration: 0.18, ease: "easeOut" }}
           >
             {/* Summary row */}
-            <div className="mb-4 flex items-center gap-2 rounded-xl bg-ink/5 px-3 py-2.5">
-              <p className="text-sm font-semibold text-ink truncate flex-1">{title}</p>
+            <div className="mb-3 flex items-center gap-2 rounded-xl bg-ink/5 px-3 py-2">
+              <p className="flex-1 truncate text-[13px] font-semibold text-ink">{title}</p>
               {selectedVibe && (
-                <span className="shrink-0 rounded-full bg-accent/10 px-2.5 py-0.5 text-[11px] font-semibold text-accent">
+                <span className="shrink-0 rounded-full bg-accent/10 px-2 py-0.5 text-[10px] font-semibold text-accent">
                   {selectedVibe.label}
                 </span>
               )}
@@ -374,7 +374,7 @@ export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
               value={timeText}
               onChange={(e) => setTimeText(e.target.value)}
               placeholder="Time (optional) — e.g. 3pm"
-              className="mb-3 w-full rounded-xl border border-line bg-white/70 px-4 py-2.5 text-sm text-ink placeholder:text-ink/30 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
+              className="mb-2.5 w-full rounded-xl border border-line bg-white/70 px-3.5 py-2.5 text-sm text-ink placeholder:text-ink/30 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
             />
 
             <textarea
@@ -382,7 +382,7 @@ export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
               onChange={(e) => setNotes(e.target.value)}
               placeholder="Notes (optional)"
               rows={2}
-              className="mb-5 w-full resize-none rounded-xl border border-line bg-white/70 px-4 py-2.5 text-sm text-ink placeholder:text-ink/30 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
+              className="mb-4 w-full resize-none rounded-xl border border-line bg-white/70 px-3.5 py-2.5 text-sm text-ink placeholder:text-ink/30 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
             />
 
             {errorMsg && (
@@ -394,7 +394,7 @@ export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
                 type="button"
                 onClick={() => setStep("vibe")}
                 disabled={status === "submitting"}
-                className="min-h-[44px] rounded-xl border border-line bg-white/70 px-4 text-sm font-semibold text-ink disabled:opacity-50 focus:outline-none"
+                className="min-h-10 rounded-xl border border-line bg-white/70 px-4 text-sm font-semibold text-ink disabled:opacity-50 focus:outline-none"
               >
                 Back
               </button>
@@ -403,7 +403,7 @@ export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
                 onClick={handleCreate}
                 disabled={status !== "idle"}
                 whileTap={status === "idle" ? { scale: 0.97 } : undefined}
-                className="min-h-[44px] flex-1 rounded-xl bg-accent px-4 text-sm font-semibold text-white transition-opacity disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                className="min-h-10 flex-1 rounded-xl bg-accent px-4 text-sm font-semibold text-white transition-opacity disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
               >
                 {status === "submitting" ? "Creating…"  :
                  status === "success"    ? "🎉 Done!"    : "Start Something"}

@@ -14,7 +14,7 @@ export function LoadingState() {
         <span className="h-1.5 w-1.5 rounded-full bg-accent/70" />
         <span className="h-1.5 w-1.5 rounded-full bg-accent/40" />
       </motion.div>
-      <p className="mt-5 text-base text-ink/60">Understanding your context…</p>
+      <p className="mt-4 text-sm text-ink/55">Understanding your context…</p>
     </div>
   );
 }

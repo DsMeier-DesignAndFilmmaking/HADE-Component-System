@@ -73,28 +73,28 @@ export function GuidedDemoEntry({ onSelect }: GuidedDemoEntryProps) {
   };
 
   return (
-    <div className="mx-auto flex min-h-[100dvh] w-full max-w-[430px] flex-col justify-center px-6 pb-16">
+    <div className="mx-auto flex min-h-[100dvh] w-full max-w-[430px] flex-col justify-center px-5 py-8">
 
       {/* ── Headline ───────────────────────────────────────────────────────── */}
       <motion.div
         initial={{ opacity: 0, y: 18 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.32, ease: "easeOut" }}
-        className="mb-10"
+        className="mb-7"
       >
-        <p className="mb-3 text-[10px] font-bold uppercase tracking-[0.22em] text-ink/30">
+        <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.22em] text-ink/30">
           HADE
         </p>
-        <h1 className="text-[26px] font-semibold leading-tight text-ink">
+        <h1 className="text-[24px] font-semibold leading-tight text-ink">
           You have 2 hours and nothing planned.
         </h1>
-        <p className="mt-3 text-base text-ink/45">
+        <p className="mt-2 text-sm text-ink/45">
           What sounds right?
         </p>
       </motion.div>
 
       {/* ── Mode buttons ───────────────────────────────────────────────────── */}
-      <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-2.5">
         {MODES.map((item, i) => {
           const isSelected = selected === item.mode;
           const isDimmed = selected !== null && !isSelected;
@@ -117,7 +117,7 @@ export function GuidedDemoEntry({ onSelect }: GuidedDemoEntryProps) {
                 y: { duration: 0.26, ease: "easeOut", delay: 0.1 + i * 0.07 },
               }}
               className={`
-                relative overflow-hidden rounded-2xl border px-5 py-4 text-left
+                relative overflow-hidden rounded-2xl border px-4 py-3 text-left
                 transition-colors
                 ${item.bgClass} ${item.borderClass}
                 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 ${item.ringClass}
@@ -128,11 +128,11 @@ export function GuidedDemoEntry({ onSelect }: GuidedDemoEntryProps) {
               <div className={`absolute left-0 top-0 h-full w-[3px] ${item.stripClass}`} />
 
               <div className="pl-3">
-                <div className={`flex items-center gap-2 text-[15px] font-semibold leading-tight ${item.labelClass}`}>
-                  <span aria-hidden="true" className="text-base">{item.icon}</span>
+                <div className={`flex items-center gap-2 text-sm font-semibold leading-tight ${item.labelClass}`}>
+                  <span aria-hidden="true" className="text-[15px]">{item.icon}</span>
                   {item.label}
                 </div>
-                <p className={`mt-1 text-sm leading-snug ${item.subClass}`}>
+                <p className={`mt-1 text-[12px] leading-snug ${item.subClass}`}>
                   {item.sub}
                 </p>
               </div>
@@ -146,7 +146,7 @@ export function GuidedDemoEntry({ onSelect }: GuidedDemoEntryProps) {
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ duration: 0.4, delay: 0.5 }}
-        className="mt-10 text-center text-[11px] text-ink/25"
+        className="mt-7 text-center text-[11px] text-ink/25"
       >
         One tap. No setup.
       </motion.p>

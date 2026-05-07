@@ -30,7 +30,7 @@ export function RefineSheet({ open, onClose, onConfirm }: RefineSheetProps) {
         <>
           <motion.div
             key="scrim"
-            className="fixed inset-0 z-40 bg-ink/40"
+            className="fixed inset-0 z-40 bg-ink/30"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -57,18 +57,18 @@ export function RefineSheet({ open, onClose, onConfirm }: RefineSheetProps) {
                 ? { duration: 0 }
                 : { type: "spring", damping: 32, stiffness: 320 }
             }
-            className="fixed inset-x-0 bottom-0 z-50 flex h-[62dvh] flex-col rounded-t-3xl border-t border-line bg-surface shadow-panel"
+            className="fixed inset-x-0 bottom-0 z-50 flex max-h-[72dvh] flex-col rounded-t-[22px] border-t border-line bg-surface shadow-panel"
           >
-            <div className="flex justify-center pt-3 pb-1">
-              <span className="h-1 w-10 rounded-full bg-ink/15" aria-hidden="true" />
+            <div className="flex justify-center pb-0.5 pt-2.5">
+              <span className="h-1 w-9 rounded-full bg-ink/15" aria-hidden="true" />
             </div>
 
-            <div className="flex flex-1 flex-col gap-6 overflow-y-auto px-6 pb-6 pt-4">
+            <div className="flex flex-1 flex-col gap-4 overflow-y-auto px-4 pb-4 pt-3 min-[390px]:px-5">
               <div>
-                <p className="text-[11px] font-medium uppercase tracking-widest text-ink/50">
+                <p className="text-[10px] font-medium uppercase tracking-widest text-ink/50">
                   What are you after?
                 </p>
-                <div className="mt-3 flex flex-wrap gap-2">
+                <div className="mt-2 flex flex-wrap gap-1.5">
                   {INTENTS.map((opt) => {
                     const selected = intent === opt;
                     return (
@@ -76,7 +76,7 @@ export function RefineSheet({ open, onClose, onConfirm }: RefineSheetProps) {
                         key={opt}
                         type="button"
                         onClick={() => setIntent(selected ? null : opt)}
-                        className={`min-h-[44px] rounded-full border px-4 text-base font-medium transition-colors ${
+                        className={`min-h-9 rounded-full border px-3 text-sm font-medium transition-colors ${
                           selected
                             ? "border-accent bg-accent/10 text-accent"
                             : "border-line bg-transparent text-ink/70"
@@ -91,10 +91,10 @@ export function RefineSheet({ open, onClose, onConfirm }: RefineSheetProps) {
               </div>
 
               <div>
-                <p className="text-[11px] font-medium uppercase tracking-widest text-ink/50">
+                <p className="text-[10px] font-medium uppercase tracking-widest text-ink/50">
                   How urgent?
                 </p>
-                <div className="mt-3 flex gap-2">
+                <div className="mt-2 flex gap-1.5">
                   {URGENCIES.map((u) => {
                     const selected = urgency === u;
                     return (
@@ -102,7 +102,7 @@ export function RefineSheet({ open, onClose, onConfirm }: RefineSheetProps) {
                         key={u}
                         type="button"
                         onClick={() => setUrgency(u)}
-                        className={`min-h-[44px] flex-1 rounded-2xl border text-base font-medium transition-colors ${
+                        className={`min-h-10 flex-1 rounded-xl border text-sm font-medium transition-colors ${
                           selected
                             ? "border-accent bg-accent/10 text-accent"
                             : "border-line bg-transparent text-ink/70"
@@ -117,11 +117,11 @@ export function RefineSheet({ open, onClose, onConfirm }: RefineSheetProps) {
               </div>
             </div>
 
-            <div className="border-t border-line bg-surface px-6 pb-safe-floor pt-4">
+            <div className="border-t border-line/70 bg-surface px-4 pb-[max(12px,env(safe-area-inset-bottom,12px))] pt-3 min-[390px]:px-5">
               <button
                 type="button"
                 onClick={handleConfirm}
-                className="h-14 w-full rounded-2xl bg-accent text-[17px] font-semibold text-white shadow-soft transition-transform active:scale-[0.985] focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2"
+                className="h-11 w-full rounded-xl bg-accent text-sm font-semibold text-white shadow-soft transition-transform active:scale-[0.985] focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2"
               >
                 Confirm
               </button>

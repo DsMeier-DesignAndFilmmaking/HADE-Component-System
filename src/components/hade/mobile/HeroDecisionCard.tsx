@@ -7,10 +7,10 @@ import { TEMPORAL_COPY, getActiveForCopy, type TemporalState } from "@/lib/hade/
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const MODE_LABEL: Record<DomainMode, { icon: string; text: string }> = {
-  dining: { icon: "🍽", text: "Eat Easy" },
-  social: { icon: "⚡", text: "Something Happening" },
-  travel: { icon: "🌍", text: "Explore" },
+const MODE_CONTEXT: Record<DomainMode, string> = {
+  dining: "Optimized for low friction",
+  social: "Looking for live activity",
+  travel: "Finding something unexpected",
 };
 
 // ─── Props ────────────────────────────────────────────────────────────────────
@@ -18,6 +18,7 @@ const MODE_LABEL: Record<DomainMode, { icon: string; text: string }> = {
 interface HeroDecisionCardProps {
   object: SpontaneousObject;
   mode?: DomainMode;
+  contextLabel?: string;
   /** Shows the reframing microcopy instead of normal card content. */
   isReframing?: boolean;
   /** Specific adjustment label — e.g. "Adjusting for: Too far" */
@@ -58,6 +59,7 @@ function isLive(object: SpontaneousObject): boolean {
 export function HeroDecisionCard({
   object,
   mode,
+  contextLabel,
   isReframing = false,
   pivotLabel,
   temporalState,
@@ -80,24 +82,22 @@ export function HeroDecisionCard({
 
   return (
     <section
-      className="relative flex flex-col rounded-3xl bg-surface p-6 shadow-soft"
+      className="relative flex flex-col rounded-[22px] bg-surface p-4 shadow-soft min-[390px]:p-5"
       aria-busy={isReframing || undefined}
     >
 
       {/* ── Reframing overlay ───────────────────────────────────────────────── */}
       {isReframing ? (
-        <div className="flex flex-col gap-3 py-1" aria-live="polite">
-          <span className="text-xs font-semibold uppercase tracking-[0.18em] text-ink/30">
-            Reframing...
+        <div className="flex min-h-[128px] flex-col justify-center gap-2.5 py-0.5" aria-live="polite">
+          <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-ink/30">
+            Reframing
           </span>
-          <h1 className="text-2xl font-semibold leading-tight text-ink/30">
-            Reframing based on your feedback...
+          <h1 className="text-[21px] font-semibold leading-[1.12] text-ink/45">
+            {pivotLabel ?? "Reframing based on your feedback"}
           </h1>
-          {pivotLabel && (
-            <span className="inline-flex w-fit items-center rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-medium text-blue-600">
-              {pivotLabel}
-            </span>
-          )}
+          <div className="h-0.5 w-16 overflow-hidden rounded-full bg-ink/5">
+            <div className="h-full w-1/2 rounded-full bg-ink/20 motion-safe:animate-pulse" />
+          </div>
         </div>
       ) : (
         <>
@@ -105,13 +105,13 @@ export function HeroDecisionCard({
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               {isUGC ? (
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-accent/10 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-accent">
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-accent/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-accent">
                   <span aria-hidden="true">👥</span>
                   Community
                 </span>
               ) : (
                 <>
-                  <span className="text-xs font-semibold uppercase tracking-[0.18em] text-ink/40">
+                  <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-ink/40">
                     Your move
                   </span>
                   {live && (
@@ -123,51 +123,50 @@ export function HeroDecisionCard({
                 </>
               )}
             </div>
-
-            {mode && !isUGC && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-ink/5 px-2.5 py-1 text-[11px] font-medium text-ink/50">
-                <span aria-hidden="true">{MODE_LABEL[mode].icon}</span>
-                {MODE_LABEL[mode].text}
-              </span>
-            )}
           </div>
 
           {/* ── Title ───────────────────────────────────────────────────────── */}
-          <h1 className="mt-3 text-2xl font-semibold leading-tight text-ink">
+          <h1 className="mt-2 text-[22px] font-semibold leading-[1.12] text-ink min-[390px]:text-2xl">
             {object.title}
           </h1>
 
+          {(contextLabel || mode) && (
+            <p className="mt-1.5 text-[12px] font-medium leading-snug text-ink/42">
+              {contextLabel ?? MODE_CONTEXT[mode!]}
+            </p>
+          )}
+
           {/* ── UGC rationale ───────────────────────────────────────────────── */}
           {isUGC && (
-            <p className="mt-1.5 text-sm text-ink/55">
+            <p className="mt-1.5 text-[13px] leading-snug text-ink/55">
               A HADE user recently started a {object.title} here.
             </p>
           )}
 
           {/* ── Meta chips ──────────────────────────────────────────────────── */}
-          <div className="mt-4 flex flex-wrap gap-2">
-            <span className="rounded-full border border-line bg-white/70 px-3 py-1 text-xs font-medium text-ink/70">
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            <span className="rounded-full border border-line bg-white/70 px-2.5 py-0.5 text-[11px] font-medium text-ink/70">
               {isUGC && temporalCopy ? temporalCopy : timeLabel}
             </span>
-            <span className="rounded-full border border-line bg-white/70 px-3 py-1 text-xs font-medium text-ink/70">
+            <span className="rounded-full border border-line bg-white/70 px-2.5 py-0.5 text-[11px] font-medium text-ink/70">
               {getGoingLabel(object.going_count ?? 0)}
             </span>
           </div>
 
           {/* ── UGC inline CTAs ─────────────────────────────────────────────── */}
           {isUGC && (
-            <div className="mt-4 flex gap-2">
+            <div className="mt-3 flex gap-2">
               <button
                 type="button"
                 onClick={onJoin}
-                className="flex-1 h-10 rounded-xl bg-accent text-sm font-semibold text-white transition-opacity active:opacity-80 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                className="h-9 flex-1 rounded-xl bg-accent text-sm font-semibold text-white transition-opacity active:opacity-80 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
               >
                 Join
               </button>
               <button
                 type="button"
                 onClick={onInterested}
-                className="flex-1 h-10 rounded-xl border border-line bg-white/70 text-sm font-medium text-ink/70 transition-colors active:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
+                className="h-9 flex-1 rounded-xl border border-line bg-white/70 text-sm font-medium text-ink/70 transition-colors active:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
               >
                 I'm Interested
               </button>
@@ -177,7 +176,7 @@ export function HeroDecisionCard({
       )}
       {/* ── Add Vibe ────────────────────────────────────────────────────────── */}
       {!isReframing && (
-        <div className="mt-4 border-t border-line/50 pt-3">
+        <div className="mt-3 border-t border-line/40 pt-2">
           {vibeOpen ? (
             <div className="flex gap-2">
               <input
@@ -197,7 +196,7 @@ export function HeroDecisionCard({
                 }}
                 placeholder="What feels off or missing?"
                 autoFocus
-                className="flex-1 rounded-xl border border-line bg-white/70 px-3.5 py-2 text-sm text-ink placeholder:text-ink/30 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20 min-h-[44px]"
+                className="min-h-10 flex-1 rounded-xl border border-line bg-white/70 px-3 py-2 text-sm text-ink placeholder:text-ink/30 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
               />
               <button
                 type="button"
@@ -210,7 +209,7 @@ export function HeroDecisionCard({
                   setVibeOpen(false);
                   setTimeout(() => setVibeSent(false), 3000);
                 }}
-                className="min-h-[44px] rounded-xl bg-accent px-4 text-sm font-semibold text-white transition-opacity disabled:opacity-35 focus:outline-none active:opacity-80"
+                className="min-h-10 rounded-xl bg-accent px-3.5 text-sm font-semibold text-white transition-opacity disabled:opacity-35 focus:outline-none active:opacity-80"
               >
                 Send
               </button>
@@ -219,9 +218,9 @@ export function HeroDecisionCard({
             <button
               type="button"
               onClick={() => { setVibeOpen(true); setTimeout(() => inputRef.current?.focus(), 50); }}
-              className="w-full text-left text-sm font-medium text-ink/40 transition-colors hover:text-ink/60 focus:outline-none focus-visible:text-ink/60 min-h-[44px] flex items-center gap-2"
+              className="flex min-h-9 w-full items-center gap-1.5 text-left text-[13px] font-medium text-ink/40 transition-colors hover:text-ink/60 focus:outline-none focus-visible:text-ink/60"
             >
-              <span className="text-base" aria-hidden="true">{vibeSent ? "✓" : "+"}</span>
+              <span className="text-sm" aria-hidden="true">{vibeSent ? "✓" : "+"}</span>
               {vibeSent ? "Vibe added" : "Already here? Share the Vibe"}
             </button>
           )}
