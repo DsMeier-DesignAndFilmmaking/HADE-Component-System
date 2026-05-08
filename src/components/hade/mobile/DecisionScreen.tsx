@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import type { DomainMode } from "@/lib/hade/useHade";
 import { AnimatePresence, motion } from "framer-motion";
 import type { Intent, VibeTag } from "@/types/hade";
@@ -357,11 +357,40 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
   );
   const [lensTransitioning, setLensTransitioning] = useState(false);
   const lensTransitionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const creationBackdropPointerRef = useRef<{ x: number; y: number } | null>(null);
 
   const [rejectionCount, setRejectionCount] = useState(0);
   const [rejectionHistory, setRejectionHistory] = useState<Array<{ venueId: string; reason: string; timestamp: number }>>([]);
   const [decisionHistory, setDecisionHistory] = useState<DecisionViewModel[]>([]);
   const [overflowOpen, setOverflowOpen] = useState(false);
+
+  function handleCreationBackdropPointerDown(event: PointerEvent<HTMLDivElement>) {
+    if (event.target !== event.currentTarget) {
+      creationBackdropPointerRef.current = null;
+      return;
+    }
+
+    creationBackdropPointerRef.current = {
+      x: event.clientX,
+      y: event.clientY,
+    };
+  }
+
+  function handleCreationBackdropPointerUp(event: PointerEvent<HTMLDivElement>) {
+    const start = creationBackdropPointerRef.current;
+    creationBackdropPointerRef.current = null;
+    if (!start || event.target !== event.currentTarget) return;
+
+    const moved = Math.hypot(event.clientX - start.x, event.clientY - start.y);
+    if (moved > 10) return;
+
+    setShowCreationFlow(false);
+  }
+
+  function handleCreationOverlayKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    if (event.key !== "Escape") return;
+    setShowCreationFlow(false);
+  }
 
   // ─── Reframing state ────────────────────────────────────────────────────────
   const [isReframing, setIsReframing] = useState(false);
@@ -889,13 +918,16 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
       <AnimatePresence>
         {showCreationFlow && (
           <motion.div
-            className="fixed inset-0 z-30 flex items-end bg-black/25 px-3 pb-[max(10px,env(safe-area-inset-bottom,10px))]"
+            className="fixed inset-0 z-30 flex h-[100dvh] items-end bg-black/25 px-3 pb-[max(10px,env(safe-area-inset-bottom,10px))]"
+            onPointerDown={handleCreationBackdropPointerDown}
+            onPointerUp={handleCreationBackdropPointerUp}
+            onKeyDown={handleCreationOverlayKeyDown}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
           >
             <motion.div
-              className="mx-auto mb-2 w-full max-w-[430px]"
+              className="mx-auto mb-2 flex max-h-[90dvh] w-full max-w-[430px] flex-col"
               initial={{ y: 32 }}
               animate={{ y: 0 }}
               exit={{ y: 32 }}

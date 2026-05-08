@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type FocusEvent, type MouseEvent, type PointerEvent } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import type { SpontaneousObject } from "@/types/hade";
 import { RADIUS } from "@/core/constants/radius";
@@ -50,6 +50,7 @@ function makeParticles(count = 18): Particle[] {
 
 type Step   = "what" | "vibe" | "details";
 type Status = "idle" | "submitting" | "success" | "error";
+type FocusableSheetField = HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
 
 interface ActivityCreationViewProps {
   onCreate?: (object: SpontaneousObject) => void;
@@ -62,6 +63,18 @@ function getDefaultActivityTime() {
   next.setMinutes(roundedMinutes, 0, 0);
 
   return `${String(next.getHours()).padStart(2, "0")}:${String(next.getMinutes()).padStart(2, "0")}`;
+}
+
+function isFocusableSheetField(element: Element | null): element is FocusableSheetField {
+  return element instanceof HTMLInputElement ||
+    element instanceof HTMLTextAreaElement ||
+    element instanceof HTMLSelectElement;
+}
+
+function isInteractiveSheetTarget(element: Element | null) {
+  return Boolean(element?.closest(
+    "input, textarea, select, button, a, label, [role='button'], [role='switch'], [contenteditable='true']",
+  ));
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -79,6 +92,8 @@ export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
   const [status,    setStatus]    = useState<Status>("idle");
   const [errorMsg,  setErrorMsg]  = useState<string | null>(null);
   const [particles, setParticles] = useState<Particle[]>([]);
+  const sheetRef = useRef<HTMLElement | null>(null);
+  const suppressFooterClickRef = useRef(false);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recogRef = useRef<any>(null);
 
@@ -124,6 +139,53 @@ export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
 
   const stepNumber = step === "what" ? 1 : step === "vibe" ? 2 : 3;
   const selectedVibe = VIBES.find((v) => v.id === vibeId) ?? null;
+
+  function handleFieldFocus(event: FocusEvent<FocusableSheetField>) {
+    const element = event.currentTarget;
+    const scrollFocusedFieldIntoView = () => {
+      if (document.activeElement !== element) return;
+      element.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
+    };
+
+    requestAnimationFrame(scrollFocusedFieldIntoView);
+    window.setTimeout(scrollFocusedFieldIntoView, 90);
+  }
+
+  function getFocusedSheetField() {
+    const activeElement = document.activeElement;
+    if (!sheetRef.current?.contains(activeElement) || !isFocusableSheetField(activeElement)) {
+      return null;
+    }
+    return activeElement;
+  }
+
+  function handleSheetPointerDownCapture(event: PointerEvent<HTMLElement>) {
+    const activeField = getFocusedSheetField();
+    if (!activeField || !(event.target instanceof Element)) return;
+    if (isInteractiveSheetTarget(event.target)) return;
+
+    activeField.blur();
+  }
+
+  function handleFooterPointerDownCapture(event: PointerEvent<HTMLElement>) {
+    const activeField = getFocusedSheetField();
+    if (!activeField || !(event.target instanceof Element)) return;
+    if (!event.target.closest("button")) return;
+
+    suppressFooterClickRef.current = true;
+    window.setTimeout(() => { suppressFooterClickRef.current = false; }, 250);
+    activeField.blur();
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
+  function handleFooterClickCapture(event: MouseEvent<HTMLElement>) {
+    if (!suppressFooterClickRef.current) return;
+
+    suppressFooterClickRef.current = false;
+    event.preventDefault();
+    event.stopPropagation();
+  }
 
   async function handleCreate() {
     if (!title.trim() || status !== "idle") return;
@@ -228,7 +290,11 @@ export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
   }
 
   return (
-    <section className="relative max-h-[82dvh] overflow-y-auto rounded-[22px] bg-surface p-4 shadow-soft">
+    <section
+      ref={sheetRef}
+      onPointerDownCapture={handleSheetPointerDownCapture}
+      className="relative flex max-h-[90dvh] min-h-0 flex-col overflow-hidden rounded-[22px] bg-surface shadow-soft"
+    >
 
       {/* ── Confetti burst ──────────────────────────────────────────────────── */}
       <AnimatePresence>
@@ -254,7 +320,7 @@ export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
       </AnimatePresence>
 
       {/* ── Header ──────────────────────────────────────────────────────────── */}
-      <div className="mb-4 pr-14">
+      <div className="shrink-0 px-4 pb-3 pt-4 pr-14">
         <p className="font-mono text-[10px] uppercase tracking-widest text-accent">ADD SOMETHING</p>
         <h2 className="mt-0.5 text-lg font-semibold leading-tight text-ink">
           {step === "what"    ? "What's happening?" :
@@ -265,82 +331,171 @@ export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
         </p>
       </div>
 
-      <AnimatePresence mode="wait" initial={false}>
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-4 pt-1">
+        <AnimatePresence mode="wait" initial={false}>
 
-        {/* ── Step 1: Title input + mic ───────────────────────────────────── */}
-        {step === "what" && (
-          <motion.div
-            key="what"
-            initial={{ opacity: 0, x: 12 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -12 }}
-            transition={{ duration: 0.18, ease: "easeOut" }}
-          >
-            <div className="relative mb-4 flex items-center">
-              <input
-                type="text"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="What do you want to add?"
-                autoFocus
-                className="w-full rounded-xl border border-line bg-white/70 px-3.5 py-3 pr-11 text-sm text-ink placeholder:text-ink/30 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
+          {/* ── Step 1: Title input + mic ───────────────────────────────────── */}
+          {step === "what" && (
+            <motion.div
+              key="what"
+              initial={{ opacity: 0, x: 12 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -12 }}
+              transition={{ duration: 0.18, ease: "easeOut" }}
+            >
+              <div className="relative mb-4 flex items-center">
+                <input
+                  type="text"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  onFocus={handleFieldFocus}
+                  placeholder="What do you want to add?"
+                  className="w-full rounded-xl border border-line bg-white/70 px-3.5 py-3 pr-11 text-sm text-ink placeholder:text-ink/30 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
+                />
+                <button
+                  type="button"
+                  onClick={startListening}
+                  aria-label={listening ? "Stop listening" : "Speak to describe your event"}
+                  className={`absolute right-2.5 flex h-8 w-8 items-center justify-center rounded-full text-base transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
+                    listening
+                      ? "animate-pulse bg-accent/20 ring-1 ring-accent/40"
+                      : "text-ink/35 hover:text-ink/60"
+                  }`}
+                >
+                  🎤
+                </button>
+              </div>
+
+            </motion.div>
+          )}
+
+          {/* ── Step 2: Vibe selection ──────────────────────────────────────── */}
+          {step === "vibe" && (
+            <motion.div
+              key="vibe"
+              initial={{ opacity: 0, x: 12 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -12 }}
+              transition={{ duration: 0.18, ease: "easeOut" }}
+            >
+              <div className="mb-4 grid grid-cols-2 gap-2">
+                {VIBES.map((v) => {
+                  const active = vibeId === v.id;
+                  return (
+                    <motion.button
+                      key={v.id}
+                      type="button"
+                      whileTap={{ scale: 0.93 }}
+                      onClick={() => setVibeId(active ? null : v.id)}
+                      className={`min-h-10 rounded-xl border px-3 py-2 text-sm font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
+                        active
+                          ? "border-accent bg-accent text-white"
+                          : "border-line bg-white/70 text-ink/70"
+                      }`}
+                    >
+                      {v.label}
+                    </motion.button>
+                  );
+                })}
+              </div>
+
+            </motion.div>
+          )}
+
+          {/* ── Step 3: Details + submit ────────────────────────────────────── */}
+          {step === "details" && (
+            <motion.div
+              key="details"
+              initial={{ opacity: 0, x: 12 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -12 }}
+              transition={{ duration: 0.18, ease: "easeOut" }}
+            >
+              {/* Summary row */}
+              <div className="mb-3 flex items-center gap-2 rounded-xl bg-ink/5 px-3 py-2">
+                <p className="flex-1 truncate text-[13px] font-semibold text-ink">{title}</p>
+                {selectedVibe && (
+                  <span className="shrink-0 rounded-full bg-accent/10 px-2 py-0.5 text-[10px] font-semibold text-accent">
+                    {selectedVibe.label}
+                  </span>
+                )}
+              </div>
+
+              <label className="mb-2.5 block">
+                <span className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.16em] text-ink/38">
+                  Starts around
+                </span>
+                <span className="flex min-h-12 items-center gap-3 rounded-xl border border-line bg-white/75 px-3.5 transition-colors focus-within:border-accent focus-within:ring-2 focus-within:ring-accent/20">
+                  <span
+                    aria-hidden="true"
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-ink/[0.055] text-[15px]"
+                  >
+                    ◷
+                  </span>
+                  <input
+                    type="time"
+                    value={timeText}
+                    onChange={(e) => setTimeText(e.target.value)}
+                    onFocus={handleFieldFocus}
+                    aria-label="Event start time"
+                    className="h-11 min-w-0 flex-1 bg-transparent text-[16px] font-semibold text-ink accent-accent outline-none [color-scheme:light]"
+                  />
+                </span>
+              </label>
+
+              <textarea
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                onFocus={handleFieldFocus}
+                placeholder="Notes (optional)"
+                rows={2}
+                className="mb-4 w-full resize-none rounded-xl border border-line bg-white/70 px-3.5 py-2.5 text-sm text-ink placeholder:text-ink/30 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
               />
+
+              {errorMsg && (
+                <p className="mb-3 text-xs text-red-500" role="alert">{errorMsg}</p>
+              )}
+
+            </motion.div>
+          )}
+
+        </AnimatePresence>
+      </div>
+
+      <footer
+        onPointerDownCapture={handleFooterPointerDownCapture}
+        onClickCapture={handleFooterClickCapture}
+        className="sticky bottom-0 z-10 shrink-0 border-t border-line/60 bg-surface/95 px-4 pb-[max(14px,calc(env(safe-area-inset-bottom,0px)+14px))] pt-3 backdrop-blur"
+      >
+        <AnimatePresence mode="wait" initial={false}>
+          {step === "what" && (
+            <motion.div
+              key="what-actions"
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              transition={{ duration: 0.16, ease: "easeOut" }}
+            >
               <button
                 type="button"
-                onClick={startListening}
-                aria-label={listening ? "Stop listening" : "Speak to describe your event"}
-                className={`absolute right-2.5 flex h-8 w-8 items-center justify-center rounded-full text-base transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
-                  listening
-                    ? "animate-pulse bg-accent/20 ring-1 ring-accent/40"
-                    : "text-ink/35 hover:text-ink/60"
-                }`}
+                disabled={!title.trim()}
+                onClick={() => setStep("vibe")}
+                className="h-11 w-full rounded-xl bg-black text-sm font-semibold text-white transition-opacity disabled:opacity-35 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent active:opacity-80"
               >
-                🎤
+                Continue
               </button>
-            </div>
+            </motion.div>
+          )}
 
-            <button
-              type="button"
-              disabled={!title.trim()}
-              onClick={() => setStep("vibe")}
-              className="h-11 w-full rounded-xl bg-black text-sm font-semibold text-white transition-opacity disabled:opacity-35 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent active:opacity-80"
+          {step === "vibe" && (
+            <motion.div
+              key="vibe-actions"
+              className="flex gap-2"
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              transition={{ duration: 0.16, ease: "easeOut" }}
             >
-              Continue
-            </button>
-          </motion.div>
-        )}
-
-        {/* ── Step 2: Vibe selection ──────────────────────────────────────── */}
-        {step === "vibe" && (
-          <motion.div
-            key="vibe"
-            initial={{ opacity: 0, x: 12 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -12 }}
-            transition={{ duration: 0.18, ease: "easeOut" }}
-          >
-            <div className="mb-4 grid grid-cols-2 gap-2">
-              {VIBES.map((v) => {
-                const active = vibeId === v.id;
-                return (
-                  <motion.button
-                    key={v.id}
-                    type="button"
-                    whileTap={{ scale: 0.93 }}
-                    onClick={() => setVibeId(active ? null : v.id)}
-                    className={`min-h-10 rounded-xl border px-3 py-2 text-sm font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
-                      active
-                        ? "border-accent bg-accent text-white"
-                        : "border-line bg-white/70 text-ink/70"
-                    }`}
-                  >
-                    {v.label}
-                  </motion.button>
-                );
-              })}
-            </div>
-
-            <div className="flex gap-2">
               <button
                 type="button"
                 onClick={() => setStep("what")}
@@ -355,63 +510,18 @@ export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
               >
                 Continue
               </button>
-            </div>
-          </motion.div>
-        )}
+            </motion.div>
+          )}
 
-        {/* ── Step 3: Details + submit ────────────────────────────────────── */}
-        {step === "details" && (
-          <motion.div
-            key="details"
-            initial={{ opacity: 0, x: 12 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -12 }}
-            transition={{ duration: 0.18, ease: "easeOut" }}
-          >
-            {/* Summary row */}
-            <div className="mb-3 flex items-center gap-2 rounded-xl bg-ink/5 px-3 py-2">
-              <p className="flex-1 truncate text-[13px] font-semibold text-ink">{title}</p>
-              {selectedVibe && (
-                <span className="shrink-0 rounded-full bg-accent/10 px-2 py-0.5 text-[10px] font-semibold text-accent">
-                  {selectedVibe.label}
-                </span>
-              )}
-            </div>
-
-            <label className="mb-2.5 block">
-              <span className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.16em] text-ink/38">
-                Starts around
-              </span>
-              <span className="flex min-h-12 items-center gap-3 rounded-xl border border-line bg-white/75 px-3.5 transition-colors focus-within:border-accent focus-within:ring-2 focus-within:ring-accent/20">
-                <span
-                  aria-hidden="true"
-                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-ink/[0.055] text-[15px]"
-                >
-                  ◷
-                </span>
-                <input
-                  type="time"
-                  value={timeText}
-                  onChange={(e) => setTimeText(e.target.value)}
-                  aria-label="Event start time"
-                  className="h-11 min-w-0 flex-1 bg-transparent text-[16px] font-semibold text-ink accent-accent outline-none [color-scheme:light]"
-                />
-              </span>
-            </label>
-
-            <textarea
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder="Notes (optional)"
-              rows={2}
-              className="mb-4 w-full resize-none rounded-xl border border-line bg-white/70 px-3.5 py-2.5 text-sm text-ink placeholder:text-ink/30 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
-            />
-
-            {errorMsg && (
-              <p className="mb-3 text-xs text-red-500" role="alert">{errorMsg}</p>
-            )}
-
-            <div className="flex gap-2">
+          {step === "details" && (
+            <motion.div
+              key="details-actions"
+              className="flex gap-2"
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              transition={{ duration: 0.16, ease: "easeOut" }}
+            >
               <button
                 type="button"
                 onClick={() => setStep("vibe")}
@@ -430,11 +540,10 @@ export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
                 {status === "submitting" ? "Creating…"  :
                  status === "success"    ? "🎉 Done!"    : "Start Something"}
               </motion.button>
-            </div>
-          </motion.div>
-        )}
-
-      </AnimatePresence>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </footer>
     </section>
   );
 }
