@@ -121,6 +121,7 @@ async function drainPendingSignals(): Promise<void> {
   const unseenSignals = await filterUnseenSignals(pending);
 
   if (unseenSignals.length === 0) {
+    await removePendingSignals(pending.map((signal) => signal.id));
     return;
   }
 

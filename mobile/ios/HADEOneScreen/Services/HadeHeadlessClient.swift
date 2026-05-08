@@ -34,13 +34,21 @@ actor HadeHeadlessClient: HadeHeadlessClientProtocol {
         let template = templates[cursor % templates.count]
         cursor += mode == .initial ? 0 : 1
 
+        // HTTPS Maps URLs are more reliable than native map deep links when
+        // decisions originate from browser/PWA-adjacent flows or shared links.
+        // iOS still hands these to Apple Maps when the user/default allows it.
+        var mapsURLComponents = URLComponents(string: "https://maps.apple.com/")
+        mapsURLComponents?.queryItems = [
+            URLQueryItem(name: "q", value: template.mapQuery)
+        ]
+
         let decision = Decision(
             id: "decision-\(cursor)-\(context.fingerprint)",
             title: title(for: template, motion: context.motionState, refine: refineRequest),
             subtitle: subtitle(for: template, time: context.timeContext),
             distanceText: distance(for: context.motionState, refine: refineRequest),
             etaText: eta(for: context.motionState, refine: refineRequest),
-            deepLink: URL(string: "maps://?q=\(template.mapQuery)")
+            deepLink: mapsURLComponents?.url
         )
 
         let reasoning = reasoningLines(for: template, context: context, refine: refineRequest)

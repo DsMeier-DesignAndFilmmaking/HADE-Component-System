@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { type Variants, motion } from "framer-motion";
 import type { LocationNode, SpontaneousObject, VibeTag } from "@/types/hade";
 import { HadeCard } from "@/components/hade/layout/HadeCard";
@@ -7,6 +8,8 @@ import { HadeButton } from "@/components/hade/buttons/HadeButton";
 import { HadeHeading } from "@/components/hade/typography/HadeHeading";
 import { HadeText } from "@/components/hade/typography/HadeText";
 import { computeTemporalState, TEMPORAL_COPY, getActiveForCopy } from "@/lib/hade/ugcCopy";
+import { getNavigationUrl } from "@/lib/hade/navigation";
+import { recordNavigationTelemetry } from "@/lib/hade/navigationTelemetry";
 
 interface DecisionCardProps {
   object: SpontaneousObject;
@@ -88,6 +91,25 @@ function getUGCTemporalCopy(object: SpontaneousObject): string | null {
   }
 }
 
+function isValidCoordinate(lat: number, lng: number): boolean {
+  return (
+    Number.isFinite(lat) &&
+    Number.isFinite(lng) &&
+    lat >= -90 &&
+    lat <= 90 &&
+    lng >= -180 &&
+    lng <= 180
+  );
+}
+
+function getPlatformLabel(): string {
+  if (typeof navigator === "undefined") return "server";
+  const ua = navigator.userAgent;
+  if (/iPad|iPhone|iPod/i.test(ua)) return "ios";
+  if (/Android/i.test(ua)) return "android";
+  return "desktop";
+}
+
 // ─── Animation variants ───────────────────────────────────────────────────────
 
 const chipContainerVariants: Variants = {
@@ -115,6 +137,7 @@ export function DecisionCard({
   pivotLabel,
   className = "",
 }: DecisionCardProps) {
+  const [openingMaps, setOpeningMaps] = useState(false);
   const isUGC = object.type === "ugc_event";
 
   const timeLabel  = isUGC
@@ -124,6 +147,64 @@ export function DecisionCard({
   const live       = isLiveNow(object.time_window.start, object.time_window.end);
   const vibeChips  = deriveVibeChips(locationNode);
   const showCommunityBadge = (locationNode?.trust_score ?? 0) > 0.5 || vibeChips.length > 0;
+  const launchNavigation = () => {
+    const lat = object.location.lat;
+    const lng = object.location.lng;
+    const coordinatesValid = isValidCoordinate(lat, lng);
+    const url = getNavigationUrl(lat, lng, object.title);
+    const platform = getPlatformLabel();
+
+    setOpeningMaps(true);
+    console.log("[HADE NAV]", {
+      platform,
+      url,
+      coordinatesValid,
+      lat,
+      lng,
+      execution: "starting",
+    });
+
+    try {
+      onGoing?.();
+    } catch (error) {
+      console.warn("[HADE NAV]", {
+        platform,
+        url,
+        coordinatesValid,
+        execution: "telemetry_callback_failed",
+        error,
+      });
+    }
+
+    if (!coordinatesValid) {
+      console.warn("[HADE NAV]", {
+        platform,
+        url,
+        coordinatesValid,
+        execution: "blocked_invalid_coordinates",
+      });
+      setOpeningMaps(false);
+      return;
+    }
+
+    recordNavigationTelemetry({
+      objectId: object.id,
+      title: object.title,
+      lat,
+      lng,
+      url,
+      platform,
+      coordinatesValid,
+    });
+
+    console.log("[HADE NAV]", {
+      platform,
+      url,
+      coordinatesValid,
+      execution: "window.open(_self)",
+    });
+    window.open(url, "_self");
+  };
 
   return (
     <motion.div
@@ -259,8 +340,13 @@ export function DecisionCard({
                 </>
               ) : (
                 <>
-                  <HadeButton variant="primary" size="sm" onClick={onGoing}>
-                    Let's Go
+                  <HadeButton
+                    variant="primary"
+                    size="sm"
+                    onClick={launchNavigation}
+                    loading={openingMaps}
+                  >
+                    {openingMaps ? "Opening Maps..." : "Let's Go"}
                   </HadeButton>
                   <HadeButton variant="secondary" size="sm" onClick={onMaybe}>
                     Maybe

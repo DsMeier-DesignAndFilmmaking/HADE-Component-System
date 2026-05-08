@@ -7,6 +7,8 @@ import type { Intent, VibeTag } from "@/types/hade";
 import type { DecisionViewModel } from "@/lib/hade/viewModel";
 import { useHadeAdaptiveContext } from "@/lib/hade/hooks";
 import { useHade } from "@/lib/hade/useHade";
+import { getNavigationUrl } from "@/lib/hade/navigation";
+import { recordNavigationTelemetry } from "@/lib/hade/navigationTelemetry";
 import { computeTemporalState, getUGCPivotReasons } from "@/lib/hade/ugcCopy";
 import { HeroDecisionCard } from "./HeroDecisionCard";
 import { RefineSheet } from "./RefineSheet";
@@ -26,6 +28,22 @@ const PIVOT_REASONS: PivotReason[] = [
   "Too far",
   "Overpriced",
 ];
+
+function getCoordinateBlockReason(lat: number | null | undefined, lng: number | null | undefined): string | null {
+  if (lat == null || lng == null) return "missing_coordinates";
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return "non_finite_coordinates";
+  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return "coordinates_out_of_range";
+  if (lat === 0 && lng === 0) return "zero_zero_coordinates";
+  return null;
+}
+
+function getPlatformLabel(): string {
+  if (typeof navigator === "undefined") return "server";
+  const ua = navigator.userAgent;
+  if (/iPad|iPhone|iPod/i.test(ua)) return "ios";
+  if (/Android/i.test(ua)) return "android";
+  return "desktop";
+}
 
 type LensId = "food" | "retail" | "mobility" | "entertainment" | "social" | "wellness";
 
@@ -472,6 +490,36 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
       clearTimeout(visitRef.current.timerId);
     }
 
+    const lat = target.object.location?.lat;
+    const lng = target.object.location?.lng;
+    const blockReason = getCoordinateBlockReason(lat, lng);
+    const platform = getPlatformLabel();
+
+    if (blockReason) {
+      console.warn("[HADE NAV HANDOFF]", {
+        status: "blocked",
+        reason: blockReason,
+        platform,
+        venueId: target.id,
+        title: target.title,
+        lat,
+        lng,
+      });
+      return;
+    }
+
+    const navLat = lat as number;
+    const navLng = lng as number;
+    const url = getNavigationUrl(navLat, navLng, target.title);
+    console.log("[HADE NAV URL]", {
+      platform,
+      venueId: target.id,
+      title: target.title,
+      lat: navLat,
+      lng: navLng,
+      url,
+    });
+
     const isUGC = target.is_ugc;
     visitRef.current = {
       venueId:   target.id,
@@ -480,9 +528,24 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
       isUGC,
     };
 
-    visitRef.current.timerId = setTimeout(() => {
-      setShowVerificationSheet(true);
-    }, 15 * 60 * 1000);
+    recordNavigationTelemetry({
+      objectId: target.id,
+      title: target.title,
+      lat: navLat,
+      lng: navLng,
+      url,
+      platform,
+      coordinatesValid: true,
+    });
+
+    console.log("[HADE NAV HANDOFF]", {
+      status: "opening",
+      method: "window.open(_self)",
+      platform,
+      venueId: target.id,
+      url,
+    });
+    window.open(url, "_self");
   }, [decision, previousOverride]);
 
   const handleRefineConfirm = useCallback(
@@ -756,14 +819,14 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
             </div>
           )}
 
-          {/* PRIMARY — Go Now */}
+          {/* PRIMARY — navigation handoff */}
           <button
             type="button"
             onClick={handleGo}
             disabled={!displayDecision}
             className="h-12 w-full rounded-2xl bg-blue-600 text-[15px] font-bold text-white transition-colors hover:bg-blue-700 active:bg-blue-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 disabled:opacity-40"
           >
-            Go Now
+            Navigate
           </button>
 
           {/* SECONDARY + TERTIARY */}
