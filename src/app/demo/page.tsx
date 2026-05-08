@@ -19,8 +19,8 @@ import { Layout } from "@/components/layout";
 import { LocationHUD } from "@/components/hade/LocationHUD";
 import { CommunitySignalToggle } from "@/components/hade/community/CommunitySignalToggle";
 import { DecisionScreen } from "@/components/hade/mobile/DecisionScreen";
-import { GuidedDemoEntry } from "@/components/hade/mobile/GuidedDemoEntry";
 import { LoadingState } from "@/components/hade/mobile/LoadingState";
+import type { DomainMode } from "@/lib/hade/useHade";
 
 // Protocol Imports - Hardened Data from Notion Sync
 import agentData from "@/config/agent_definitions.json";
@@ -564,20 +564,12 @@ function DemoRouter() {
   const params = useSearchParams();
   const debug = params.get("debug") === "1";
   const scenarioId = params.get("scenario");
-  const [selectedMode, setSelectedMode] = useState<import("@/lib/hade/useHade").DomainMode | null>(null);
+  const selectedMode: DomainMode = "travel";
 
   if (debug) {
     return (
       <Layout>
         <DesktopDebugDemo />
-      </Layout>
-    );
-  }
-
-  if (!selectedMode) {
-    return (
-      <Layout>
-        <GuidedDemoEntry onSelect={setSelectedMode} />
       </Layout>
     );
   }

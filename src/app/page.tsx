@@ -83,7 +83,7 @@ export default function HomePage() {
     }}
     className="mt-10 mx-auto max-w-2xl text-lg md:text-xl font-light leading-relaxed text-slate-600 text-balance"
   >
-    {"HADE listens to the world around you—turning a thousand invisible signals into the ".split("").map((char, i) => (
+    {"HADE is an AI-powered spontaneity engine for real-world exploration, ".split("").map((char, i) => (
       <motion.span key={i} variants={{ hidden: { opacity: 0 }, visible: { opacity: 1 } }}>
         {char}
       </motion.span>

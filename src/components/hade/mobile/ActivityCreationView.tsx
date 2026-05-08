@@ -55,6 +55,15 @@ interface ActivityCreationViewProps {
   onCreate?: (object: SpontaneousObject) => void;
 }
 
+function getDefaultActivityTime() {
+  const next = new Date();
+  const minutes = next.getMinutes();
+  const roundedMinutes = minutes === 0 ? 0 : minutes <= 30 ? 30 : 60;
+  next.setMinutes(roundedMinutes, 0, 0);
+
+  return `${String(next.getHours()).padStart(2, "0")}:${String(next.getMinutes()).padStart(2, "0")}`;
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
@@ -64,7 +73,7 @@ export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
   const [title,     setTitle]     = useState("");
   const [vibeId,    setVibeId]    = useState<VibeId | null>(null);
   const [notes,     setNotes]     = useState("");
-  const [timeText,  setTimeText]  = useState("");
+  const [timeText,  setTimeText]  = useState(getDefaultActivityTime);
   const [listening, setListening] = useState(false);
   const [location,  setLocation]  = useState<{ lat: number; lng: number } | null>(null);
   const [status,    setStatus]    = useState<Status>("idle");
@@ -213,7 +222,7 @@ export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
       setTitle("");
       setVibeId(null);
       setNotes("");
-      setTimeText("");
+      setTimeText(getDefaultActivityTime());
       setParticles([]);
     }, 2200);
   }
@@ -246,7 +255,7 @@ export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
 
       {/* ── Header ──────────────────────────────────────────────────────────── */}
       <div className="mb-4 pr-14">
-        <p className="font-mono text-[10px] uppercase tracking-widest text-accent">New Meetup</p>
+        <p className="font-mono text-[10px] uppercase tracking-widest text-accent">ADD SOMETHING</p>
         <h2 className="mt-0.5 text-lg font-semibold leading-tight text-ink">
           {step === "what"    ? "What's happening?" :
            step === "vibe"    ? "What's the vibe?"  : "Any details?"}
@@ -272,7 +281,7 @@ export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
                 type="text"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                placeholder="What's happening?"
+                placeholder="What do you want to add?"
                 autoFocus
                 className="w-full rounded-xl border border-line bg-white/70 px-3.5 py-3 pr-11 text-sm text-ink placeholder:text-ink/30 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
               />
@@ -369,13 +378,26 @@ export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
               )}
             </div>
 
-            <input
-              type="text"
-              value={timeText}
-              onChange={(e) => setTimeText(e.target.value)}
-              placeholder="Time (optional) — e.g. 3pm"
-              className="mb-2.5 w-full rounded-xl border border-line bg-white/70 px-3.5 py-2.5 text-sm text-ink placeholder:text-ink/30 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
-            />
+            <label className="mb-2.5 block">
+              <span className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.16em] text-ink/38">
+                Starts around
+              </span>
+              <span className="flex min-h-12 items-center gap-3 rounded-xl border border-line bg-white/75 px-3.5 transition-colors focus-within:border-accent focus-within:ring-2 focus-within:ring-accent/20">
+                <span
+                  aria-hidden="true"
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-ink/[0.055] text-[15px]"
+                >
+                  ◷
+                </span>
+                <input
+                  type="time"
+                  value={timeText}
+                  onChange={(e) => setTimeText(e.target.value)}
+                  aria-label="Event start time"
+                  className="h-11 min-w-0 flex-1 bg-transparent text-[16px] font-semibold text-ink accent-accent outline-none [color-scheme:light]"
+                />
+              </span>
+            </label>
 
             <textarea
               value={notes}

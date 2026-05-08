@@ -93,6 +93,111 @@ const DEFAULT_LENS_BY_MODE: Record<DomainMode, LensId> = {
   travel: "mobility",
 };
 
+type LensOption = (typeof LENS_OPTIONS)[number];
+
+function IndustryLensSheet({
+  open,
+  activeLensId,
+  onClose,
+  onSelect,
+}: {
+  open: boolean;
+  activeLensId: LensId;
+  onClose: () => void;
+  onSelect: (lens: LensOption) => void;
+}) {
+  return (
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          className="fixed inset-0 z-40 flex items-end justify-center bg-ink/24 px-3 backdrop-blur-[1px]"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.18 }}
+          onClick={onClose}
+        >
+          <motion.div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Choose industry direction"
+            className="mb-[max(8px,env(safe-area-inset-bottom,8px))] w-full max-w-[430px] rounded-[22px] border border-line/70 bg-surface px-3 pb-3 pt-2.5 shadow-panel"
+            initial={{ y: 36, opacity: 0.96 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 36, opacity: 0 }}
+            transition={{ type: "spring", damping: 34, stiffness: 360 }}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex justify-center pb-2">
+              <span className="h-1 w-8 rounded-full bg-ink/14" aria-hidden="true" />
+            </div>
+
+            <div className="mb-2.5 flex items-center justify-between px-1">
+              <div>
+                <h2 className="text-[13px] font-semibold leading-tight text-ink">
+                  Other directions
+                </h2>
+                <p className="mt-0.5 text-[10px] leading-tight text-ink/38">
+                  Choose the lens HADE should read from.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={onClose}
+                className="h-7 rounded-full px-2.5 text-[11px] font-medium text-ink/42 transition-colors active:text-ink/70 focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="grid gap-1.5">
+              {LENS_OPTIONS.map((lens) => {
+                const isActive = activeLensId === lens.id;
+
+                return (
+                  <button
+                    key={lens.id}
+                    type="button"
+                    onClick={() => onSelect(lens)}
+                    aria-pressed={isActive}
+                    className={`flex min-h-[54px] items-center gap-2.5 rounded-xl border px-3 py-2 text-left transition-all active:scale-[0.985] focus:outline-none focus-visible:ring-2 focus-visible:ring-line ${
+                      isActive
+                        ? "border-ink/15 bg-white text-ink shadow-soft"
+                        : "border-line/50 bg-white/45 text-ink/64"
+                    }`}
+                  >
+                    <span
+                      className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[15px] transition-colors ${
+                        isActive ? "bg-ink text-white" : "bg-ink/[0.045]"
+                      }`}
+                      aria-hidden="true"
+                    >
+                      {lens.icon}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-[12px] font-semibold leading-tight">
+                        {lens.label}
+                      </span>
+                      <span className="mt-0.5 block text-[10.5px] leading-snug text-ink/42">
+                        {lens.context}
+                      </span>
+                    </span>
+                    {isActive && (
+                     <span className="rounded-full bg-green-500/10 px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.12em] text-green-600">
+                     Active
+                   </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
+
 function mapReasonToTags(reason: string): string[] {
   switch (reason) {
     case "Too crowded":
@@ -208,6 +313,7 @@ interface DecisionScreenProps {
 }
 
 export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps) {
+  const defaultMode: DomainMode = initialMode ?? "travel";
   const { emitVibeSignal, pivot, context: adaptiveContext } = useHadeAdaptiveContext();
   const {
     decision,
@@ -217,18 +323,19 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
     setMode,
     regenerate,
     refine,
-  } = useHade({ scenarioId, initialMode });
+  } = useHade({ scenarioId, initialMode: defaultMode });
 
   const [refineOpen, setRefineOpen] = useState(false);
   const [showPivotReasons, setShowPivotReasons] = useState(false);
   const [showVibeSheet, setShowVibeSheet] = useState(false);
+  const [showLensSheet, setShowLensSheet] = useState(false);
   const [toastTag, setToastTag] = useState<string | null>(null);
   const [showVerificationSheet, setShowVerificationSheet] = useState(false);
   const [showCreationFlow, setShowCreationFlow] = useState(false);
   const [liveToast, setLiveToast] = useState(false);
   const [showCompareModes, setShowCompareModes] = useState(false);
   const [activeLensId, setActiveLensId] = useState<LensId>(
-    DEFAULT_LENS_BY_MODE[initialMode ?? "dining"],
+    DEFAULT_LENS_BY_MODE[defaultMode],
   );
   const [lensTransitioning, setLensTransitioning] = useState(false);
   const lensTransitionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -305,7 +412,9 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
   }, []);
 
   const handleLensSelect = useCallback(
-    (lens: (typeof LENS_OPTIONS)[number]) => {
+    (lens: LensOption) => {
+      setShowLensSheet(false);
+      if (lens.id === activeLensId) return;
       if (lensTransitionTimerRef.current) clearTimeout(lensTransitionTimerRef.current);
       setActiveLensId(lens.id);
       setLensTransitioning(true);
@@ -318,7 +427,7 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
         lensTransitionTimerRef.current = null;
       }, 1400);
     },
-    [setMode],
+    [activeLensId, setMode],
   );
 
   const visitRef = useRef<{
@@ -550,34 +659,23 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
             </AnimatePresence>
           </div>
 
-          <div className="mt-2.5 -mx-4 overflow-x-auto px-4 pb-1 [scrollbar-width:none] min-[390px]:-mx-5 min-[390px]:px-5 [&::-webkit-scrollbar]:hidden">
-            <div className="flex w-max gap-1.5">
-              {LENS_OPTIONS.map((lens) => {
-                const isActive = activeLensId === lens.id;
-
-                return (
-                  <button
-                    key={lens.id}
-                    type="button"
-                    onClick={() => handleLensSelect(lens)}
-                    disabled={lensTransitioning && isActive}
-                    className={`w-[146px] shrink-0 rounded-xl border px-2.5 py-2 text-left transition-all active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-line min-[390px]:w-[164px] ${
-                      isActive
-                        ? "border-ink/15 bg-white text-ink shadow-soft"
-                        : "border-line/50 bg-white/45 text-ink/55"
-                    }`}
-                  >
-                    <span className="flex items-center gap-1.5 text-[11px] font-semibold leading-none">
-                      <span aria-hidden="true">{lens.icon}</span>
-                      {lens.label}
-                    </span>
-                    <span className="mt-1 block line-clamp-2 text-[10px] leading-snug text-ink/42">
-                      {lens.context}
-                    </span>
-                  </button>
-                );
-              })}
+          <div className="mt-2.5 flex items-center justify-between gap-2 rounded-xl border border-line/45 bg-white/38 px-3 py-2">
+            <div className="min-w-0">
+              <p className="flex items-center gap-1.5 text-[11px] font-semibold leading-tight text-ink/68">
+                <span aria-hidden="true">{activeLens.icon}</span>
+                <span className="truncate">{activeLens.label}</span>
+              </p>
+              <p className="mt-0.5 truncate text-[10px] leading-tight text-ink/38">
+                {activeLens.context}
+              </p>
             </div>
+            <button
+              type="button"
+              onClick={() => setShowLensSheet(true)}
+              className="shrink-0 rounded-full border border-line/55 bg-surface/70 px-3 py-1.5 text-[11px] font-semibold text-ink/52 transition-all active:scale-[0.97] active:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
+            >
+              View Other directions
+            </button>
           </div>
 
           {/* ── Start something ──────────────────────────────────────────── */}
@@ -587,7 +685,7 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
             className="mt-3 flex w-full flex-col items-center gap-0.5 rounded-xl bg-white py-2.5 transition-opacity active:opacity-80 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
           >
             <span className="text-[13px] font-bold text-blue">
-              + Start something
+              + Add something
             </span>
             <span className="text-[10px] text-black/55">Create a hangout nearby</span>
           </button>
@@ -700,6 +798,13 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
 
         </div>
       </div>
+
+      <IndustryLensSheet
+        open={showLensSheet}
+        activeLensId={activeLensId}
+        onClose={() => setShowLensSheet(false)}
+        onSelect={handleLensSelect}
+      />
 
       <ErrorBoundary name="CompareModesSheet" onReset={() => setShowCompareModes(false)}>
         <CompareModesSheet
