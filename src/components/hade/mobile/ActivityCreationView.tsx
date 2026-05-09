@@ -49,8 +49,44 @@ function makeParticles(count = 18): Particle[] {
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type Step   = "what" | "vibe" | "details";
-type Status = "idle" | "submitting" | "success" | "error";
+type Status = "idle" | "submitting" | "success" | "local" | "error";
 type FocusableSheetField = HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
+type TimePeriod = "AM" | "PM";
+type TimeParts = {
+  hour12: string;
+  minute: string;
+  period: TimePeriod;
+};
+type SheetKeyboardEnvironment = {
+  isIOS: boolean;
+  isStandalonePWA: boolean;
+};
+type UgcPersistResponse = {
+  ok: boolean;
+  durable?: boolean;
+  id?: string;
+  error?: string;
+};
+type UgcPersistResult =
+  | { status: "durable"; response: UgcPersistResponse }
+  | { status: "degraded"; response: UgcPersistResponse; reason: string }
+  | { status: "failed"; reason: string };
+type SignalPayload = {
+  signals: Array<Record<string, unknown>>;
+};
+type LocalUgcDraft = {
+  saved_at: string;
+  reason: string;
+  ugc: Record<string, unknown>;
+  spontaneous: SpontaneousObject;
+  signal: SignalPayload;
+};
+
+const HOUR_OPTIONS = Array.from({ length: 12 }, (_, index) => String(index + 1));
+const MINUTE_OPTIONS = Array.from({ length: 60 }, (_, index) => String(index).padStart(2, "0"));
+const UGC_STORAGE_TIMEOUT_MS = 4_000;
+const LOCAL_UGC_DRAFTS_KEY = "hade.demo.localUgcDrafts";
+const LOCAL_SAVE_MESSAGE = "Saved locally for now. We'll sync when HADE reconnects.";
 
 interface ActivityCreationViewProps {
   onCreate?: (object: SpontaneousObject) => void;
@@ -65,6 +101,43 @@ function getDefaultActivityTime() {
   return `${String(next.getHours()).padStart(2, "0")}:${String(next.getMinutes()).padStart(2, "0")}`;
 }
 
+function isValidTimeValue(value: string) {
+  return /^([01]\d|2[0-3]):([0-5]\d)$/.test(value);
+}
+
+function parseTimeParts(value: string): TimeParts | null {
+  if (!isValidTimeValue(value)) return null;
+
+  const [hourText, minute] = value.split(":");
+  const hour24 = Number(hourText);
+  const period: TimePeriod = hour24 >= 12 ? "PM" : "AM";
+  const hour12 = hour24 % 12 === 0 ? 12 : hour24 % 12;
+
+  return {
+    hour12: String(hour12),
+    minute,
+    period,
+  };
+}
+
+function toTimeValue(hour12Value: string, minute: string, period: TimePeriod) {
+  const hour12 = Number(hour12Value);
+  if (!Number.isInteger(hour12) || hour12 < 1 || hour12 > 12) return null;
+  if (!/^[0-5]\d$/.test(minute)) return null;
+
+  let hour24 = hour12 % 12;
+  if (period === "PM") hour24 += 12;
+
+  return `${String(hour24).padStart(2, "0")}:${minute}`;
+}
+
+function formatTimeLabel(value: string) {
+  const parts = parseTimeParts(value);
+  if (!parts) return "Select a time";
+
+  return `${parts.hour12}:${parts.minute} ${parts.period}`;
+}
+
 function isFocusableSheetField(element: Element | null): element is FocusableSheetField {
   return element instanceof HTMLInputElement ||
     element instanceof HTMLTextAreaElement ||
@@ -75,6 +148,177 @@ function isInteractiveSheetTarget(element: Element | null) {
   return Boolean(element?.closest(
     "input, textarea, select, button, a, label, [role='button'], [role='switch'], [contenteditable='true']",
   ));
+}
+
+function getSheetKeyboardEnvironment(): SheetKeyboardEnvironment {
+  if (typeof window === "undefined") {
+    return { isIOS: false, isStandalonePWA: false };
+  }
+
+  const userAgent = navigator.userAgent;
+  const platform = navigator.platform;
+  const isTouchMac = platform === "MacIntel" && navigator.maxTouchPoints > 1;
+  const isIOS = /iPad|iPhone|iPod/.test(userAgent) || isTouchMac;
+  const standaloneNavigator = navigator as Navigator & { standalone?: boolean };
+  const isStandalonePWA = window.matchMedia?.("(display-mode: standalone)").matches ||
+    standaloneNavigator.standalone === true;
+
+  return { isIOS, isStandalonePWA };
+}
+
+function debugSheetKeyboard(message: string, details: Record<string, unknown>) {
+  if (process.env.NODE_ENV === "production") return;
+  console.debug("[HADE SHEET KEYBOARD]", message, details);
+}
+
+function debugUgcStorage(message: string, details: Record<string, unknown>) {
+  if (process.env.NODE_ENV === "production") return;
+  console.debug("[HADE UGC STORAGE]", message, details);
+}
+
+function getStorageErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
+}
+
+async function fetchJsonWithTimeout(
+  url: string,
+  init: RequestInit,
+  timeoutMs = UGC_STORAGE_TIMEOUT_MS,
+) {
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(url, {
+      ...init,
+      signal: controller.signal,
+    });
+
+    let data: unknown;
+    try {
+      data = await response.json();
+    } catch {
+      throw new Error("malformed_response");
+    }
+
+    return { response, data };
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new Error("request_timeout");
+    }
+    throw error;
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
+}
+
+function readLocalUgcDrafts(storage: Storage): LocalUgcDraft[] {
+  const raw = storage.getItem(LOCAL_UGC_DRAFTS_KEY);
+  if (!raw) return [];
+
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed as LocalUgcDraft[] : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeLocalUgcDraft(storage: Storage, draft: LocalUgcDraft) {
+  const existing = readLocalUgcDrafts(storage).filter((item) => item.spontaneous.id !== draft.spontaneous.id);
+  storage.setItem(LOCAL_UGC_DRAFTS_KEY, JSON.stringify([...existing, draft]));
+}
+
+function replaceLocalUgcDrafts(storage: Storage, drafts: LocalUgcDraft[]) {
+  if (drafts.length === 0) {
+    storage.removeItem(LOCAL_UGC_DRAFTS_KEY);
+    return;
+  }
+  storage.setItem(LOCAL_UGC_DRAFTS_KEY, JSON.stringify(drafts));
+}
+
+function saveLocalUgcDraft(draft: LocalUgcDraft) {
+  try {
+    writeLocalUgcDraft(window.localStorage, draft);
+    return { ok: true, storage: "localStorage" };
+  } catch (localError) {
+    debugUgcStorage("localStorage_failed", { error: getStorageErrorMessage(localError) });
+  }
+
+  try {
+    writeLocalUgcDraft(window.sessionStorage, draft);
+    return { ok: true, storage: "sessionStorage" };
+  } catch (sessionError) {
+    debugUgcStorage("sessionStorage_failed", { error: getStorageErrorMessage(sessionError) });
+    return { ok: false, storage: null };
+  }
+}
+
+async function syncLocalUgcDraftsFromStorage(storage: Storage, storageName: string) {
+  const drafts = readLocalUgcDrafts(storage);
+  if (drafts.length === 0 || !navigator.onLine) return;
+
+  const remaining: LocalUgcDraft[] = [];
+  for (const draft of drafts) {
+    try {
+      const { response, data } = await fetchJsonWithTimeout("/api/hade/ugc", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify(draft.ugc),
+      });
+
+      if (!data || typeof data !== "object" || typeof (data as UgcPersistResponse).ok !== "boolean") {
+        remaining.push(draft);
+        continue;
+      }
+
+      const parsed = data as UgcPersistResponse;
+      const stillDegraded = response.headers.get("x-hade-degraded") === "1" || parsed.durable === false;
+      if (!response.ok || !parsed.ok || stillDegraded) {
+        remaining.push(draft);
+        continue;
+      }
+
+      const deviceId = typeof draft.ugc.created_by === "string" ? draft.ugc.created_by : getDeviceId();
+      void fetchJsonWithTimeout("/api/hade/signal", {
+        method:  "POST",
+        headers: {
+          "Content-Type":     "application/json",
+          "x-hade-device-id": deviceId,
+        },
+        body: JSON.stringify(draft.signal),
+      }).catch((error) => {
+        debugUgcStorage("queued_signal_sync_failed_non_blocking", { error: getStorageErrorMessage(error) });
+      });
+    } catch (error) {
+      remaining.push(draft);
+      debugUgcStorage("queued_ugc_sync_failed", {
+        storage: storageName,
+        error: getStorageErrorMessage(error),
+      });
+    }
+  }
+
+  replaceLocalUgcDrafts(storage, remaining);
+  debugUgcStorage("queued_ugc_sync_complete", {
+    storage: storageName,
+    attempted: drafts.length,
+    remaining: remaining.length,
+  });
+}
+
+async function syncLocalUgcDrafts() {
+  try {
+    await syncLocalUgcDraftsFromStorage(window.localStorage, "localStorage");
+  } catch (error) {
+    debugUgcStorage("localStorage_sync_unavailable", { error: getStorageErrorMessage(error) });
+  }
+
+  try {
+    await syncLocalUgcDraftsFromStorage(window.sessionStorage, "sessionStorage");
+  } catch (error) {
+    debugUgcStorage("sessionStorage_sync_unavailable", { error: getStorageErrorMessage(error) });
+  }
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -93,6 +337,7 @@ export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
   const [errorMsg,  setErrorMsg]  = useState<string | null>(null);
   const [particles, setParticles] = useState<Particle[]>([]);
   const sheetRef = useRef<HTMLElement | null>(null);
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const suppressFooterClickRef = useRef(false);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recogRef = useRef<any>(null);
@@ -107,6 +352,19 @@ export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
   }, []);
 
   useEffect(() => () => { recogRef.current?.abort(); }, []);
+
+  useEffect(() => {
+    const handleOnline = () => {
+      void syncLocalUgcDrafts();
+    };
+
+    window.addEventListener("online", handleOnline);
+    if (navigator.onLine) void syncLocalUgcDrafts();
+
+    return () => {
+      window.removeEventListener("online", handleOnline);
+    };
+  }, []);
 
   function startListening() {
     if (recogRef.current) {
@@ -139,16 +397,67 @@ export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
 
   const stepNumber = step === "what" ? 1 : step === "vibe" ? 2 : 3;
   const selectedVibe = VIBES.find((v) => v.id === vibeId) ?? null;
+  const selectedTimeParts = parseTimeParts(timeText) ?? parseTimeParts(getDefaultActivityTime());
+  const timeValidationMessage = isValidTimeValue(timeText) ? null : "Choose a valid start time.";
+  const submitDisabled = status === "submitting" ||
+    status === "success" ||
+    status === "local" ||
+    Boolean(timeValidationMessage);
+  const submitLabel =
+    status === "submitting" ? "Saving..." :
+    status === "success"    ? "Saved" :
+    status === "local"      ? "Saved locally" :
+    status === "error"      ? "Try Again" :
+    "Start Something";
 
   function handleFieldFocus(event: FocusEvent<FocusableSheetField>) {
     const element = event.currentTarget;
-    const scrollFocusedFieldIntoView = () => {
+    const environment = getSheetKeyboardEnvironment();
+    const shouldRunSafetyPass = environment.isIOS || environment.isStandalonePWA;
+
+    const scrollFocusedFieldIntoView = (phase: "immediate" | "settled" | "safety") => {
       if (document.activeElement !== element) return;
+      if (!sheetRef.current?.contains(element)) return;
+
+      const scrollContainer = scrollContainerRef.current;
+      if (scrollContainer?.contains(element)) {
+        const containerRect = scrollContainer.getBoundingClientRect();
+        const elementRect = element.getBoundingClientRect();
+        const centeredOffset =
+          elementRect.top - containerRect.top -
+          (containerRect.height / 2) +
+          (elementRect.height / 2);
+        const nextScrollTop = scrollContainer.scrollTop + centeredOffset;
+
+        scrollContainer.scrollTo({
+          top: Math.max(0, nextScrollTop),
+          behavior: "smooth",
+        });
+
+        debugSheetKeyboard("scoped_scroll", {
+          phase,
+          field: element.tagName.toLowerCase(),
+          inputType: element instanceof HTMLInputElement ? element.type : undefined,
+          isIOS: environment.isIOS,
+          isStandalonePWA: environment.isStandalonePWA,
+        });
+        return;
+      }
+
       element.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
+      debugSheetKeyboard("fallback_scroll_into_view", {
+        phase,
+        field: element.tagName.toLowerCase(),
+        isIOS: environment.isIOS,
+        isStandalonePWA: environment.isStandalonePWA,
+      });
     };
 
-    requestAnimationFrame(scrollFocusedFieldIntoView);
-    window.setTimeout(scrollFocusedFieldIntoView, 90);
+    requestAnimationFrame(() => scrollFocusedFieldIntoView("immediate"));
+    window.setTimeout(() => scrollFocusedFieldIntoView("settled"), 90);
+    if (shouldRunSafetyPass) {
+      window.setTimeout(() => scrollFocusedFieldIntoView("safety"), 220);
+    }
   }
 
   function getFocusedSheetField() {
@@ -187,8 +496,103 @@ export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
     event.stopPropagation();
   }
 
+  function handleTimePartChange(nextParts: Partial<TimeParts>) {
+    if (!selectedTimeParts) {
+      setErrorMsg("Choose a valid start time.");
+      return;
+    }
+
+    const nextTime = toTimeValue(
+      nextParts.hour12 ?? selectedTimeParts.hour12,
+      nextParts.minute ?? selectedTimeParts.minute,
+      nextParts.period ?? selectedTimeParts.period,
+    );
+
+    if (!nextTime) {
+      setErrorMsg("Choose a valid start time.");
+      return;
+    }
+
+    setErrorMsg(null);
+    setTimeText(nextTime);
+  }
+
+  async function persistUgc(ugcPayload: Record<string, unknown>): Promise<UgcPersistResult> {
+    if (!navigator.onLine) {
+      debugUgcStorage("offline", { endpoint: "/api/hade/ugc" });
+      return { status: "failed", reason: "offline" };
+    }
+
+    try {
+      const { response, data } = await fetchJsonWithTimeout("/api/hade/ugc", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify(ugcPayload),
+      });
+
+      if (!data || typeof data !== "object" || typeof (data as UgcPersistResponse).ok !== "boolean") {
+        return { status: "failed", reason: "malformed_response" };
+      }
+
+      const parsed = data as UgcPersistResponse;
+      const degraded = response.headers.get("x-hade-degraded") === "1";
+      if (!response.ok || !parsed.ok) {
+        return {
+          status: "failed",
+          reason: parsed.error ?? `http_${response.status}`,
+        };
+      }
+
+      if (degraded || parsed.durable === false) {
+        return {
+          status: "degraded",
+          response: parsed,
+          reason: degraded ? "server_degraded" : "non_durable_persistence",
+        };
+      }
+
+      return { status: "durable", response: parsed };
+    } catch (error) {
+      return {
+        status: "failed",
+        reason: getStorageErrorMessage(error),
+      };
+    }
+  }
+
+  async function emitStorageSignal(signalPayload: SignalPayload, deviceId: string) {
+    if (!navigator.onLine) {
+      debugUgcStorage("signal_skipped_offline", {});
+      return;
+    }
+
+    try {
+      const { response, data } = await fetchJsonWithTimeout("/api/hade/signal", {
+        method:  "POST",
+        headers: {
+          "Content-Type":     "application/json",
+          "x-hade-device-id": deviceId,
+        },
+        body: JSON.stringify(signalPayload),
+      });
+
+      debugUgcStorage("signal_result", {
+        ok: response.ok,
+        status: response.status,
+        malformed: !data || typeof data !== "object",
+      });
+    } catch (error) {
+      debugUgcStorage("signal_failed_non_blocking", { error: getStorageErrorMessage(error) });
+    }
+  }
+
   async function handleCreate() {
-    if (!title.trim() || status !== "idle") return;
+    if (!title.trim() || status === "submitting" || status === "success" || status === "local") return;
+    if (!isValidTimeValue(timeText)) {
+      setErrorMsg("Choose a valid start time.");
+      return;
+    }
+
     setStatus("submitting");
     setErrorMsg(null);
 
@@ -201,6 +605,32 @@ export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
     const resolvedTitle = title.trim();
     const category = selectedVibe?.vibe_tag ?? "social";
     const signalTag = selectedVibe?.signal ?? "good_energy";
+    const ugcPayload = {
+      id:         entityId,
+      venue_name: resolvedTitle,
+      category,
+      geo,
+      created_at: new Date(now).toISOString(),
+      expires_at: expiresAt,
+      created_by: deviceId,
+    };
+    const signalPayload: SignalPayload = {
+      signals: [{
+        id:               `vsig_${entityId}`,
+        location_node_id: entityId,
+        venue_id:         entityId,
+        vibe_tags:        [signalTag],
+        strength:         0.9,
+        sentiment:        "positive",
+        emitted_at:       new Date(now).toISOString(),
+        expires_at:       expiresAt,
+        geo,
+        source_user_id:   deviceId,
+        type:             "ugc_event",
+        vibe_tag:         category,
+        metadata:         { expires_at: expiresAt, is_meetup: true, notes, timeText },
+      }],
+    };
 
     const spontaneous: SpontaneousObject = {
       id:          entityId,
@@ -221,57 +651,42 @@ export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
 
     console.log("[HADE UGC CREATED]", spontaneous);
 
-    try {
-      const res  = await fetch("/api/hade/ugc", {
-        method:  "POST",
-        headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({
-          id:         entityId,
-          venue_name: resolvedTitle,
-          category,
-          geo,
-          created_at: new Date(now).toISOString(),
-          expires_at: expiresAt,
-          created_by: deviceId,
-        }),
+    const persistResult = await persistUgc(ugcPayload);
+    debugUgcStorage("persist_result", {
+      status: persistResult.status,
+      reason: "reason" in persistResult ? persistResult.reason : undefined,
+      id: entityId,
+    });
+
+    if (persistResult.status !== "durable") {
+      const localResult = saveLocalUgcDraft({
+        saved_at: new Date().toISOString(),
+        reason: persistResult.reason,
+        ugc: ugcPayload,
+        spontaneous,
+        signal: signalPayload,
       });
-      const data = await res.json() as { ok: boolean; error?: string };
-      if (!data.ok) throw new Error(data.error ?? "persist_failed");
-    } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : "Failed to create");
-      setStatus("error");
+
+      debugUgcStorage("local_fallback_result", {
+        ok: localResult.ok,
+        storage: localResult.storage,
+        id: entityId,
+      });
+
+      if (!localResult.ok) {
+        setErrorMsg("Couldn't save yet. Your entry is still here - try again when connection returns.");
+        setStatus("error");
+        return;
+      }
+
+      emitVibeSignal(entityId, [signalTag], "positive", 0.9);
+      void emitStorageSignal(signalPayload, deviceId);
+      setErrorMsg(LOCAL_SAVE_MESSAGE);
+      setStatus("local");
       return;
     }
 
-    try {
-      await fetch("/api/hade/signal", {
-        method:  "POST",
-        headers: {
-          "Content-Type":     "application/json",
-          "x-hade-device-id": deviceId,
-        },
-        body: JSON.stringify({
-          signals: [{
-            id:               `vsig_${entityId}`,
-            location_node_id: entityId,
-            venue_id:         entityId,
-            vibe_tags:        [signalTag],
-            strength:         0.9,
-            sentiment:        "positive",
-            emitted_at:       new Date(now).toISOString(),
-            expires_at:       expiresAt,
-            geo,
-            source_user_id:   deviceId,
-            type:             "ugc_event",
-            vibe_tag:         category,
-            metadata:         { expires_at: expiresAt, is_meetup: true, notes, timeText },
-          }],
-        }),
-      });
-    } catch {
-      // Non-blocking
-    }
-
+    void emitStorageSignal(signalPayload, deviceId);
     emitVibeSignal(entityId, [signalTag], "positive", 0.9);
 
     setParticles(makeParticles());
@@ -331,7 +746,10 @@ export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
         </p>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-4 pt-1">
+      <div
+        ref={scrollContainerRef}
+        className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-4 pt-1"
+      >
         <AnimatePresence mode="wait" initial={false}>
 
           {/* ── Step 1: Title input + mic ───────────────────────────────────── */}
@@ -421,27 +839,68 @@ export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
                 )}
               </div>
 
-              <label className="mb-2.5 block">
-                <span className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.16em] text-ink/38">
+              <fieldset className="mb-2.5">
+                <legend className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.16em] text-ink/38">
                   Starts around
-                </span>
-                <span className="flex min-h-12 items-center gap-3 rounded-xl border border-line bg-white/75 px-3.5 transition-colors focus-within:border-accent focus-within:ring-2 focus-within:ring-accent/20">
-                  <span
-                    aria-hidden="true"
-                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-ink/[0.055] text-[15px]"
-                  >
-                    ◷
-                  </span>
-                  <input
-                    type="time"
-                    value={timeText}
-                    onChange={(e) => setTimeText(e.target.value)}
-                    onFocus={handleFieldFocus}
-                    aria-label="Event start time"
-                    className="h-11 min-w-0 flex-1 bg-transparent text-[16px] font-semibold text-ink accent-accent outline-none [color-scheme:light]"
-                  />
-                </span>
-              </label>
+                </legend>
+                <div className="rounded-xl border border-line bg-white/75 px-3 py-2.5 transition-colors focus-within:border-accent focus-within:ring-2 focus-within:ring-accent/20">
+                  <div className="flex min-h-10 items-center gap-2">
+                    <span
+                      aria-hidden="true"
+                      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-ink/[0.055] text-[15px]"
+                    >
+                      ◷
+                    </span>
+                    <label className="min-w-0 flex-1">
+                      <span className="sr-only">Start hour</span>
+                      <select
+                        value={selectedTimeParts?.hour12 ?? ""}
+                        onChange={(e) => handleTimePartChange({ hour12: e.target.value })}
+                        onFocus={handleFieldFocus}
+                        aria-label="Start hour"
+                        aria-invalid={Boolean(timeValidationMessage)}
+                        className="h-10 w-full rounded-lg border border-line/70 bg-white px-2 text-[15px] font-semibold text-ink outline-none focus:border-accent"
+                      >
+                        {HOUR_OPTIONS.map((hour) => (
+                          <option key={hour} value={hour}>{hour}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="min-w-0 flex-1">
+                      <span className="sr-only">Start minute</span>
+                      <select
+                        value={selectedTimeParts?.minute ?? ""}
+                        onChange={(e) => handleTimePartChange({ minute: e.target.value })}
+                        onFocus={handleFieldFocus}
+                        aria-label="Start minute"
+                        aria-invalid={Boolean(timeValidationMessage)}
+                        className="h-10 w-full rounded-lg border border-line/70 bg-white px-2 text-[15px] font-semibold text-ink outline-none focus:border-accent"
+                      >
+                        {MINUTE_OPTIONS.map((minute) => (
+                          <option key={minute} value={minute}>{minute}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="w-[72px] shrink-0">
+                      <span className="sr-only">Start time period</span>
+                      <select
+                        value={selectedTimeParts?.period ?? "AM"}
+                        onChange={(e) => handleTimePartChange({ period: e.target.value as TimePeriod })}
+                        onFocus={handleFieldFocus}
+                        aria-label="Start time period"
+                        aria-invalid={Boolean(timeValidationMessage)}
+                        className="h-10 w-full rounded-lg border border-line/70 bg-white px-2 text-[15px] font-semibold text-ink outline-none focus:border-accent"
+                      >
+                        <option value="AM">AM</option>
+                        <option value="PM">PM</option>
+                      </select>
+                    </label>
+                  </div>
+                  <p className="mt-1.5 text-[11px] font-medium text-ink/45">
+                    {formatTimeLabel(timeText)}
+                  </p>
+                </div>
+              </fieldset>
 
               <textarea
                 value={notes}
@@ -452,8 +911,17 @@ export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
                 className="mb-4 w-full resize-none rounded-xl border border-line bg-white/70 px-3.5 py-2.5 text-sm text-ink placeholder:text-ink/30 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
               />
 
-              {errorMsg && (
-                <p className="mb-3 text-xs text-red-500" role="alert">{errorMsg}</p>
+              {(timeValidationMessage || errorMsg) && (
+                <p
+                  className={`mb-3 rounded-lg px-3 py-2 text-xs ${
+                    status === "local"
+                      ? "bg-accent/10 text-accent"
+                      : "bg-red-50 text-red-600"
+                  }`}
+                  role={status === "local" ? "status" : "alert"}
+                >
+                  {errorMsg ?? timeValidationMessage}
+                </p>
               )}
 
             </motion.div>
@@ -533,12 +1001,11 @@ export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
               <motion.button
                 type="button"
                 onClick={handleCreate}
-                disabled={status !== "idle"}
-                whileTap={status === "idle" ? { scale: 0.97 } : undefined}
+                disabled={submitDisabled}
+                whileTap={!submitDisabled ? { scale: 0.97 } : undefined}
                 className="min-h-10 flex-1 rounded-xl bg-accent px-4 text-sm font-semibold text-white transition-opacity disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
               >
-                {status === "submitting" ? "Creating…"  :
-                 status === "success"    ? "🎉 Done!"    : "Start Something"}
+                {submitLabel}
               </motion.button>
             </motion.div>
           )}
