@@ -3,8 +3,8 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import type { DomainMode } from "@/lib/hade/useHade";
 import { AnimatePresence, motion } from "framer-motion";
-import type { Intent, VibeTag } from "@/types/hade";
-import type { DecisionViewModel } from "@/lib/hade/viewModel";
+import type { Intent, SpontaneousObject, VibeTag } from "@/types/hade";
+import { createDecisionViewModelFromUGC, type DecisionViewModel } from "@/lib/hade/viewModel";
 import { useHadeAdaptiveContext } from "@/lib/hade/hooks";
 import { useHade } from "@/lib/hade/useHade";
 import { getNavigationUrl } from "@/lib/hade/navigation";
@@ -372,12 +372,16 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
   );
   const [lensTransitioning, setLensTransitioning] = useState(false);
   const lensTransitionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const createdRevealTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const createdHighlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const creationBackdropPointerRef = useRef<{ x: number; y: number } | null>(null);
+  const decisionCardRef = useRef<HTMLDivElement | null>(null);
 
   const [rejectionCount, setRejectionCount] = useState(0);
   const [rejectionHistory, setRejectionHistory] = useState<Array<{ venueId: string; reason: string; timestamp: number }>>([]);
   const [decisionHistory, setDecisionHistory] = useState<DecisionViewModel[]>([]);
   const [overflowOpen, setOverflowOpen] = useState(false);
+  const [createdCardHighlight, setCreatedCardHighlight] = useState(false);
 
   const closeCreationFlow = useCallback(() => {
     resetMobileViewportAfterInput();
@@ -418,6 +422,25 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
   // When "Previous" is pressed we restore a past card without calling pivot().
   // This local override takes precedence over the live decision from useHade.
   const [previousOverride, setPreviousOverride] = useState<DecisionViewModel | null>(null);
+  const [createdDecisionOverride, setCreatedDecisionOverride] = useState<DecisionViewModel | null>(null);
+
+  const clearCreatedDecisionConfirmation = useCallback((reason: string) => {
+    if (createdRevealTimerRef.current) {
+      clearTimeout(createdRevealTimerRef.current);
+      createdRevealTimerRef.current = null;
+    }
+    if (createdHighlightTimerRef.current) {
+      clearTimeout(createdHighlightTimerRef.current);
+      createdHighlightTimerRef.current = null;
+    }
+    setCreatedCardHighlight(false);
+    setCreatedDecisionOverride((current) => {
+      if (current && process.env.NODE_ENV !== "production") {
+        console.log("[HADE UGC CONFIRMATION CLEARED]", { reason });
+      }
+      return null;
+    });
+  }, []);
 
   useEffect(() => {
     console.log("[HADE STATE]", {
@@ -447,8 +470,24 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
   useEffect(() => {
     return () => {
       if (lensTransitionTimerRef.current) clearTimeout(lensTransitionTimerRef.current);
+      if (createdRevealTimerRef.current) clearTimeout(createdRevealTimerRef.current);
+      if (createdHighlightTimerRef.current) clearTimeout(createdHighlightTimerRef.current);
     };
   }, []);
+
+  useEffect(() => {
+    if (!createdDecisionOverride) return;
+
+    const scrollFrame = requestAnimationFrame(() => {
+      decisionCardRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+        inline: "nearest",
+      });
+    });
+
+    return () => cancelAnimationFrame(scrollFrame);
+  }, [createdDecisionOverride]);
 
   // Push each new decision onto the history stack so "Previous" can navigate back.
   // We track by id so rapid re-renders don't push duplicates.
@@ -459,8 +498,9 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
     if (decision.id === lastPushedIdRef.current) return;
     lastPushedIdRef.current = decision.id;
     setPreviousOverride(null); // new live decision — drop the override
+    clearCreatedDecisionConfirmation("fresh_decision");
     setDecisionHistory((prev) => [...prev, decision]);
-  }, [decision]);
+  }, [clearCreatedDecisionConfirmation, decision]);
 
   const handlePrevious = useCallback(() => {
     setDecisionHistory((prev) => {
@@ -473,10 +513,11 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
       // Restore the previous decision directly in the view model.
       // useHade doesn't expose a setter, so we surface it via a
       // local override state managed in this component.
+      clearCreatedDecisionConfirmation("previous");
       setPreviousOverride(target);
       return next;
     });
-  }, []);
+  }, [clearCreatedDecisionConfirmation]);
 
   const handleLensSelect = useCallback(
     (lens: LensOption) => {
@@ -486,6 +527,7 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
       setActiveLensId(lens.id);
       setLensTransitioning(true);
       setPreviousOverride(null);
+      clearCreatedDecisionConfirmation("lens_change");
       setShowPivotReasons(false);
       setOverflowOpen(false);
       const candidateCategories = getLensCandidateCategories(lens.id);
@@ -502,7 +544,7 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
         lensTransitionTimerRef.current = null;
       }, 1400);
     },
-    [activeLensId, setMode],
+    [activeLensId, clearCreatedDecisionConfirmation, setMode],
   );
 
   const visitRef = useRef<{
@@ -525,21 +567,26 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
   // Expiry polling — every 60s while a UGC card is displayed.
   // If the card transitions to "suppressed" state, regenerate automatically.
   useEffect(() => {
-    if (!decision?.ugc_meta) return;
-    const { expires_at, created_at } = decision.ugc_meta;
+    const target = previousOverride ?? createdDecisionOverride ?? decision;
+    if (!target?.ugc_meta) return;
+    const { expires_at, created_at } = target.ugc_meta;
 
     const interval = setInterval(() => {
       const state = computeTemporalState(expires_at, created_at);
       if (state === "suppressed") {
-        regenerate();
+        if (createdDecisionOverride?.id === target.id) {
+          clearCreatedDecisionConfirmation("ugc_expired");
+        } else {
+          regenerate();
+        }
       }
     }, 60_000);
 
     return () => clearInterval(interval);
-  }, [decision, regenerate]);
+  }, [clearCreatedDecisionConfirmation, createdDecisionOverride, decision, previousOverride, regenerate]);
 
   const handleGo = useCallback(() => {
-    const target = previousOverride ?? decision;
+    const target = previousOverride ?? createdDecisionOverride ?? decision;
     if (!target) return;
     console.log("[HADE] Take me there →", target.title);
 
@@ -603,14 +650,15 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
       url,
     });
     window.open(url, "_self");
-  }, [decision, previousOverride]);
+  }, [createdDecisionOverride, decision, previousOverride]);
 
   const handleRefineConfirm = useCallback(
     async ({ intent, urgency }: { intent: Intent | null; urgency: Urgency }) => {
       setRefineOpen(false);
+      clearCreatedDecisionConfirmation("refine");
       await refine({ intent, urgency });
     },
-    [refine],
+    [clearCreatedDecisionConfirmation, refine],
   );
 
   const handleNotThis = useCallback(() => {
@@ -618,14 +666,15 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
   }, []);
 
   const handleSave = useCallback(() => {
-    const target = previousOverride ?? decision;
+    const target = previousOverride ?? createdDecisionOverride ?? decision;
     if (!target) return;
     console.log("[HADE] Save →", target.title);
-  }, [decision, previousOverride]);
+  }, [createdDecisionOverride, decision, previousOverride]);
 
   const handleReject = useCallback(
     (reason: string) => {
-      const venueId = decision?.id ?? "unknown";
+      const target = previousOverride ?? createdDecisionOverride ?? decision;
+      const venueId = target?.id ?? "unknown";
       setRejectionHistory((prev) => [
         ...prev,
         { venueId, reason, timestamp: Date.now() },
@@ -633,14 +682,21 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
       setRejectionCount((count) => count + 1);
       setShowPivotReasons(false);
 
-      if (!decision) return;
+      if (!target) return;
 
       const tags = toVibeTags(mapReasonToTags(reason));
       if (tags.length > 0) {
-        emitVibeSignal(decision.id, tags, "negative");
+        emitVibeSignal(target.id, tags, "negative");
       }
 
-      console.log("[HADE] Reject triggered", { venueId: decision.id, reason });
+      console.log("[HADE] Reject triggered", { venueId: target.id, reason });
+      const pivotTarget = {
+        id: target.id,
+        venue_name: target.title,
+        is_fallback: target.is_fallback,
+      };
+      setPreviousOverride(null);
+      clearCreatedDecisionConfirmation("not_this");
 
       // Show reframing state for 300–600ms — feels deliberate, not instant.
       setIsReframing(true);
@@ -649,10 +705,10 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
       setTimeout(() => {
         setIsReframing(false);
         setPivotLabel(undefined);
-        pivot(reason);
+        pivot(reason, pivotTarget);
       }, delay);
     },
-    [decision, emitVibeSignal, pivot],
+    [clearCreatedDecisionConfirmation, createdDecisionOverride, decision, emitVibeSignal, pivot, previousOverride],
   );
 
   const handleDismiss = useCallback(() => {
@@ -672,33 +728,33 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
   );
 
   const handleJoin = useCallback(() => {
-    const target = previousOverride ?? decision;
+    const target = previousOverride ?? createdDecisionOverride ?? decision;
     if (!target) return;
     emitVibeSignal(target.id, ["worth_it"] as VibeTag[], "positive", 0.9);
     console.log("[HADE] Join →", target.title);
-  }, [decision, previousOverride, emitVibeSignal]);
+  }, [createdDecisionOverride, decision, previousOverride, emitVibeSignal]);
 
   const handleInterested = useCallback(() => {
-    const target = previousOverride ?? decision;
+    const target = previousOverride ?? createdDecisionOverride ?? decision;
     if (!target) return;
     emitVibeSignal(target.id, ["worth_it"] as VibeTag[], "positive", 0.5);
     console.log("[HADE] Interested →", target.title);
-  }, [decision, previousOverride, emitVibeSignal]);
+  }, [createdDecisionOverride, decision, previousOverride, emitVibeSignal]);
 
   const handleVibeText = useCallback((text: string) => {
-    const target = previousOverride ?? decision;
+    const target = previousOverride ?? createdDecisionOverride ?? decision;
     if (!target) return;
     const sentiment = /off|bad|wrong|miss|weird|slow|dead|empty/i.test(text) ? "negative" : "positive";
     const tag: VibeTag = sentiment === "negative" ? "skip_it" : "good_energy";
     emitVibeSignal(target.id, [tag], sentiment, 0.6);
     console.log("[HADE] Vibe →", { venueId: target.id, text, tag, sentiment });
-  }, [decision, previousOverride, emitVibeSignal]);
+  }, [createdDecisionOverride, decision, previousOverride, emitVibeSignal]);
 
   // "Add Vibe" — direct VibeSheet entry without the 15-min Go timer.
   // Populates visitRef from the currently displayed card so handleSubmit
   // always has a valid venueId even in zero-query / cold-start state.
   const handleRateSpot = useCallback(() => {
-    const target = previousOverride ?? decision;
+    const target = previousOverride ?? createdDecisionOverride ?? decision;
     if (!target) return;
     visitRef.current = {
       venueId:   target.id,
@@ -707,7 +763,56 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
       isUGC:     target.is_ugc ?? false,
     };
     setShowVibeSheet(true);
-  }, [decision, previousOverride]);
+  }, [createdDecisionOverride, decision, previousOverride]);
+
+  const handleCreatedActivitySaved = useCallback(
+    (createdActivity: SpontaneousObject) => {
+      const nextDecision = createDecisionViewModelFromUGC(createdActivity);
+      if (!nextDecision) return;
+
+      if (createdRevealTimerRef.current) {
+        clearTimeout(createdRevealTimerRef.current);
+        createdRevealTimerRef.current = null;
+      }
+      if (createdHighlightTimerRef.current) {
+        clearTimeout(createdHighlightTimerRef.current);
+        createdHighlightTimerRef.current = null;
+      }
+
+      closeCreationFlow();
+      setPreviousOverride(null);
+      setShowPivotReasons(false);
+      setOverflowOpen(false);
+      lastPushedIdRef.current = nextDecision.id;
+      setDecisionHistory((prev) =>
+        prev.some((item) => item.id === nextDecision.id) ? prev : [...prev, nextDecision],
+      );
+      setLiveToast(true);
+      navigator.vibrate?.(50);
+
+      createdRevealTimerRef.current = setTimeout(() => {
+        createdRevealTimerRef.current = null;
+        requestAnimationFrame(() => {
+          setCreatedDecisionOverride(nextDecision);
+          setCreatedCardHighlight(true);
+          createdHighlightTimerRef.current = setTimeout(() => {
+            createdHighlightTimerRef.current = null;
+            setCreatedCardHighlight(false);
+          }, 1200);
+        });
+      }, 240);
+
+      if (process.env.NODE_ENV !== "production") {
+        console.log("[HADE UGC CREATED DISPLAYED]", {
+          title: nextDecision.title,
+          source: nextDecision.object.source ?? "user",
+          lens: activeLensId,
+          mode,
+        });
+      }
+    },
+    [activeLensId, closeCreationFlow, mode],
+  );
 
   // UgcVerificationSheet handlers
   const handleVerificationClose = useCallback(() => {
@@ -719,9 +824,9 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
     setShowVibeSheet(true);
   }, []);
 
-  // The card to display — previousOverride takes precedence while navigating back.
-  // Once a new live decision arrives, the override is cleared automatically.
-  const displayDecision = previousOverride ?? decision;
+  // The card to display — temporary local overrides sit above the live engine result.
+  // Once a new live decision arrives, those overrides are cleared automatically.
+  const displayDecision = previousOverride ?? createdDecisionOverride ?? decision;
   const activeLens = LENS_OPTIONS.find((lens) => lens.id === activeLensId) ?? LENS_OPTIONS[0];
 
   // Derived pivot reasons list — UGC-specific when applicable
@@ -756,11 +861,20 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
           <div>
             <AnimatePresence mode="wait">
               <motion.div
+                ref={decisionCardRef}
                 key={displayDecision.id}
                 initial={{ x: previousOverride ? -32 : 32, opacity: 0 }}
-                animate={{ x: 0, opacity: 1 }}
+                animate={{
+                  x: 0,
+                  opacity: 1,
+                  boxShadow:
+                    createdCardHighlight && createdDecisionOverride?.id === displayDecision.id
+                      ? "0 0 0 2px rgba(16, 185, 129, 0.18), 0 12px 32px rgba(16, 185, 129, 0.10)"
+                      : "0 0 0 0 rgba(16, 185, 129, 0)",
+                }}
                 exit={{ x: previousOverride ? 32 : -32, opacity: 0 }}
                 transition={{ duration: 0.24, ease: "easeOut" }}
+                className="scroll-mt-3 rounded-[22px]"
               >
                 <ErrorBoundary name="HeroDecisionCard">
                   <HeroDecisionCard
@@ -774,6 +888,9 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
                     isReframing={isReframing || lensTransitioning}
                     pivotLabel={lensTransitioning ? activeLens.transitionCopy : pivotLabel}
                     temporalState={displayDecision.temporal_state}
+                    confirmationState={
+                      createdDecisionOverride?.id === displayDecision.id ? "created" : undefined
+                    }
                     onJoin={handleJoin}
                     onInterested={handleInterested}
                     onAddVibe={handleVibeText}
@@ -973,11 +1090,7 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
                   >
                     Close
                   </button>
-                  <ActivityCreationView onCreate={() => {
-                    closeCreationFlow();
-                    setLiveToast(true);
-                    navigator.vibrate?.(50);
-                  }} />
+                  <ActivityCreationView onCreate={handleCreatedActivitySaved} />
                 </div>
               </ErrorBoundary>
             </motion.div>

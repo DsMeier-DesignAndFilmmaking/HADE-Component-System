@@ -29,6 +29,8 @@ interface HeroDecisionCardProps {
   pivotLabel?: string;
   /** Pre-computed UGC temporal state from DecisionViewModel. */
   temporalState?: TemporalState;
+  /** Lightweight confirmation treatment for the immediate post-save UGC card. */
+  confirmationState?: "created";
   /** Called when user taps "Join" (strong intent — emits worth_it at 0.9). */
   onJoin?: () => void;
   /** Called when user taps "I'm Interested" (light intent — emits worth_it at 0.5). */
@@ -71,6 +73,7 @@ export function HeroDecisionCard({
   isReframing = false,
   pivotLabel,
   temporalState,
+  confirmationState,
   onJoin,
   onInterested,
   onAddVibe,
@@ -82,6 +85,7 @@ export function HeroDecisionCard({
   const timeLabel    = useMemo(() => getTimeLabel(object), [object]);
   const live         = useMemo(() => isLive(object), [object]);
   const isUGC        = object.type === "ugc_event";
+  const isNewlyCreatedUGC = isUGC && confirmationState === "created";
   const temporalCopy = useMemo(() => {
     const activeFor = getActiveForCopy(object.expires_at);
     if (activeFor) return activeFor;
@@ -111,12 +115,22 @@ export function HeroDecisionCard({
         <>
           {/* ── Header row ──────────────────────────────────────────────────── */}
           <div className="flex items-center justify-between gap-2">
-            <div className="flex min-w-0 items-center gap-2">
+            <div className="flex min-w-0 flex-wrap items-center gap-1.5">
               {isUGC ? (
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-accent/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-accent">
-                  <span aria-hidden="true">👥</span>
-                  Community
-                </span>
+                <>
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-accent/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-accent">
+                    <span aria-hidden="true">👥</span>
+                    Community
+                  </span>
+                  {isNewlyCreatedUGC && (
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/15 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-emerald-700">
+                      <span className="flex h-3.5 w-3.5 items-center justify-center rounded-full bg-emerald-500 text-[9px] leading-none text-white" aria-hidden="true">
+                        ✓
+                      </span>
+                      Added to HADE
+                    </span>
+                  )}
+                </>
               ) : (
                 <>
                   <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-ink/40">
@@ -167,11 +181,15 @@ export function HeroDecisionCard({
           )}
 
           {/* ── UGC rationale ───────────────────────────────────────────────── */}
-          {isUGC && (
+          {isNewlyCreatedUGC ? (
+            <p className="mt-1.5 rounded-xl border border-emerald-500/10 bg-emerald-500/[0.06] px-3 py-2 text-[12.5px] font-medium leading-snug text-emerald-800">
+              Saved. HADE can now use this in future decisions.
+            </p>
+          ) : isUGC ? (
             <p className="mt-1.5 text-[13px] leading-snug text-ink/55">
               A HADE user recently started a {object.title} here.
             </p>
-          )}
+          ) : null}
 
           {/* ── Meta chips ──────────────────────────────────────────────────── */}
           <div className="mt-3 flex flex-wrap gap-1.5">

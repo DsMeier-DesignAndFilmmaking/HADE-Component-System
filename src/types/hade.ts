@@ -490,7 +490,7 @@ export interface AdaptiveState {
   setRadius: (radius_meters: number | ((prev: number) => number)) => void;
   emit: (type: SignalType, payload?: Partial<Signal>) => Signal;
   decide: (req?: Partial<DecideRequest>) => Promise<void>;
-  pivot: (reason: string) => void;
+  pivot: (reason: string, target?: Pick<HadeDecision, "id" | "venue_name" | "is_fallback">) => void;
 
   // ── Community Signals (UGC) ──
   communitySignals: CommunitySignalsConfig;

@@ -725,14 +725,15 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
   );
 
   const pivot = useCallback(
-    (reason: string) => {
-      if (!decision) return;
+    (reason: string, target?: Pick<HadeDecision, "id" | "venue_name" | "is_fallback">) => {
+      const rejectionTarget = target ?? decision;
+      if (!rejectionTarget) return;
 
       // ── Fallback rejection recovery ───────────────────────────────────────────
       // If the current decision is a fallback, do NOT re-enter the normal decide()
       // path (which would produce another fallback and loop). Instead, recover
       // using cached real places or generateLocalAlternative().
-      if (decision.is_fallback) {
+      if (rejectionTarget.is_fallback) {
         const geo = contextRef.current.geo ?? { lat: 0, lng: 0 };
         const rejectedIds = new Set(rejectionHistory.map((r) => r.venue_id));
 
@@ -802,21 +803,21 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
       // rejection_history would have no semantic meaning to the server and,
       // before the route returns 503, was the trigger for the infinite loop.
       if (
-        decision.id.startsWith("fallback-") ||
-        decision.id.startsWith("offline-")
+        rejectionTarget.id.startsWith("fallback-") ||
+        rejectionTarget.id.startsWith("offline-")
       ) {
         return;
       }
 
       const currentRejection: RejectionEntry = {
-        venue_id: decision.id,
-        venue_name: decision.venue_name,
+        venue_id: rejectionTarget.id,
+        venue_name: rejectionTarget.venue_name,
         pivot_reason: reason,
       };
 
       // Use ref for read — always current even under rapid calls.
       const latestHistory = rejectionHistoryRef.current;
-      const alreadyRejected = latestHistory.some((entry) => entry.venue_id === decision.id);
+      const alreadyRejected = latestHistory.some((entry) => entry.venue_id === rejectionTarget.id);
       const nextRejectionHistory = alreadyRejected
         ? latestHistory
         : [...latestHistory, currentRejection];
@@ -827,7 +828,7 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
 
       // Functional update — no stale closure, accumulates correctly across rapid calls.
       setRejectionHistory((prev) =>
-        prev.some((entry) => entry.venue_id === decision.id) ? prev : [...prev, currentRejection]
+        prev.some((entry) => entry.venue_id === rejectionTarget.id) ? prev : [...prev, currentRejection]
       );
       updateContext({ rejection_history: nextRejectionHistory });
 

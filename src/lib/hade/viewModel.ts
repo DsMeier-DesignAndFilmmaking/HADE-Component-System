@@ -16,7 +16,7 @@
 
 import type { HadeResponse, SpontaneousObject, UiState } from "@/types/hade";
 import type { DecisionCandidate } from "@/core/types/decision";
-import { computeTemporalState, type TemporalState } from "@/lib/hade/ugcCopy";
+import { computeTemporalState, getDistanceCopy, type TemporalState } from "@/lib/hade/ugcCopy";
 import { formatDistance, formatEta } from "@/lib/hade/format";
 
 // ─── Type ─────────────────────────────────────────────────────────────────────
@@ -172,6 +172,73 @@ export function buildDecisionViewModel(response: HadeResponse): DecisionViewMode
 
     object,
   };
+}
+
+export function createDecisionViewModelFromUGC(createdActivity: SpontaneousObject): DecisionViewModel | null {
+  const now = Date.now();
+  const createdAt = createdActivity.created_at ?? now;
+  const expiresAt = createdActivity.expires_at ?? createdActivity.time_window?.end ?? now + 60 * 60 * 1000;
+  const distanceMeters = Number.isFinite(createdActivity.radius) ? createdActivity.radius : 0;
+  const confidence = createdActivity.trust_score ?? 0.7;
+  const category = createdActivity.vibe_tag ?? "community";
+
+  return buildDecisionViewModel({
+    decision: {
+      ...createdActivity,
+      id: createdActivity.id,
+      venue_name: createdActivity.title,
+      title: createdActivity.title,
+      category,
+      geo: {
+        lat: createdActivity.location.lat,
+        lng: createdActivity.location.lng,
+      },
+      location: createdActivity.location,
+      distance_meters: distanceMeters,
+      eta_minutes: distanceMeters > 0 ? Math.max(1, Math.round(distanceMeters / 80)) : 0,
+      rationale: "You just added this nearby, so HADE is surfacing it as the next live option.",
+      why_now: "It is live now and ready for nearby people to discover.",
+      why_this: "Freshly created from your current context.",
+      confidence_label: "Good fit",
+      decision_frame: "Your newly saved moment is live in HADE.",
+      confidence,
+      situation_summary: "User-created nearby moment",
+      type: "ugc_event",
+      time_window: createdActivity.time_window,
+      radius: createdActivity.radius,
+      going_count: createdActivity.going_count,
+      maybe_count: createdActivity.maybe_count,
+      user_state: createdActivity.user_state,
+      created_at: createdAt,
+      expires_at: expiresAt,
+      trust_score: confidence,
+      vibe_tag: createdActivity.vibe_tag,
+      source: createdActivity.source ?? "user",
+      ugc_meta: {
+        is_ugc: true,
+        created_at: new Date(createdAt).toISOString(),
+        expires_at: new Date(expiresAt).toISOString(),
+        distance_copy: getDistanceCopy(distanceMeters),
+      },
+    },
+    ux: {
+      ui_state: "medium",
+      cta: "Navigate",
+      badges: ["Community"],
+    },
+    context_snapshot: {
+      situation_summary: "User-created nearby moment",
+      interpreted_intent: category,
+      decision_basis: "fallback",
+      candidates_evaluated: 1,
+    },
+    session_id: "local-ugc-confirmation",
+    source: "synthetic",
+    explanation_signals: {
+      vibe_match: "strong",
+      social_proof: createdActivity.going_count > 0 ? "moderate" : "none",
+    },
+  });
 }
 
 // ─── DecisionCandidate-first mapper ──────────────────────────────────────────

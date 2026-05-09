@@ -176,6 +176,56 @@ describe("Integration — signal ordering", () => {
     };
     expect(pivotDecideBody.node_hints).toContain("venue-A");
   });
+
+  it("pivot can reject an explicitly displayed UGC confirmation target", async () => {
+    const capturedBodies: Array<Record<string, unknown>> = [];
+
+    const fetchSpy = vi.fn().mockImplementation((url: string, init: RequestInit) => {
+      if (url.includes("/api/hade/decide")) {
+        capturedBodies.push(JSON.parse(init.body as string) as Record<string, unknown>);
+        return Promise.resolve(
+          new Response(JSON.stringify(makeDecideResponse("venue-after-ugc")), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+      }
+      return Promise.resolve(makeSignalOkResponse("ugc-created-1"));
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const { result } = renderHook(() => useAdaptive());
+
+    act(() => {
+      result.current.setGeo(mockGeo);
+    });
+
+    await act(async () => {
+      await result.current.decide({ geo: mockGeo, persona: mockPersona });
+    });
+    capturedBodies.length = 0;
+
+    act(() => {
+      result.current.pivot("Wrong vibe", {
+        id: "ugc-created-1",
+        venue_name: "Sunset Sketch Meetup",
+        is_fallback: false,
+      });
+    });
+
+    await waitFor(() => {
+      expect(capturedBodies.length).toBeGreaterThan(0);
+    });
+
+    const pivotDecideBody = capturedBodies[capturedBodies.length - 1] as {
+      rejection_history?: Array<{ venue_id: string; venue_name: string; pivot_reason: string }>;
+    };
+    expect(pivotDecideBody.rejection_history).toContainEqual({
+      venue_id: "ugc-created-1",
+      venue_name: "Sunset Sketch Meetup",
+      pivot_reason: "Wrong vibe",
+    });
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
