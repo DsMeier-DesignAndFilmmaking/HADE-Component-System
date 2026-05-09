@@ -10,6 +10,8 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     globals: true,
+    include: ["src/**/*.{test,spec}.{ts,tsx}"],
+    exclude: ["**/node_modules/**", "**/.next/**", "**/dist/**", "**/.claude/**"],
     setupFiles: ["./src/lib/hade/__tests__/setup.ts"],
   },
   resolve: {

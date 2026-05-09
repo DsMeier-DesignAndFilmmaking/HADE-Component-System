@@ -62,30 +62,32 @@ describe("useHade geo handling", () => {
   let fetchSpy: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
-    fetchSpy = vi.fn().mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          decision: {
-            id: "venue-1",
-            venue_name: "Test Bar",
-            category: "bar",
-            geo: { lat: 37.7749, lng: -122.4194 },
-            distance_meters: 200,
-            eta_minutes: 3,
-            rationale: "Close by.",
-            why_now: "Friday evening.",
-            confidence: 0.9,
-            situation_summary: "Evening.",
-          },
-          context_snapshot: {
-            situation_summary: "Evening.",
-            interpreted_intent: "drink",
-            decision_basis: "llm",
-            candidates_evaluated: 3,
-          },
-          session_id: "sess-geo-test",
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
+    fetchSpy = vi.fn().mockImplementation(() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            decision: {
+              id: "venue-1",
+              venue_name: "Test Bar",
+              category: "bar",
+              geo: { lat: 37.7749, lng: -122.4194 },
+              distance_meters: 200,
+              eta_minutes: 3,
+              rationale: "Close by.",
+              why_now: "Friday evening.",
+              confidence: 0.9,
+              situation_summary: "Evening.",
+            },
+            context_snapshot: {
+              situation_summary: "Evening.",
+              interpreted_intent: "drink",
+              decision_basis: "llm",
+              candidates_evaluated: 3,
+            },
+            session_id: "sess-geo-test",
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
       ),
     );
     vi.stubGlobal("fetch", fetchSpy);
@@ -100,44 +102,46 @@ describe("useHade geo handling", () => {
     });
   });
 
-  it("denied geo — decide() is never fired (auto-fire guard)", async () => {
+  it("denied geo — decide() fires with fallback geo", async () => {
     mockGeoDenied();
 
     renderHook(() => useHade(), { wrapper: makeWrapper() });
 
-    // Give effects time to settle
-    await act(async () => {
-      await new Promise((r) => setTimeout(r, 50));
+    await waitFor(() => {
+      const decideCalls = fetchSpy.mock.calls.filter((args) => (args[0] as string).includes("/api/hade/decide"));
+      expect(decideCalls).toHaveLength(1);
     });
 
     const decideCalls = fetchSpy.mock.calls.filter((args) => (args[0] as string).includes("/api/hade/decide"));
-    expect(decideCalls).toHaveLength(0);
+    const body = JSON.parse(decideCalls[0][1].body as string) as { geo?: { lat: number; lng: number } };
+    expect(body.geo).toEqual({ lat: 37.7749, lng: -122.4194 });
   });
 
-  it("denied geo — status stays idle (no loading, no decision)", async () => {
+  it("denied geo — status reaches ready after fallback decide", async () => {
     mockGeoDenied();
 
     const { result } = renderHook(() => useHade(), { wrapper: makeWrapper() });
 
-    await act(async () => {
-      await new Promise((r) => setTimeout(r, 50));
+    await waitFor(() => {
+      expect(result.current.status).toBe("ready");
     });
 
-    expect(result.current.status).toBe("idle");
-    expect(result.current.decision).toBeNull();
+    expect(result.current.decision?.title).toBe("Test Bar");
   });
 
-  it("geolocation API unavailable — decide() is never fired", async () => {
+  it("geolocation API unavailable — decide() fires with fallback geo", async () => {
     mockGeoUnavailable();
 
     renderHook(() => useHade(), { wrapper: makeWrapper() });
 
-    await act(async () => {
-      await new Promise((r) => setTimeout(r, 50));
+    await waitFor(() => {
+      const decideCalls = fetchSpy.mock.calls.filter((args) => (args[0] as string).includes("/api/hade/decide"));
+      expect(decideCalls).toHaveLength(1);
     });
 
     const decideCalls = fetchSpy.mock.calls.filter((args) => (args[0] as string).includes("/api/hade/decide"));
-    expect(decideCalls).toHaveLength(0);
+    const body = JSON.parse(decideCalls[0][1].body as string) as { geo?: { lat: number; lng: number } };
+    expect(body.geo).toEqual({ lat: 37.7749, lng: -122.4194 });
   });
 
   it("no implicit fallback coordinate — denied geo never sends { lat: 0, lng: 0 } to decide()", async () => {

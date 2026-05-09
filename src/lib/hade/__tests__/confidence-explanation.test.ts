@@ -32,7 +32,7 @@ describe("confidence + explanation", () => {
       signal_count: 12,
       weight_map: {
         good_energy: 0.95,
-        too_crowded: 0.05,
+        too_crowded: 0.95,
       },
       last_updated: isoHoursAgo(1),
     };

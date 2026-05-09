@@ -232,7 +232,7 @@ export async function getNodeVibeScore(venueId: string): Promise<number> {
     const recencyFactor    = Math.min(1, Math.max(0, Math.exp(-0.15 * hoursSinceUpdate)));
 
     const score = 0.5 + (rawMean - 0.5) * recencyFactor;
-    return Math.min(1, Math.max(0, score));
+    return clamp(score, 0.1, 0.9);
   } catch (error) {
     handleRedisFailure({ operation: "getNodeVibeScore", venueId }, error);
 
@@ -255,7 +255,7 @@ export async function getNodeVibeScore(venueId: string): Promise<number> {
     const recencyFactor    = Math.min(1, Math.max(0, Math.exp(-0.15 * hoursSinceUpdate)));
 
     const score = 0.5 + (rawMean - 0.5) * recencyFactor;
-    return Math.min(1, Math.max(0, score));
+    return clamp(score, 0.1, 0.9);
   }
 }
 

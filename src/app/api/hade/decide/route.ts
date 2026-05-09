@@ -9,6 +9,7 @@ import { haversineDistanceMeters } from "@/lib/hade/engine";
 import { getRedisMode } from "@/lib/hade/redis";
 import { fetchNearbyGrounded } from "@/core/services/places";
 import { RADIUS } from "@/core/constants/radius";
+import { LENS_PROFILES, getLensProfile, type LensProfile } from "@/lib/hade/lensProfiles";
 
 export const runtime = "nodejs";
 
@@ -75,6 +76,72 @@ const STATIC_FALLBACK_TITLES = [
   "Explore this area",
 ] as const;
 
+function normalizeFallbackToken(value: string): string {
+  return value.trim().toLowerCase().replace(/[\s-]+/g, "_");
+}
+
+function extractStringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+    : [];
+}
+
+function extractRejectedFallbackTitles(body?: Record<string, unknown> | null): Set<string> {
+  const raw = body?.rejection_history;
+  if (!Array.isArray(raw)) return new Set();
+
+  const titles = raw
+    .map((entry) => {
+      if (!entry || typeof entry !== "object") return null;
+      const venueName = (entry as { venue_name?: unknown }).venue_name;
+      return typeof venueName === "string" ? venueName.trim().toLowerCase() : null;
+    })
+    .filter((title): title is string => typeof title === "string" && title.length > 0);
+
+  return new Set(titles);
+}
+
+function resolveStaticFallbackProfile(body?: Record<string, unknown> | null): LensProfile {
+  const categories = extractStringArray(body?.candidate_categories).map(normalizeFallbackToken);
+  if (categories.length > 0) {
+    const categorySet = new Set(categories);
+    let bestProfile: LensProfile | null = null;
+    let bestScore = 0;
+
+    for (const profile of Object.values(LENS_PROFILES)) {
+      const score = profile.candidateCategories
+        .map(normalizeFallbackToken)
+        .filter((category) => categorySet.has(category))
+        .length;
+      if (score > bestScore) {
+        bestProfile = profile;
+        bestScore = score;
+      }
+    }
+
+    if (bestProfile) return bestProfile;
+  }
+
+  const mode = typeof body?.mode === "string" ? body.mode : undefined;
+  return getLensProfile(mode);
+}
+
+function buildStaticFallbackTitles(body?: Record<string, unknown> | null): {
+  profile: LensProfile;
+  titles: string[];
+} {
+  const profile = resolveStaticFallbackProfile(body);
+  const rejectedTitles = extractRejectedFallbackTitles(body);
+  const lensTitles = profile.fallbackHints.filter((title) => !rejectedTitles.has(title.toLowerCase()));
+  const genericTitles = STATIC_FALLBACK_TITLES.filter((title) => !rejectedTitles.has(title.toLowerCase()));
+  const titles = lensTitles.length > 0 ? lensTitles : genericTitles;
+
+  return {
+    profile,
+    titles: titles.length > 0 ? titles : [...profile.fallbackHints],
+  };
+}
+
 /**
  * Returns at least 1 SpontaneousObject for use as fallback candidates.
  *
@@ -88,6 +155,7 @@ const STATIC_FALLBACK_TITLES = [
 async function buildFallbackCandidates(
   geo: GeoLocation | null,
   reqId: string,
+  body?: Record<string, unknown> | null,
 ): Promise<SpontaneousObject[]> {
   const now = Date.now();
 
@@ -127,9 +195,11 @@ async function buildFallbackCandidates(
     }
   }
 
-  // Static synthetic floor — guaranteed >= 1
-  console.log(`[hade-decide ${reqId}] fallback: using ${STATIC_FALLBACK_TITLES.length} static synthetic object(s)`);
-  return STATIC_FALLBACK_TITLES.map((title, i) => ({
+  // Static synthetic floor — guaranteed >= 1. This is last-resort only: Places,
+  // synthetic ranking, UGC, and offline cache all get earlier chances to win.
+  const staticFallback = buildStaticFallbackTitles(body);
+  console.log(`[hade-decide ${reqId}] fallback: using ${staticFallback.titles.length} ${staticFallback.profile.id} static synthetic object(s)`);
+  return staticFallback.titles.map((title, i) => ({
     id: `fallback-static-${i}-${now}`,
     type: "place_opportunity" as const,
     title,
@@ -142,7 +212,8 @@ async function buildFallbackCandidates(
     created_at: now,
     expires_at: now + 60 * 60 * 1000,
     trust_score: 0.5,
-    source: "static_synthetic",
+    vibe_tag: staticFallback.profile.id,
+    source: `static_synthetic:${staticFallback.profile.id}`,
   }));
 }
 
@@ -166,7 +237,7 @@ export async function POST(request: NextRequest) {
     const geoHint = extractGeo(parsed.body);
     if (!validated.ok) {
       console.log("[HADE FALLBACK TRIGGER]", { reason: "INVALID_RESPONSE", error: validated.error });
-      return await fallbackResponse(reqId, "validation_error", validated.error, geoHint);
+      return await fallbackResponse(reqId, "validation_error", validated.error, geoHint, parsed.body);
     }
 
     // Stage 3: Inject LocationNode weights for any node_hints in the body
@@ -259,7 +330,7 @@ async function generateDecision(
 
       console.warn("[HADE] Falling back due to no places");
       console.log(`[hade-decide ${reqId}] cold start — no places available, returning cold_start_fallback`);
-      const candidates = await buildFallbackCandidates(geoHint, reqId);
+      const candidates = await buildFallbackCandidates(geoHint, reqId, body);
       return new Response(
         JSON.stringify({
           decision: { ...candidates[0], is_fallback: true },
@@ -382,12 +453,12 @@ async function generateDecision(
     console.warn(`[hade-decide ${reqId}] ↓ Tier 2.5 failed, falling to Tier 3 (static)`);
 
     // ── Tier 3: Static fallback — always 200, never null ─────────────────────
-    return await fallbackResponse(reqId, upstream.reason, upstream.detail, geoHint);
+    return await fallbackResponse(reqId, upstream.reason, upstream.detail, geoHint, body);
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
     console.error(`[hade-decide ${reqId}] ✗ generateDecision threw: ${detail}`);
     console.log("[HADE FALLBACK TRIGGER]", { reason: "LLM_ERROR", error: detail });
-    return await fallbackResponse(reqId, "decision_error", detail, geoHint);
+    return await fallbackResponse(reqId, "decision_error", detail, geoHint, body);
   }
 }
 
@@ -625,8 +696,9 @@ async function fallbackResponse(
   reason: string,
   detail: string,
   geoHint: GeoLocation | null,
+  bodyHint?: Record<string, unknown> | null,
 ): Promise<Response> {
-  const candidates = await buildFallbackCandidates(geoHint, reqId);
+  const candidates = await buildFallbackCandidates(geoHint, reqId, bodyHint);
   // candidates.length >= 1 guaranteed by buildFallbackCandidates
   const body = {
     decision: { ...candidates[0], is_fallback: true },
@@ -638,6 +710,7 @@ async function fallbackResponse(
       decision_basis: "fallback" as const,
       candidates_evaluated: candidates.length,
       llm_failure_reason: "provider_error" as const,
+      fallback_reason: reason,
     },
     session_id: null,
     source: "static_fallback" as const,

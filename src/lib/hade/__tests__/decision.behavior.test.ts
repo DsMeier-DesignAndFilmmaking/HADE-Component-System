@@ -123,9 +123,10 @@ describe("Integration — signal ordering", () => {
       expect(callOrder).toContain("decide");
     });
 
-    // ASSERT: signal was first, decide was second
-    expect(callOrder[0]).toBe("signal");
-    expect(callOrder[1]).toBe("decide");
+    // Signal persistence is service-worker owned; pivot should not block decide
+    // on a direct UI-thread signal POST.
+    expect(callOrder).not.toContain("signal");
+    expect(callOrder[0]).toBe("decide");
   });
 
   it("decide POST includes node_hints for the emitted venue", async () => {

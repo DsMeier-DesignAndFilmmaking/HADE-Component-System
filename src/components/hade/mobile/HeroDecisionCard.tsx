@@ -19,6 +19,10 @@ interface HeroDecisionCardProps {
   object: SpontaneousObject;
   mode?: DomainMode;
   contextLabel?: string;
+  lensIcon?: string;
+  lensLabel?: string;
+  lensFrame?: string;
+  isFallback?: boolean;
   /** Shows the reframing microcopy instead of normal card content. */
   isReframing?: boolean;
   /** Specific adjustment label — e.g. "Adjusting for: Too far" */
@@ -60,6 +64,10 @@ export function HeroDecisionCard({
   object,
   mode,
   contextLabel,
+  lensIcon,
+  lensLabel,
+  lensFrame,
+  isFallback = false,
   isReframing = false,
   pivotLabel,
   temporalState,
@@ -103,7 +111,7 @@ export function HeroDecisionCard({
         <>
           {/* ── Header row ──────────────────────────────────────────────────── */}
           <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
+            <div className="flex min-w-0 items-center gap-2">
               {isUGC ? (
                 <span className="inline-flex items-center gap-1.5 rounded-full bg-accent/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-accent">
                   <span aria-hidden="true">👥</span>
@@ -122,6 +130,18 @@ export function HeroDecisionCard({
                   )}
                 </>
               )}
+              {lensLabel && (
+                <span
+                  className={`inline-flex min-w-0 items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold leading-tight ${
+                    isFallback
+                      ? "border-amber-400/25 bg-amber-400/10 text-amber-700"
+                      : "border-line/60 bg-white/55 text-ink/48"
+                  }`}
+                >
+                  {lensIcon && <span aria-hidden="true">{lensIcon}</span>}
+                  <span className="truncate">{lensLabel}</span>
+                </span>
+              )}
             </div>
           </div>
 
@@ -133,6 +153,16 @@ export function HeroDecisionCard({
           {(contextLabel || mode) && (
             <p className="mt-1.5 text-[12px] font-medium leading-snug text-ink/42">
               {contextLabel ?? MODE_CONTEXT[mode!]}
+            </p>
+          )}
+
+          {lensFrame && (
+            <p
+              className={`mt-1.5 text-[13px] leading-snug ${
+                isFallback ? "font-medium text-ink/64" : "text-ink/52"
+              }`}
+            >
+              {lensFrame}
             </p>
           )}
 

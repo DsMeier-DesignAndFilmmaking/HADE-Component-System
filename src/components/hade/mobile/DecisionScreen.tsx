@@ -9,6 +9,7 @@ import { useHadeAdaptiveContext } from "@/lib/hade/hooks";
 import { useHade } from "@/lib/hade/useHade";
 import { getNavigationUrl } from "@/lib/hade/navigation";
 import { recordNavigationTelemetry } from "@/lib/hade/navigationTelemetry";
+import { getLensCandidateCategories, getLensProfile } from "@/lib/hade/lensProfiles";
 import { computeTemporalState, getUGCPivotReasons } from "@/lib/hade/ugcCopy";
 import { HeroDecisionCard } from "./HeroDecisionCard";
 import { RefineSheet } from "./RefineSheet";
@@ -53,6 +54,7 @@ const LENS_OPTIONS: Array<{
   icon: string;
   label: string;
   context: string;
+  frame: string;
   transitionCopy: string;
 }> = [
   {
@@ -61,6 +63,7 @@ const LENS_OPTIONS: Array<{
     icon: "🍽",
     label: "Food & Dining",
     context: "Reduce decision fatigue nearby",
+    frame: "Low-friction nearby food decision.",
     transitionCopy: "Optimizing for simplicity nearby",
   },
   {
@@ -69,6 +72,7 @@ const LENS_OPTIONS: Array<{
     icon: "🛍",
     label: "Retail & Shopping",
     context: "Inspiration over endless searching",
+    frame: "A spontaneous browse worth stepping into.",
     transitionCopy: "Looking for something worth discovering",
   },
   {
@@ -77,6 +81,7 @@ const LENS_OPTIONS: Array<{
     icon: "🚇",
     label: "Urban Mobility",
     context: "What makes sense right here, right now",
+    frame: "The easiest useful move from where you are.",
     transitionCopy: "Reading movement and density nearby",
   },
   {
@@ -85,6 +90,7 @@ const LENS_OPTIONS: Array<{
     icon: "🎭",
     label: "Entertainment",
     context: "Something worth doing tonight",
+    frame: "Something nearby worth doing tonight.",
     transitionCopy: "Looking for something happening now",
   },
   {
@@ -93,6 +99,7 @@ const LENS_OPTIONS: Array<{
     icon: "👥",
     label: "Social Interaction",
     context: "Low-friction spontaneous connection",
+    frame: "A low-pressure place where interaction is possible.",
     transitionCopy: "Finding socially compatible energy",
   },
   {
@@ -101,6 +108,7 @@ const LENS_OPTIONS: Array<{
     icon: "🌿",
     label: "Wellness",
     context: "Context-aware nudges and resets",
+    frame: "A reset that fits your current energy and location.",
     transitionCopy: "Optimizing for a healthier next move",
   },
 ];
@@ -332,6 +340,8 @@ interface DecisionScreenProps {
 
 export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps) {
   const defaultMode: DomainMode = initialMode ?? "travel";
+  const defaultLensId = DEFAULT_LENS_BY_MODE[defaultMode];
+  const defaultLensProfile = getLensProfile(defaultLensId);
   const { emitVibeSignal, pivot, context: adaptiveContext } = useHadeAdaptiveContext();
   const {
     decision,
@@ -341,7 +351,11 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
     setMode,
     regenerate,
     refine,
-  } = useHade({ scenarioId, initialMode: defaultMode });
+  } = useHade({
+    scenarioId,
+    initialMode: defaultMode,
+    initialCandidateCategories: defaultLensProfile.candidateCategories,
+  });
 
   const [refineOpen, setRefineOpen] = useState(false);
   const [showPivotReasons, setShowPivotReasons] = useState(false);
@@ -353,7 +367,7 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
   const [liveToast, setLiveToast] = useState(false);
   const [showCompareModes, setShowCompareModes] = useState(false);
   const [activeLensId, setActiveLensId] = useState<LensId>(
-    DEFAULT_LENS_BY_MODE[defaultMode],
+    defaultLensId,
   );
   const [lensTransitioning, setLensTransitioning] = useState(false);
   const lensTransitionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -468,7 +482,15 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
       setPreviousOverride(null);
       setShowPivotReasons(false);
       setOverflowOpen(false);
-      setMode(lens.mode);
+      const candidateCategories = getLensCandidateCategories(lens.id);
+      if (process.env.NODE_ENV !== "production") {
+        console.log("[HADE LENS PAYLOAD]", {
+          activeLensId: lens.id,
+          mode: lens.mode,
+          candidate_categories: candidateCategories,
+        });
+      }
+      setMode(lens.mode, { candidate_categories: candidateCategories });
       lensTransitionTimerRef.current = setTimeout(() => {
         setLensTransitioning(false);
         lensTransitionTimerRef.current = null;
@@ -739,6 +761,10 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
                     object={displayDecision.object}
                     mode={mode}
                     contextLabel={activeLens.context}
+                    lensIcon={activeLens.icon}
+                    lensLabel={activeLens.label}
+                    lensFrame={activeLens.frame}
+                    isFallback={displayDecision.is_fallback}
                     isReframing={isReframing || lensTransitioning}
                     pivotLabel={lensTransitioning ? activeLens.transitionCopy : pivotLabel}
                     temporalState={displayDecision.temporal_state}

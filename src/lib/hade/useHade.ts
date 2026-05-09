@@ -87,6 +87,13 @@ export interface UseHadeConfig {
   scenarioId?: string | null;
   /** Pre-select a domain mode on mount (e.g. from the guided entry screen). */
   initialMode?: DomainMode;
+  /** Optional lens-specific Places categories layered on top of the existing mode. */
+  initialCandidateCategories?: readonly string[];
+}
+
+export interface UseHadeModeOptions {
+  /** Optional lens-specific Places categories layered on top of the existing mode. */
+  candidate_categories?: readonly string[];
 }
 
 export interface UseHadeReturn {
@@ -102,13 +109,32 @@ export interface UseHadeReturn {
   /** Currently active domain mode. */
   mode: DomainMode;
   /** Switch domain mode and immediately re-fetch with the new mode. */
-  setMode: (mode: DomainMode) => void;
+  setMode: (mode: DomainMode, options?: UseHadeModeOptions) => void;
   regenerate: () => void;
   refine: (input: {
     intent?: Intent | null;
     urgency?: Urgency;
   }) => Promise<void>;
   getAlternative: () => void;
+}
+
+function mergeCandidateCategories(
+  ...groups: Array<readonly string[] | undefined>
+): string[] | undefined {
+  const seen = new Set<string>();
+  const merged: string[] = [];
+
+  for (const group of groups) {
+    if (!group) continue;
+    for (const category of group) {
+      const normalized = category.trim();
+      if (!normalized || seen.has(normalized)) continue;
+      seen.add(normalized);
+      merged.push(normalized);
+    }
+  }
+
+  return merged.length > 0 ? merged : undefined;
 }
 
 export function useHade(config?: UseHadeConfig): UseHadeReturn {
@@ -129,6 +155,9 @@ export function useHade(config?: UseHadeConfig): UseHadeReturn {
   const [geoReady, setGeoReady] = useState(false);
   const [mode, setModeState] = useState<DomainMode>(config?.initialMode ?? "dining");
   const modeRef = useRef<DomainMode>(config?.initialMode ?? "dining");
+  const candidateCategoriesRef = useRef<readonly string[] | undefined>(
+    config?.initialCandidateCategories,
+  );
   const firedRef = useRef(false);
 
   const scenario = config?.scenarioId ? getScenario(config.scenarioId) : null;
@@ -253,6 +282,10 @@ export function useHade(config?: UseHadeConfig): UseHadeReturn {
       persona: activeAgent,
       settings: { ...settings, ...scenario?.settings },
       mode: modeRef.current,
+      candidate_categories: mergeCandidateCategories(
+        scenario?.request?.candidate_categories,
+        candidateCategoriesRef.current,
+      ),
     });
   }, [geoReady, context.geo, decide, activeAgent, settings, scenario]);
 
@@ -299,12 +332,17 @@ export function useHade(config?: UseHadeConfig): UseHadeReturn {
         persona: activeAgent,
         settings: { ...settings, ...scenario?.settings },
         mode: modeRef.current,
+        candidate_categories: mergeCandidateCategories(
+          scenario?.request?.candidate_categories,
+          candidateCategoriesRef.current,
+        ),
       });
       firedRef.current = true;
     }
   }, [response, pivot, decide, scenario, activeAgent, settings]);
 
-  const setMode = useCallback((newMode: DomainMode) => {
+  const setMode = useCallback((newMode: DomainMode, options?: UseHadeModeOptions) => {
+    candidateCategoriesRef.current = options?.candidate_categories;
     modeRef.current = newMode;
     setModeState(newMode);
     firedRef.current = false;
@@ -313,6 +351,10 @@ export function useHade(config?: UseHadeConfig): UseHadeReturn {
       persona: activeAgent,
       settings: { ...settings, ...scenario?.settings },
       mode: newMode,
+      candidate_categories: mergeCandidateCategories(
+        scenario?.request?.candidate_categories,
+        candidateCategoriesRef.current,
+      ),
     });
     firedRef.current = true;
   }, [decide, scenario, activeAgent, settings]);
@@ -338,9 +380,14 @@ export function useHade(config?: UseHadeConfig): UseHadeReturn {
         signals: [...signals, behavioralSig, intentSig],
         persona: activeAgent,
         settings,
+        mode: modeRef.current,
+        candidate_categories: mergeCandidateCategories(
+          scenario?.request?.candidate_categories,
+          candidateCategoriesRef.current,
+        ),
       });
     },
-    [emit, signals, activeAgent, settings, decide, userGeo],
+    [emit, signals, activeAgent, settings, decide, userGeo, scenario],
   );
 
   const getAlternative = useCallback(() => {

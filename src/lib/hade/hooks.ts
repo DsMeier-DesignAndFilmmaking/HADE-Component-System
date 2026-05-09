@@ -235,6 +235,25 @@ type ValidatedDecidePayload = DecideRequest & {
   persona: AgentPersona;
 };
 
+function mergeCandidateCategories(
+  ...groups: Array<readonly string[] | undefined>
+): string[] | undefined {
+  const seen = new Set<string>();
+  const merged: string[] = [];
+
+  for (const group of groups) {
+    if (!group) continue;
+    for (const category of group) {
+      const normalized = category.trim();
+      if (!normalized || seen.has(normalized)) continue;
+      seen.add(normalized);
+      merged.push(normalized);
+    }
+  }
+
+  return merged.length > 0 ? merged : undefined;
+}
+
 /**
  * Runtime type guard — checks persona and geo before any side effects.
  * Logs a descriptive warning on the first violation and returns false
@@ -328,6 +347,8 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
   // Retains the persona from the last successful decide call so pivot(),
   // which has no access to the active agent, can inherit it automatically.
   const lastPersonaRef = useRef<AgentPersona | null>(null);
+  // Retains the active mode so refine/pivot keep the selected lens contract.
+  const lastModeRef = useRef<string | undefined>(undefined);
   // Fixed for the lifetime of this mount — survives pivot/refine, resets on page reload.
   const sessionIdRef = useRef(crypto.randomUUID());
 
@@ -540,6 +561,10 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
             !r.venue_id.startsWith("offline-"),
         )
         .slice(-REJECTION_HISTORY_CAP);
+      const candidateCategories = mergeCandidateCategories(
+        ctx.candidate_categories,
+        req?.candidate_categories,
+      );
 
       const body: DecidePayloadCandidate = {
         persona:           req?.persona ?? lastPersonaRef.current ?? undefined,
@@ -559,8 +584,8 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
           debug: process.env.NODE_ENV !== "production",
         },
         node_hints:          nodeHints.length > 0 ? nodeHints : undefined,
-        candidate_categories: req?.candidate_categories ?? ctx.candidate_categories,
-        mode:                 req?.mode,
+        candidate_categories: candidateCategories,
+        mode:                 req?.mode ?? lastModeRef.current,
       };
 
       // 2. Validate before any side effects. Logs a specific warning for the
@@ -577,6 +602,7 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
       abortRef.current?.abort();
       const controller = new AbortController();
       abortRef.current = controller;
+      lastModeRef.current = body.mode;
 
       setIsLoading(true);
       setError(null);
@@ -684,6 +710,7 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
           ...(req?.state && { state: req.state as HadeContext["state"] }),
           ...(req?.social && { social: req.social as HadeContext["social"] }),
           ...(req?.constraints && { constraints: req.constraints }),
+          ...(body.candidate_categories && { candidate_categories: body.candidate_categories }),
         });
       } catch (err) {
         // Silently ignore aborted requests — a newer request replaced this one

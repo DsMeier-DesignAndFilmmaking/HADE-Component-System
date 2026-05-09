@@ -33,7 +33,7 @@ import { getNodeTrustScore, getNodeVibeScore } from "@/lib/hade/weights";
 import { getDistanceCopy } from "@/lib/hade/ugcCopy";
 import { getNearbyUGC } from "@/lib/hade/ugc";
 import { getDomainConfig, type ExtendedDomainConfig, type ScoringWeights } from "@/core/domain/domainConfigs";
-import { filterByDomain } from "@/core/domain/filtering";
+import { DOMAIN_TYPE_BLACKLIST, filterByDomain } from "@/core/domain/filtering";
 import { RADIUS } from "@/core/constants/radius";
 import type { DecisionCandidate } from "@/core/types/decision";
 import type {
@@ -185,6 +185,8 @@ export interface SpontaneousScoreBreakdown {
   groupFitBonus: number;
   /** TRAVEL-only: bonus for landmarks/viewpoints/high-quality unique attractions. */
   uniquenessBonus: number;
+  /** Lens-only soft boost from candidate_categories. Positive-only; never filters. */
+  lensCategoryBoost: number;
   finalScore: number;
 }
 
@@ -393,6 +395,7 @@ const DOMAIN_CATEGORY_WHITELIST: Record<string, Set<string>> = {
 function filterCandidatesByDomain(
   candidates: RankedCandidate[],
   config: ExtendedDomainConfig | undefined,
+  lensCategories?: readonly string[],
 ): RankedCandidate[] {
   // Safe fallback — defaults to DINING when config is missing for any reason
   const safeConfig = config ?? getDomainConfig(undefined);
@@ -408,17 +411,23 @@ function filterCandidatesByDomain(
 
   const allowedSet = new Set(allowed);
   const ugcAllowed = DOMAIN_CATEGORY_WHITELIST[safeConfig.id];
+  const lensTypeSet = new Set(expandLensCategoriesToPlaceTypes(lensCategories));
+  const lensCategorySet = new Set((lensCategories ?? []).map(normalizeCategoryToken));
 
   const filtered = candidates.filter((c) => {
     // UGC events are community social content — always admitted regardless of domain
     if (c.obj.type === "ugc_event") return true;
     // Has Google types → use allowedPlaceTypes gate (same as filterByDomain)
     if (c.types && c.types.length > 0) {
-      return c.types.some((t) => allowedSet.has(t));
+      if (c.types.some((t) => DOMAIN_TYPE_BLACKLIST.has(t))) return false;
+      const domainMatch = c.types.some((t) => allowedSet.has(t));
+      const lensMatch = c.types.some((t) => lensTypeSet.has(normalizeCategoryToken(t)));
+      return domainMatch || lensMatch;
     }
     // No types (custom / unknown) → gate by normalized category string
     if (ugcAllowed && c.category) {
-      return ugcAllowed.has(c.category);
+      const normalizedCategory = normalizeCategoryToken(c.category);
+      return ugcAllowed.has(c.category) || lensCategorySet.has(normalizedCategory);
     }
     // Unknown category and no types — admit rather than silently drop
     return true;
@@ -431,6 +440,38 @@ function filterCandidatesByDomain(
   // Always emit — required for cross-domain differentiation diagnostics.
   console.log("[HADE FILTERED COUNT]", filtered.length);
   return filtered;
+}
+
+function filterPlacesByDomainWithLens(
+  places: PlaceOption[],
+  domain: string,
+  lensCategories?: readonly string[],
+): PlaceOption[] {
+  const domainFiltered = filterByDomain(places, domain);
+  if (!lensCategories || lensCategories.length === 0) return domainFiltered;
+
+  const keptIds = new Set(domainFiltered.map((place) => place.id));
+  const lensTypeSet = new Set(expandLensCategoriesToPlaceTypes(lensCategories));
+  const lensCategorySet = new Set(lensCategories.map(normalizeCategoryToken));
+  const lensAdmitted = places.filter((place) => {
+    if (keptIds.has(place.id)) return false;
+    const types = place.types ?? [];
+    if (types.some((type) => DOMAIN_TYPE_BLACKLIST.has(type))) return false;
+    const typeMatch = types.some((type) => lensTypeSet.has(normalizeCategoryToken(type)));
+    const categoryMatch = lensCategorySet.has(normalizeCategoryToken(place.category));
+    return typeMatch || categoryMatch;
+  });
+
+  if (lensAdmitted.length > 0 && process.env.NODE_ENV !== "production") {
+    console.log("[HADE LENS FILTER]", {
+      mode: domain,
+      domain_kept: domainFiltered.length,
+      lens_admitted: lensAdmitted.length,
+      lens_categories: lensCategories,
+    });
+  }
+
+  return [...domainFiltered, ...lensAdmitted];
 }
 
 // ─── Time-window filter ───────────────────────────────────────────────────────
@@ -475,6 +516,9 @@ const DOMAIN_BOOST_TYPES: Record<string, string[]> = {
 };
 const DOMAIN_TYPE_BOOST   = 0.25;
 const DOMAIN_TYPE_PENALTY = -0.20;
+const LENS_EXACT_MATCH_BOOST = 0.08;
+const LENS_UGC_MATCH_BOOST = 0.06;
+const LENS_LOOSE_MATCH_BOOST = 0.04;
 
 function computeDomainTypeBonus(
   types: string[] | undefined,
@@ -485,6 +529,92 @@ function computeDomainTypeBonus(
   const boostList = DOMAIN_BOOST_TYPES[domainId];
   if (!boostList) return 0;
   return types.some((t) => boostList.includes(t)) ? DOMAIN_TYPE_BOOST : DOMAIN_TYPE_PENALTY;
+}
+
+function normalizeCategoryToken(token: string): string {
+  return token.trim().toLowerCase().replace(/[\s-]+/g, "_");
+}
+
+const LENS_PLACE_TYPE_ALIASES: Record<string, readonly string[]> = {
+  bookstore: ["book_store"],
+  market: ["supermarket", "grocery_store"],
+  event: ["event_venue"],
+  food: ["restaurant", "cafe"],
+  health: ["gym", "spa"],
+  yoga: ["yoga_studio"],
+  wellness: ["gym", "spa", "yoga_studio"],
+  route: ["park", "tourist_attraction"],
+  point_of_interest: ["tourist_attraction", "landmark"],
+  nightclub: ["night_club"],
+};
+
+function expandLensCategoriesToPlaceTypes(categories?: readonly string[]): string[] {
+  const seen = new Set<string>();
+
+  for (const category of categories ?? []) {
+    const normalized = normalizeCategoryToken(category);
+    if (!normalized) continue;
+    const placeTypes = LENS_PLACE_TYPE_ALIASES[normalized] ?? [normalized];
+    for (const placeType of placeTypes) {
+      const normalizedPlaceType = normalizeCategoryToken(placeType);
+      if (normalizedPlaceType) seen.add(normalizedPlaceType);
+    }
+  }
+
+  return [...seen];
+}
+
+function buildLensCategoryBuckets(categories?: readonly string[]): string[][] | undefined {
+  const placeTypes = expandLensCategoriesToPlaceTypes(categories);
+  return placeTypes.length > 0 ? placeTypes.map((placeType) => [placeType]) : undefined;
+}
+
+const LOOSE_LENS_GROUPS: readonly (readonly string[])[] = [
+  ["restaurant", "cafe", "bakery", "meal_takeaway", "meal_delivery", "food", "bar"],
+  ["bookstore", "book_store", "clothing_store", "store", "shopping_mall", "market", "mall", "grocery"],
+  ["transit_station", "route", "park", "point_of_interest", "tourist_attraction", "landmark"],
+  ["movie_theater", "art_gallery", "gallery", "museum", "bar", "night_club", "nightclub", "event", "event_venue", "venue", "theater"],
+  ["cafe", "bar", "community_center", "event", "event_venue", "restaurant", "venue"],
+  ["gym", "spa", "park", "health", "yoga", "wellness", "fitness_center", "yoga_studio"],
+];
+
+function hasLooseLensOverlap(candidateTokens: Set<string>, lensTokens: Set<string>): boolean {
+  return LOOSE_LENS_GROUPS.some((group) => {
+    const normalizedGroup = group.map(normalizeCategoryToken);
+    return (
+      normalizedGroup.some((token) => candidateTokens.has(token)) &&
+      normalizedGroup.some((token) => lensTokens.has(token))
+    );
+  });
+}
+
+function computeLensCategoryBoost(
+  candidate: RankedCandidate,
+  lensCategories?: readonly string[],
+): number {
+  if (!lensCategories || lensCategories.length === 0) return 0;
+
+  const lensTokens = new Set(lensCategories.map(normalizeCategoryToken).filter(Boolean));
+  if (lensTokens.size === 0) return 0;
+
+  const candidateTokens = new Set(
+    [
+      candidate.category,
+      candidate.obj.vibe_tag,
+      ...(candidate.types ?? []),
+    ]
+      .filter((token): token is string => typeof token === "string" && token.trim().length > 0)
+      .map(normalizeCategoryToken),
+  );
+
+  if (candidateTokens.size === 0) return 0;
+
+  const exactMatch = [...candidateTokens].some((token) => lensTokens.has(token));
+  if (exactMatch) {
+    return candidate.obj.type === "ugc_event" ? LENS_UGC_MATCH_BOOST : LENS_EXACT_MATCH_BOOST;
+  }
+
+  return hasLooseLensOverlap(candidateTokens, lensTokens) ? LENS_LOOSE_MATCH_BOOST : 0;
 }
 
 /**
@@ -559,6 +689,7 @@ function scoreSpontaneousCandidate(
   explorationBias = 0,
   domainId?: string,
   groupSize?: number,
+  lensCategories?: readonly string[],
 ): SpontaneousScoreBreakdown {
   const { obj, distance_meters } = candidate;
 
@@ -589,6 +720,7 @@ function scoreSpontaneousCandidate(
   const domainTypeBonus  = computeDomainTypeBonus(candidate.types, domainId);
   const groupFitBonus    = computeGroupFitBonus(obj, groupSize, domainId);
   const uniquenessBonus  = computeUniquenessBonus(candidate.types, trustScore, domainId);
+  const lensCategoryBoost = computeLensCategoryBoost(candidate, lensCategories);
   const jitter = explorationBias > 0 ? (Math.random() - 0.5) * explorationBias * 0.2 : 0;
 
   return {
@@ -601,8 +733,15 @@ function scoreSpontaneousCandidate(
     domainTypeBonus,
     groupFitBonus,
     uniquenessBonus,
+    lensCategoryBoost,
     finalScore: clamp(
-      baseScore + userStateBonus + domainTypeBonus + groupFitBonus + uniquenessBonus + jitter,
+      baseScore +
+        userStateBonus +
+        domainTypeBonus +
+        groupFitBonus +
+        uniquenessBonus +
+        lensCategoryBoost +
+        jitter,
       0,
       1,
     ),
@@ -616,6 +755,7 @@ export async function rankSpontaneousObjects(
   explorationBias = 0,
   domainId?: string,
   groupSize?: number,
+  lensCategories?: readonly string[],
 ): Promise<Array<{ candidate: RankedCandidate; score: number; breakdown: SpontaneousScoreBreakdown }>> {
   const scoredCandidates = await Promise.all(
     candidates.map(async (candidate) => {
@@ -640,6 +780,7 @@ export async function rankSpontaneousObjects(
         explorationBias,
         domainId,
         groupSize,
+        lensCategories,
       );
       return { candidate: candidateWithTrust, score: breakdown.finalScore, breakdown };
     }),
@@ -699,9 +840,15 @@ export async function generateSyntheticDecision(
     console.log("[HADE MODE]", config.id);
 
     const callerCategories = (body as { candidate_categories?: unknown }).candidate_categories;
+    const callerCategoryList = Array.isArray(callerCategories)
+      ? callerCategories
+          .filter((category): category is string => typeof category === "string")
+          .map((category) => category.trim())
+          .filter(Boolean)
+      : undefined;
     const categories =
-      Array.isArray(callerCategories) && (callerCategories as unknown[]).length > 0
-        ? (callerCategories as string[])
+      callerCategoryList && callerCategoryList.length > 0
+        ? callerCategoryList
         : config.categoryResolver(ctx);
     const primaryCategory = categories[0] ?? "broad";
     console.log("[HADE DEBUG] categories:", categories);
@@ -731,6 +878,7 @@ export async function generateSyntheticDecision(
 
     const domainRadius = DOMAIN_RADIUS_M[config.id] ?? radius;
     const domainBuckets = DOMAIN_CATEGORY_BUCKETS[config.id];
+    const lensBuckets = callerCategoryList ? buildLensCategoryBuckets(callerCategoryList) : undefined;
 
     console.log(
       `[hade-synthetic ${reqId}] fetching places` +
@@ -739,15 +887,17 @@ export async function generateSyntheticDecision(
 
     let places: PlaceOption[];
     try {
-      places = domainBuckets && geoHint
-        ? await fetchMultiQueryGrounded({ geo: geoHint, categoryBuckets: domainBuckets, radius_meters: domainRadius })
+      places = lensBuckets && lensBuckets.length > 0 && geoHint
+        ? await fetchMultiQueryGrounded({ geo: geoHint, categoryBuckets: lensBuckets, radius_meters: domainRadius })
+        : domainBuckets && geoHint
+          ? await fetchMultiQueryGrounded({ geo: geoHint, categoryBuckets: domainBuckets, radius_meters: domainRadius })
         : await getPlacesCandidates(ctx, categories);
     } catch (err) {
       const detail = err instanceof Error ? err.message : String(err);
       console.warn(`[hade-synthetic ${reqId}] Places fetch failed (${detail}) — continuing with UGC-only`);
       places = [];
     }
-    const filteredPlaces = filterByDomain(places, config.id);
+    const filteredPlaces = filterPlacesByDomainWithLens(places, config.id, callerCategoryList);
 
     console.log("[HADE FILTER ENFORCED]", {
       mode: config.id,
@@ -785,6 +935,7 @@ export async function generateSyntheticDecision(
     const mergedCandidates = filterCandidatesByDomain(
       mergeCandidates(ugcCandidates, placeCandidates),
       config,
+      callerCategoryList,
     );
 
     // ── Step 3: HARD EXCLUSION of rejected objects ────────────────────────────
@@ -859,6 +1010,7 @@ export async function generateSyntheticDecision(
       config.explorationBias,
       config.id,
       ctx.social?.group_size,
+      categories,
     );
 
     const best = sorted[0];
@@ -866,6 +1018,11 @@ export async function generateSyntheticDecision(
 
     if (process.env.NODE_ENV !== "production") {
       console.log("[HADE TOP RESULT TYPES]", best.candidate.types ?? []);
+      console.log("[HADE LENS SCORE]", {
+        categories,
+        selected: best.candidate.obj.id,
+        lensCategoryBoost: r3(best.breakdown.lensCategoryBoost),
+      });
     }
 
     const bestObj = best.candidate.obj;
@@ -994,6 +1151,7 @@ export async function generateSyntheticDecision(
         domainTypeBonus:    r3(breakdown.domainTypeBonus),
         groupFitBonus:      r3(breakdown.groupFitBonus),
         uniquenessBonus:    r3(breakdown.uniquenessBonus),
+        lensCategoryBoost:  r3(breakdown.lensCategoryBoost),
         finalScore:         r3(breakdown.finalScore),
       })),
       selected: {

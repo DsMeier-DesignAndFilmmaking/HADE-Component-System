@@ -25,18 +25,6 @@ function makeVibeSignal(id = "test-sig"): VibeSignal {
   };
 }
 
-function makeOkResponse(accepted = 1): Response {
-  return new Response(
-    JSON.stringify({
-      accepted,
-      rejected: 0,
-      signal_ids: Array.from({ length: accepted }, (_, i) => `sig-${i}`),
-      node_versions: {},
-    }),
-    { status: 200, headers: { "Content-Type": "application/json" } },
-  );
-}
-
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 describe("SignalQueue", () => {
@@ -49,40 +37,20 @@ describe("SignalQueue", () => {
     vi.useRealTimers();
   });
 
-  it("flushAsync resolves after POST round-trip, not synchronously", async () => {
-    let resolvePost!: (r: Response) => void;
-    const postHeld = new Promise<Response>((res) => {
-      resolvePost = res;
-    });
-
-    const fetchSpy = vi.fn().mockReturnValue(postHeld);
+  it("flushAsync does not POST directly from the UI queue", async () => {
+    const fetchSpy = vi.fn();
     vi.stubGlobal("fetch", fetchSpy);
 
     const queue = new SignalQueue();
     queue.enqueue(makeVibeSignal());
 
-    let resolved = false;
-    const flushDone = queue.flushAsync().then(() => {
-      resolved = true;
-    });
+    await queue.flushAsync();
 
-    // fetch must have been called immediately (flushAsync drains synchronously before awaiting)
-    expect(fetchSpy).toHaveBeenCalledOnce();
-    expect(fetchSpy.mock.calls[0][0]).toBe("/api/hade/signal");
-    expect(fetchSpy.mock.calls[0][1]).toMatchObject({ method: "POST" });
-
-    // Promise must not have resolved yet — we're waiting on the network
-    expect(resolved).toBe(false);
-
-    // Unblock the network response
-    resolvePost(makeOkResponse());
-    await flushDone;
-
-    expect(resolved).toBe(true);
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  it("flushAsync batches multiple enqueued signals into a single POST", async () => {
-    const fetchSpy = vi.fn().mockResolvedValue(makeOkResponse(3));
+  it("flushAsync drains the in-memory queue without direct network delivery", async () => {
+    const fetchSpy = vi.fn();
     vi.stubGlobal("fetch", fetchSpy);
 
     const queue = new SignalQueue();
@@ -92,12 +60,7 @@ describe("SignalQueue", () => {
 
     await queue.flushAsync();
 
-    expect(fetchSpy).toHaveBeenCalledOnce();
-
-    const body = JSON.parse(fetchSpy.mock.calls[0][1].body as string) as {
-      signals: unknown[];
-    };
-    expect(body.signals).toHaveLength(3);
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 
   it("flushAsync resolves immediately when queue is empty (no POST)", async () => {

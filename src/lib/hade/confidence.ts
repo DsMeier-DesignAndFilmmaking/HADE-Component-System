@@ -1,3 +1,5 @@
+import { VIBE_TAG_SENTIMENT } from "@/types/hade";
+
 type LocationNode = {
   signal_count: number;
   weight_map: Record<string, number>;
@@ -17,7 +19,12 @@ export function computeConfidence(node?: LocationNode): number {
   const signalStrength = clamp(node.signal_count / 10, 0.3, 1.0);
 
   // Agreement score
-  const weightValues = Object.values(node.weight_map ?? {});
+  const weightEntries = Object.entries(node.weight_map ?? {});
+  const weightValues = weightEntries.map(([tag, value]) => {
+    const boundedValue = clamp(value, 0, 1);
+    const sentiment = VIBE_TAG_SENTIMENT[tag];
+    return sentiment === "negative" ? 1 - boundedValue : boundedValue;
+  });
   if (weightValues.length === 0) {
     return 0.5;
   }
@@ -25,7 +32,8 @@ export function computeConfidence(node?: LocationNode): number {
   const max = Math.max(...weightValues);
   const min = Math.min(...weightValues);
 
-  let agreementScore = max - min;
+  const spread = max - min;
+  let agreementScore = 1 - spread;
   agreementScore = clamp(agreementScore, 0.4, 1.0);
 
   // Trust score (constant)
