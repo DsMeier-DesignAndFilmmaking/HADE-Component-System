@@ -28,6 +28,9 @@
   }
 
   html {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
@@ -35,11 +38,26 @@
 
   body {
     @apply bg-background text-textPrimary;
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
     font-feature-settings: "kern" 1, "liga" 1;
   }
 
   ::selection {
     @apply bg-accentPrimary/15 text-textPrimary;
+  }
+
+  .hade-add-sheet,
+  .hade-add-sheet * {
+    max-width: 100%;
+  }
+
+  .hade-add-sheet input,
+  .hade-add-sheet textarea,
+  .hade-add-sheet select {
+    min-width: 0;
+    font-size: 16px;
   }
 
   :focus-visible {

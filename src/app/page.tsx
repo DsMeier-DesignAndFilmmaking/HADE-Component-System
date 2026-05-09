@@ -58,16 +58,13 @@ export default function HomePage() {
 
   {/* Hero Header: Blue-Green Gradient remains for visual "spark" */}
   <motion.h1 
-    initial={{ opacity: 0, filter: "blur(10px)", y: 20 }}
-    whileInView={{ opacity: 1, filter: "blur(0px)", y: 0 }}
-    transition={{ duration: 1.2, ease: [0.16, 1, 0.3, 1] as any }}
-    className="mx-auto max-w-5xl text-5xl font-extralight tracking-tighter md:text-8xl leading-[1.05] text-slate-950"
-  >
-    Infrastructure for <br />
-    <span className="bg-gradient-to-r from-blue-700 via-cyan-500 to-emerald-500 bg-[length:200%_auto] bg-clip-text text-transparent animate-text-gradient italic font-serif">
-      spontaneous
-    </span> exploration.
-  </motion.h1>
+  className="mx-auto max-w-5xl text-5xl font-extralight tracking-tighter md:text-8xl leading-[1.2] md:leading-[1.05] text-slate-950"
+>
+  Infrastructure for <br />
+  <span className="inline-block py-1 pr-2 bg-gradient-to-r from-blue-700 via-cyan-500 to-emerald-500 bg-[length:200%_auto] bg-clip-text text-transparent animate-text-gradient italic font-serif">
+    spontaneous
+  </span> exploration.
+</motion.h1>
 
   {/* Human-Centric Description: Warm, clear, and action-oriented */}
   <motion.p

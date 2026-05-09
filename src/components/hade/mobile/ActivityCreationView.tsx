@@ -6,6 +6,7 @@ import type { SpontaneousObject } from "@/types/hade";
 import { RADIUS } from "@/core/constants/radius";
 import { getDeviceId } from "@/lib/hade/deviceId";
 import { useHadeAdaptiveContext } from "@/lib/hade/hooks";
+import { resetMobileViewportAfterInput } from "@/lib/hade/mobileViewport";
 
 // ─── Vibe options ─────────────────────────────────────────────────────────────
 
@@ -691,6 +692,7 @@ export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
 
     setParticles(makeParticles());
     setStatus("success");
+    resetMobileViewportAfterInput();
     onCreate?.(spontaneous);
 
     setTimeout(() => {
@@ -708,7 +710,7 @@ export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
     <section
       ref={sheetRef}
       onPointerDownCapture={handleSheetPointerDownCapture}
-      className="relative flex max-h-[90dvh] min-h-0 flex-col overflow-hidden rounded-[22px] bg-surface shadow-soft"
+      className="hade-add-sheet relative flex w-full max-w-full max-h-[90dvh] min-h-0 flex-col overflow-hidden rounded-[22px] bg-surface shadow-soft"
     >
 
       {/* ── Confetti burst ──────────────────────────────────────────────────── */}
@@ -756,9 +758,9 @@ export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
           {step === "what" && (
             <motion.div
               key="what"
-              initial={{ opacity: 0, x: 12 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -12 }}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
               transition={{ duration: 0.18, ease: "easeOut" }}
             >
               <div className="relative mb-4 flex items-center">
@@ -768,7 +770,7 @@ export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
                   onChange={(e) => setTitle(e.target.value)}
                   onFocus={handleFieldFocus}
                   placeholder="What do you want to add?"
-                  className="w-full rounded-xl border border-line bg-white/70 px-3.5 py-3 pr-11 text-sm text-ink placeholder:text-ink/30 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
+                  className="w-full rounded-xl border border-line bg-white/70 px-3.5 py-3 pr-11 text-base text-ink placeholder:text-ink/30 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
                 />
                 <button
                   type="button"
@@ -791,9 +793,9 @@ export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
           {step === "vibe" && (
             <motion.div
               key="vibe"
-              initial={{ opacity: 0, x: 12 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -12 }}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
               transition={{ duration: 0.18, ease: "easeOut" }}
             >
               <div className="mb-4 grid grid-cols-2 gap-2">
@@ -824,9 +826,9 @@ export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
           {step === "details" && (
             <motion.div
               key="details"
-              initial={{ opacity: 0, x: 12 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -12 }}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
               transition={{ duration: 0.18, ease: "easeOut" }}
             >
               {/* Summary row */}
@@ -859,7 +861,7 @@ export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
                         onFocus={handleFieldFocus}
                         aria-label="Start hour"
                         aria-invalid={Boolean(timeValidationMessage)}
-                        className="h-10 w-full rounded-lg border border-line/70 bg-white px-2 text-[15px] font-semibold text-ink outline-none focus:border-accent"
+                        className="h-10 w-full rounded-lg border border-line/70 bg-white px-2 text-base font-semibold text-ink outline-none focus:border-accent"
                       >
                         {HOUR_OPTIONS.map((hour) => (
                           <option key={hour} value={hour}>{hour}</option>
@@ -874,7 +876,7 @@ export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
                         onFocus={handleFieldFocus}
                         aria-label="Start minute"
                         aria-invalid={Boolean(timeValidationMessage)}
-                        className="h-10 w-full rounded-lg border border-line/70 bg-white px-2 text-[15px] font-semibold text-ink outline-none focus:border-accent"
+                        className="h-10 w-full rounded-lg border border-line/70 bg-white px-2 text-base font-semibold text-ink outline-none focus:border-accent"
                       >
                         {MINUTE_OPTIONS.map((minute) => (
                           <option key={minute} value={minute}>{minute}</option>
@@ -889,7 +891,7 @@ export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
                         onFocus={handleFieldFocus}
                         aria-label="Start time period"
                         aria-invalid={Boolean(timeValidationMessage)}
-                        className="h-10 w-full rounded-lg border border-line/70 bg-white px-2 text-[15px] font-semibold text-ink outline-none focus:border-accent"
+                        className="h-10 w-full rounded-lg border border-line/70 bg-white px-2 text-base font-semibold text-ink outline-none focus:border-accent"
                       >
                         <option value="AM">AM</option>
                         <option value="PM">PM</option>
@@ -908,7 +910,7 @@ export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
                 onFocus={handleFieldFocus}
                 placeholder="Notes (optional)"
                 rows={2}
-                className="mb-4 w-full resize-none rounded-xl border border-line bg-white/70 px-3.5 py-2.5 text-sm text-ink placeholder:text-ink/30 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
+                className="mb-4 w-full resize-none rounded-xl border border-line bg-white/70 px-3.5 py-2.5 text-base text-ink placeholder:text-ink/30 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
               />
 
               {(timeValidationMessage || errorMsg) && (
@@ -939,9 +941,9 @@ export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
           {step === "what" && (
             <motion.div
               key="what-actions"
-              initial={{ opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -6 }}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
               transition={{ duration: 0.16, ease: "easeOut" }}
             >
               <button
@@ -959,9 +961,9 @@ export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
             <motion.div
               key="vibe-actions"
               className="flex gap-2"
-              initial={{ opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -6 }}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
               transition={{ duration: 0.16, ease: "easeOut" }}
             >
               <button
@@ -985,9 +987,9 @@ export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
             <motion.div
               key="details-actions"
               className="flex gap-2"
-              initial={{ opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -6 }}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
               transition={{ duration: 0.16, ease: "easeOut" }}
             >
               <button

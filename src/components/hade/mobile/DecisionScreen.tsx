@@ -10,6 +10,7 @@ import { useHade } from "@/lib/hade/useHade";
 import { getNavigationUrl } from "@/lib/hade/navigation";
 import { recordNavigationTelemetry } from "@/lib/hade/navigationTelemetry";
 import { getLensCandidateCategories, getLensProfile } from "@/lib/hade/lensProfiles";
+import { resetMobileViewportAfterInput } from "@/lib/hade/mobileViewport";
 import { computeTemporalState, getUGCPivotReasons } from "@/lib/hade/ugcCopy";
 import { HeroDecisionCard } from "./HeroDecisionCard";
 import { RefineSheet } from "./RefineSheet";
@@ -378,6 +379,11 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
   const [decisionHistory, setDecisionHistory] = useState<DecisionViewModel[]>([]);
   const [overflowOpen, setOverflowOpen] = useState(false);
 
+  const closeCreationFlow = useCallback(() => {
+    resetMobileViewportAfterInput();
+    setShowCreationFlow(false);
+  }, []);
+
   function handleCreationBackdropPointerDown(event: PointerEvent<HTMLDivElement>) {
     if (event.target !== event.currentTarget) {
       creationBackdropPointerRef.current = null;
@@ -398,12 +404,12 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
     const moved = Math.hypot(event.clientX - start.x, event.clientY - start.y);
     if (moved > 10) return;
 
-    setShowCreationFlow(false);
+    closeCreationFlow();
   }
 
   function handleCreationOverlayKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     if (event.key !== "Escape") return;
-    setShowCreationFlow(false);
+    closeCreationFlow();
   }
 
   // ─── Reframing state ────────────────────────────────────────────────────────
@@ -944,7 +950,7 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
       <AnimatePresence>
         {showCreationFlow && (
           <motion.div
-            className="fixed inset-0 z-30 flex h-[100dvh] items-end bg-black/25 px-3 pb-[max(10px,env(safe-area-inset-bottom,10px))]"
+            className="fixed inset-0 z-30 flex h-[100dvh] w-full max-w-[100vw] items-end overflow-x-hidden bg-black/25 px-3 pb-[max(10px,env(safe-area-inset-bottom,10px))]"
             onPointerDown={handleCreationBackdropPointerDown}
             onPointerUp={handleCreationBackdropPointerUp}
             onKeyDown={handleCreationOverlayKeyDown}
@@ -953,22 +959,22 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
             exit={{ opacity: 0 }}
           >
             <motion.div
-              className="mx-auto mb-2 flex max-h-[90dvh] w-full max-w-[430px] flex-col"
-              initial={{ y: 32 }}
-              animate={{ y: 0 }}
-              exit={{ y: 32 }}
+              className="mx-auto mb-2 flex max-h-[90dvh] w-full max-w-[min(430px,100vw)] flex-col"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
             >
-              <ErrorBoundary name="ActivityCreationView" onReset={() => setShowCreationFlow(false)}>
-                <div className="relative">
+              <ErrorBoundary name="ActivityCreationView" onReset={closeCreationFlow}>
+                <div className="relative w-full max-w-full">
                   <button
                     type="button"
-                    onClick={() => setShowCreationFlow(false)}
+                    onClick={closeCreationFlow}
                     className="absolute right-3 top-3 z-10 rounded-full bg-white/80 px-2.5 py-1 text-[11px] font-semibold text-ink/60"
                   >
                     Close
                   </button>
                   <ActivityCreationView onCreate={() => {
-                    setShowCreationFlow(false);
+                    closeCreationFlow();
                     setLiveToast(true);
                     navigator.vibrate?.(50);
                   }} />
