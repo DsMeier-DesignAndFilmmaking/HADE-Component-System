@@ -60,27 +60,29 @@ function isLive(object: SpontaneousObject): boolean {
   return start <= now && now < end;
 }
 
-function hasSavedBrowserLocation(object: SpontaneousObject): boolean {
-  const { lat, lng } = object.location ?? {};
-  return (
-    typeof lat === "number" &&
-    typeof lng === "number" &&
-    Number.isFinite(lat) &&
-    Number.isFinite(lng) &&
-    !(lat === 0 && lng === 0)
-  );
-}
+type CreatedLocationDisplay = {
+  primary: string;
+  secondary?: string;
+};
 
-function getCreatedLocationDisplay(object: SpontaneousObject): string | null {
-  const locationLabel = object.location_label?.trim();
-  if (locationLabel) return locationLabel;
-
-  const address = object.address?.trim();
-  if (address) return address;
-
-  if (object.location_source === "browser_geolocation" && hasSavedBrowserLocation(object)) {
-    return "Location saved nearby";
+function getCreatedLocationDisplay(object: SpontaneousObject): CreatedLocationDisplay | null {
+  const placeName = object.place_name?.trim();
+  if (placeName) {
+    const address = object.address?.trim();
+    return {
+      primary: placeName,
+      ...(address ? { secondary: address } : {}),
+    };
   }
+
+  const locationLabel = object.location_label?.trim();
+  if (locationLabel) return { primary: locationLabel };
+
+  if (object.location_source === "browser_geolocation") {
+    return { primary: "Current location saved" };
+  }
+
+  if (object.location_source === "fallback_geo") return null;
 
   return null;
 }
@@ -218,7 +220,12 @@ export function HeroDecisionCard({
               {createdLocationDisplay && (
                 <div className="mt-2 inline-flex max-w-full items-center gap-1.5 rounded-full border border-emerald-500/15 bg-white/70 px-2.5 py-1 text-[11px] font-medium leading-tight text-ink/56">
                   <span aria-hidden="true">⌖</span>
-                  <span className="min-w-0 truncate">{createdLocationDisplay}</span>
+                  <span className="min-w-0 truncate">
+                    {createdLocationDisplay.primary}
+                    {createdLocationDisplay.secondary && (
+                      <span className="text-ink/36"> · {createdLocationDisplay.secondary}</span>
+                    )}
+                  </span>
                 </div>
               )}
             </div>

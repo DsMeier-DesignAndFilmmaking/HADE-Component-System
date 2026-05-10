@@ -283,6 +283,10 @@ function candidateFromObject(
 }
 
 function ugcToCandidate(entity: UGCEntity, origin: GeoLocation, now: number): RankedCandidate | null {
+  if (!entity.geo || !Number.isFinite(entity.geo.lat) || !Number.isFinite(entity.geo.lng)) {
+    return null;
+  }
+
   const createdAt = isoToEpochMs(entity.created_at) ?? now;
   const expiresAt = isoToEpochMs(entity.expires_at) ?? now + 2 * 60 * 60 * 1000;
   const displayAddress = entity.location_label ?? entity.address ?? entity.place_name;

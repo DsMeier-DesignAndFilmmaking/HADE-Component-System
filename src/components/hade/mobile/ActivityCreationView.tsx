@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type FocusEvent, type MouseEvent, type PointerEvent } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import type { SpontaneousObject, UGCEntity } from "@/types/hade";
+import type { GeoLocation, PlaceOption, SpontaneousObject, UGCEntity } from "@/types/hade";
 import { RADIUS } from "@/core/constants/radius";
 import { getDeviceId } from "@/lib/hade/deviceId";
 import { useHadeAdaptiveContext } from "@/lib/hade/hooks";
@@ -58,9 +58,15 @@ type TimeParts = {
   minute: string;
   period: TimePeriod;
 };
+type LocationCaptureMode = "none" | "current" | "place" | "manual";
+type LocationAvailability = "checking" | "available" | "denied" | "unavailable";
+type PlaceSearchStatus = "idle" | "loading" | "ready" | "empty" | "error";
 type SheetKeyboardEnvironment = {
   isIOS: boolean;
   isStandalonePWA: boolean;
+};
+type NearbyPlacesResponse = {
+  places?: PlaceOption[];
 };
 type UgcPersistResponse = {
   ok: boolean;
@@ -86,6 +92,7 @@ type LocalUgcDraft = {
 const HOUR_OPTIONS = Array.from({ length: 12 }, (_, index) => String(index + 1));
 const MINUTE_OPTIONS = Array.from({ length: 60 }, (_, index) => String(index).padStart(2, "0"));
 const UGC_STORAGE_TIMEOUT_MS = 4_000;
+const PLACE_SEARCH_TIMEOUT_MS = 5_000;
 const LOCAL_UGC_DRAFTS_KEY = "hade.demo.localUgcDrafts";
 const LOCAL_SAVE_MESSAGE = "Saved locally for now. We'll sync when HADE reconnects.";
 
@@ -186,6 +193,23 @@ function isUsableGeo(geo: { lat: number; lng: number } | null): geo is { lat: nu
   );
 }
 
+function isPlaceSearchResult(value: unknown): value is PlaceOption {
+  if (!value || typeof value !== "object") return false;
+  const place = value as Partial<PlaceOption>;
+  return Boolean(
+    typeof place.id === "string" &&
+    typeof place.name === "string" &&
+    place.geo &&
+    Number.isFinite(place.geo.lat) &&
+    Number.isFinite(place.geo.lng) &&
+    !(place.geo.lat === 0 && place.geo.lng === 0),
+  );
+}
+
+function getPlaceDisplay(place: PlaceOption) {
+  return place.address ? `${place.name}, ${place.address}` : place.name;
+}
+
 function getStorageErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
@@ -235,8 +259,9 @@ function readLocalUgcDrafts(storage: Storage): LocalUgcDraft[] {
 }
 
 function writeLocalUgcDraft(storage: Storage, draft: LocalUgcDraft) {
+  const sanitizedDraft = sanitizeLocalUgcDraft(draft);
   const existing = readLocalUgcDrafts(storage).filter((item) => item.spontaneous.id !== draft.spontaneous.id);
-  storage.setItem(LOCAL_UGC_DRAFTS_KEY, JSON.stringify([...existing, draft]));
+  storage.setItem(LOCAL_UGC_DRAFTS_KEY, JSON.stringify([...existing, sanitizedDraft]));
 }
 
 function replaceLocalUgcDrafts(storage: Storage, drafts: LocalUgcDraft[]) {
@@ -262,6 +287,18 @@ function saveLocalUgcDraft(draft: LocalUgcDraft) {
     debugUgcStorage("sessionStorage_failed", { error: getStorageErrorMessage(sessionError) });
     return { ok: false, storage: null };
   }
+}
+
+function sanitizeLocalUgcDraft(draft: LocalUgcDraft): LocalUgcDraft {
+  const spontaneous = { ...draft.spontaneous } as Omit<SpontaneousObject, "location"> & { location?: GeoLocation };
+  if (spontaneous.location?.lat === 0 && spontaneous.location.lng === 0) {
+    delete spontaneous.location;
+  }
+
+  return {
+    ...draft,
+    spontaneous: spontaneous as SpontaneousObject,
+  };
 }
 
 async function syncLocalUgcDraftsFromStorage(storage: Storage, storageName: string) {
@@ -334,49 +371,35 @@ async function syncLocalUgcDrafts() {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
-  const { emitVibeSignal } = useHadeAdaptiveContext();
+  const { emitVibeSignal, context } = useHadeAdaptiveContext();
 
   const [step,      setStep]      = useState<Step>("what");
   const [title,     setTitle]     = useState("");
   const [vibeId,    setVibeId]    = useState<VibeId | null>(null);
   const [notes,     setNotes]     = useState("");
   const [locationLabel, setLocationLabel] = useState("");
+  const [locationMode, setLocationMode] = useState<LocationCaptureMode>("none");
+  const [locationStatus, setLocationStatus] = useState<LocationAvailability>("checking");
   const [timeText,  setTimeText]  = useState(getDefaultActivityTime);
   const [listening, setListening] = useState(false);
   const [location,  setLocation]  = useState<{ lat: number; lng: number } | null>(null);
   const [locationSource, setLocationSource] = useState<NonNullable<UGCEntity["location_source"]>>("unknown");
+  const [selectedPlace, setSelectedPlace] = useState<PlaceOption | null>(null);
+  const [placeQuery, setPlaceQuery] = useState("");
+  const [placeResults, setPlaceResults] = useState<PlaceOption[]>([]);
+  const [placeSearchStatus, setPlaceSearchStatus] = useState<PlaceSearchStatus>("idle");
   const [status,    setStatus]    = useState<Status>("idle");
   const [errorMsg,  setErrorMsg]  = useState<string | null>(null);
   const [particles, setParticles] = useState<Particle[]>([]);
   const sheetRef = useRef<HTMLElement | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const suppressFooterClickRef = useRef(false);
+  const placeSearchRequestRef = useRef(0);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recogRef = useRef<any>(null);
 
   useEffect(() => {
-    if (!navigator.geolocation) {
-      setLocationSource("unknown");
-      return;
-    }
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        const nextGeo = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-        if (isUsableGeo(nextGeo)) {
-          setLocation(nextGeo);
-          setLocationSource("browser_geolocation");
-          return;
-        }
-
-        setLocation(null);
-        setLocationSource("unknown");
-      },
-      () => {
-        setLocation(null);
-        setLocationSource("unknown");
-      },
-      { enableHighAccuracy: false, maximumAge: 60_000, timeout: 5_000 },
-    );
+    requestCurrentLocation(false);
   }, []);
 
   useEffect(() => () => { recogRef.current?.abort(); }, []);
@@ -393,6 +416,45 @@ export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
       window.removeEventListener("online", handleOnline);
     };
   }, []);
+
+  function requestCurrentLocation(selectAfterResolve = true) {
+    if (!navigator.geolocation) {
+      setLocation(null);
+      setLocationSource("unknown");
+      setLocationStatus("unavailable");
+      if (selectAfterResolve) setLocationMode("none");
+      return;
+    }
+
+    setLocationStatus("checking");
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const nextGeo = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        if (isUsableGeo(nextGeo)) {
+          setLocation(nextGeo);
+          setLocationSource("browser_geolocation");
+          setLocationStatus("available");
+          if (selectAfterResolve) {
+            setLocationMode("current");
+            setSelectedPlace(null);
+          }
+          return;
+        }
+
+        setLocation(null);
+        setLocationSource("unknown");
+        setLocationStatus("unavailable");
+        if (selectAfterResolve) setLocationMode("none");
+      },
+      (error) => {
+        setLocation(null);
+        setLocationSource("unknown");
+        setLocationStatus(error.code === 1 ? "denied" : "unavailable");
+        if (selectAfterResolve) setLocationMode("none");
+      },
+      { enableHighAccuracy: false, maximumAge: 60_000, timeout: 5_000 },
+    );
+  }
 
   function startListening() {
     if (recogRef.current) {
@@ -426,6 +488,19 @@ export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
   const stepNumber = step === "what" ? 1 : step === "vibe" ? 2 : 3;
   const selectedVibe = VIBES.find((v) => v.id === vibeId) ?? null;
   const selectedTimeParts = parseTimeParts(timeText) ?? parseTimeParts(getDefaultActivityTime());
+  const trimmedPlaceQuery = placeQuery.trim();
+  const searchOrigin = isUsableGeo(location)
+    ? location
+    : isUsableGeo(context.geo)
+      ? context.geo
+      : null;
+  const filteredPlaceResults = trimmedPlaceQuery
+    ? placeResults.filter((place) => {
+        const query = trimmedPlaceQuery.toLowerCase();
+        return place.name.toLowerCase().includes(query) ||
+          place.address?.toLowerCase().includes(query);
+      })
+    : placeResults;
   const timeValidationMessage = isValidTimeValue(timeText) ? null : "Choose a valid start time.";
   const submitDisabled = status === "submitting" ||
     status === "success" ||
@@ -437,6 +512,36 @@ export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
     status === "local"      ? "Saved locally" :
     status === "error"      ? "Try Again" :
     "Start Something";
+  const manualLocationNote = locationLabel.trim();
+  const locationSummary =
+    locationMode === "place" && selectedPlace
+      ? getPlaceDisplay(selectedPlace)
+      : locationMode === "current" && isUsableGeo(location)
+        ? "Current location saved"
+        : locationMode === "manual" && manualLocationNote
+          ? manualLocationNote
+          : locationStatus === "denied"
+            ? "Location permission was denied. You can still search for a place or add a note."
+            : locationStatus === "unavailable"
+              ? "Location unavailable"
+              : "No location added yet";
+
+  useEffect(() => {
+    if (locationMode !== "place") return;
+
+    if (trimmedPlaceQuery.length < 2) {
+      placeSearchRequestRef.current += 1;
+      setPlaceResults([]);
+      setPlaceSearchStatus("idle");
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      void fetchNearbyPlaces(trimmedPlaceQuery);
+    }, 300);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [locationMode, trimmedPlaceQuery, searchOrigin?.lat, searchOrigin?.lng]);
 
   function handleFieldFocus(event: FocusEvent<FocusableSheetField>) {
     const element = event.currentTarget;
@@ -545,6 +650,81 @@ export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
     setTimeText(nextTime);
   }
 
+  function handleUseCurrentLocation() {
+    setSelectedPlace(null);
+    setLocationLabel("");
+    requestCurrentLocation(true);
+  }
+
+  function handleManualLocationMode() {
+    setLocationMode("manual");
+    setSelectedPlace(null);
+  }
+
+  function handlePlaceSearchMode() {
+    setLocationMode("place");
+    setSelectedPlace(null);
+  }
+
+  function handlePlaceQueryChange(value: string) {
+    setPlaceQuery(value);
+    setSelectedPlace(null);
+    setPlaceResults([]);
+  }
+
+  async function fetchNearbyPlaces(query: string) {
+    const requestId = placeSearchRequestRef.current + 1;
+    placeSearchRequestRef.current = requestId;
+
+    if (!searchOrigin) {
+      setPlaceSearchStatus("error");
+      return;
+    }
+
+    setPlaceSearchStatus("loading");
+    try {
+      const params = new URLSearchParams({
+        lat: String(searchOrigin.lat),
+        lng: String(searchOrigin.lng),
+        radius: "1600",
+        intent: "anything",
+        open_now: "false",
+        max_results: "10",
+      });
+      const { data } = await fetchJsonWithTimeout(
+        `/api/places?${params.toString()}`,
+        { method: "GET" },
+        PLACE_SEARCH_TIMEOUT_MS,
+      );
+      const parsed = data as NearbyPlacesResponse;
+      const places = Array.isArray(parsed.places)
+        ? parsed.places.filter(isPlaceSearchResult)
+        : [];
+      const normalizedQuery = query.trim().toLowerCase();
+      const matchingPlaces = places.filter((place) =>
+        place.name.toLowerCase().includes(normalizedQuery) ||
+        place.address?.toLowerCase().includes(normalizedQuery),
+      );
+
+      if (placeSearchRequestRef.current !== requestId) return;
+      setPlaceResults(matchingPlaces);
+      setPlaceSearchStatus(matchingPlaces.length > 0 ? "ready" : "empty");
+    } catch (error) {
+      if (placeSearchRequestRef.current !== requestId) return;
+      setPlaceSearchStatus("error");
+      debugUgcStorage("nearby_place_search_failed", { error: getStorageErrorMessage(error) });
+    }
+  }
+
+  function handleSelectPlace(place: PlaceOption) {
+    setSelectedPlace(place);
+    setLocationMode("place");
+    setLocation(place.geo);
+    setLocationSource("place_picker");
+    setLocationStatus("available");
+    setLocationLabel("");
+  }
+
   async function persistUgc(ugcPayload: Record<string, unknown>): Promise<UgcPersistResult> {
     if (!navigator.onLine) {
       debugUgcStorage("offline", { endpoint: "/api/hade/ugc" });
@@ -626,7 +806,6 @@ export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
 
     const now      = Date.now();
     const end      = now + 60 * 60_000; // default 1 hr
-    const geo      = isUsableGeo(location) ? location : { lat: 0, lng: 0 };
     const entityId = crypto.randomUUID();
     const deviceId = getDeviceId();
     const expiresAt = new Date(end).toISOString();
@@ -634,21 +813,38 @@ export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
     const resolvedLocationLabel = locationLabel.trim();
     const category = selectedVibe?.vibe_tag ?? "social";
     const signalTag = selectedVibe?.signal ?? "good_energy";
-    const payloadLocationSource = isUsableGeo(location)
-      ? "browser_geolocation"
-      : resolvedLocationLabel
-        ? "manual"
-        : "unknown";
+    const selectedPlaceGeo = selectedPlace && isUsableGeo(selectedPlace.geo) ? selectedPlace.geo : null;
+    const currentGeoSelected = locationMode === "current" && isUsableGeo(location) ? location : null;
+    const resolvedGeo: GeoLocation | null = selectedPlaceGeo ?? currentGeoSelected;
+    const payloadLocationSource: UGCEntity["location_source"] = selectedPlace
+      ? "place_picker"
+      : currentGeoSelected
+        ? "browser_geolocation"
+        : resolvedLocationLabel
+          ? "manual"
+          : undefined;
+    const resolvedLocationMetadata = {
+      ...(selectedPlace
+        ? {
+            location_label: selectedPlace.name,
+            place_name: selectedPlace.name,
+            ...(selectedPlace.address ? { address: selectedPlace.address } : {}),
+            place_id: selectedPlace.id,
+          }
+        : resolvedLocationLabel
+          ? { location_label: resolvedLocationLabel }
+          : {}),
+    };
     const ugcPayload = {
       id:         entityId,
       venue_name: resolvedTitle,
       category,
-      geo,
       created_at: new Date(now).toISOString(),
       expires_at: expiresAt,
       created_by: deviceId,
-      location_source: payloadLocationSource,
-      ...(resolvedLocationLabel ? { location_label: resolvedLocationLabel } : {}),
+      ...(payloadLocationSource ? { location_source: payloadLocationSource } : {}),
+      ...(resolvedGeo ? { geo: resolvedGeo } : {}),
+      ...resolvedLocationMetadata,
     };
     const signalPayload: SignalPayload = {
       signals: [{
@@ -660,17 +856,17 @@ export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
         sentiment:        "positive",
         emitted_at:       new Date(now).toISOString(),
         expires_at:       expiresAt,
-        geo,
         source_user_id:   deviceId,
         type:             "ugc_event",
         vibe_tag:         category,
+        ...(resolvedGeo ? { geo: resolvedGeo } : {}),
         metadata:         {
           expires_at: expiresAt,
           is_meetup: true,
           notes,
           timeText,
-          location_source: payloadLocationSource,
-          ...(resolvedLocationLabel ? { location_label: resolvedLocationLabel } : {}),
+          ...(payloadLocationSource ? { location_source: payloadLocationSource } : {}),
+          ...resolvedLocationMetadata,
         },
       }],
     };
@@ -680,7 +876,7 @@ export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
       type:        "ugc_event",
       title:       resolvedTitle,
       time_window: { start: now, end },
-      location:    geo,
+      location:    resolvedGeo ?? { lat: 0, lng: 0 },
       radius:      RADIUS.ACTIVITY_CREATION,
       going_count: 0,
       maybe_count: 0,
@@ -690,8 +886,8 @@ export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
       trust_score: 0.7,
       vibe_tag:    category,
       source:      "user",
-      location_source: payloadLocationSource,
-      ...(resolvedLocationLabel ? { location_label: resolvedLocationLabel } : {}),
+      ...(payloadLocationSource ? { location_source: payloadLocationSource } : {}),
+      ...resolvedLocationMetadata,
     };
 
     console.log("[HADE UGC CREATED]", spontaneous);
@@ -746,6 +942,11 @@ export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
       setVibeId(null);
       setNotes("");
       setLocationLabel("");
+      setLocationMode("none");
+      setSelectedPlace(null);
+      setPlaceQuery("");
+      setPlaceResults([]);
+      setPlaceSearchStatus("idle");
       setTimeText(getDefaultActivityTime());
       setParticles([]);
     }, 2200);
@@ -950,23 +1151,145 @@ export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
               </fieldset>
 
               <div className="mb-2.5 rounded-xl border border-line bg-white/70 px-3.5 py-3">
-                <label htmlFor="activity-location-label" className="block">
+                <div>
                   <span className="block text-[10px] font-semibold uppercase tracking-[0.16em] text-ink/38">
                     Where is this?
                   </span>
                   <span className="mt-1 block text-[12px] leading-snug text-ink/45">
-                    Add a place note so HADE can surface it in the right context.
+                    Add a location so HADE can surface this when someone is nearby.
                   </span>
-                </label>
-                <input
-                  id="activity-location-label"
-                  type="text"
-                  value={locationLabel}
-                  onChange={(e) => setLocationLabel(e.target.value)}
-                  onFocus={handleFieldFocus}
-                  placeholder="e.g. Bluebird Cafe, Main Street, near the trailhead"
-                  className="mt-2.5 w-full rounded-xl border border-line/70 bg-white px-3.5 py-2.5 text-base text-ink placeholder:text-ink/30 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
-                />
+                </div>
+
+                <div className="mt-2.5 grid grid-cols-1 gap-1.5 min-[390px]:grid-cols-3">
+                  <button
+                    type="button"
+                    onClick={handleUseCurrentLocation}
+                    className={`min-h-10 rounded-xl border px-2.5 text-[12px] font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
+                      locationMode === "current"
+                        ? "border-accent bg-accent text-white"
+                        : "border-line/70 bg-white text-ink/65"
+                    }`}
+                  >
+                    Use current location
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handlePlaceSearchMode}
+                    className={`min-h-10 rounded-xl border px-2.5 text-[12px] font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
+                      locationMode === "place"
+                        ? "border-accent bg-accent text-white"
+                        : "border-line/70 bg-white text-ink/65"
+                    }`}
+                  >
+                    Search nearby place
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleManualLocationMode}
+                    className={`min-h-10 rounded-xl border px-2.5 text-[12px] font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
+                      locationMode === "manual"
+                        ? "border-accent bg-accent text-white"
+                        : "border-line/70 bg-white text-ink/65"
+                    }`}
+                  >
+                    Add location note
+                  </button>
+                </div>
+
+                <div
+                  className={`mt-2.5 rounded-xl border px-3 py-2 text-[12px] font-medium leading-snug ${
+                    locationStatus === "denied" && locationMode === "none"
+                      ? "border-amber-300/40 bg-amber-50 text-amber-800"
+                      : "border-line/60 bg-white/70 text-ink/56"
+                  }`}
+                  role={locationStatus === "denied" ? "status" : undefined}
+                >
+                  {locationSummary}
+                </div>
+
+                {locationMode === "place" && (
+                  <div className="mt-2.5 space-y-2">
+                    <input
+                      type="search"
+                      value={placeQuery}
+                      onChange={(e) => handlePlaceQueryChange(e.target.value)}
+                      onFocus={handleFieldFocus}
+                      placeholder="Search nearby places"
+                      className="w-full rounded-xl border border-line/70 bg-white px-3 py-2.5 text-base text-ink placeholder:text-ink/30 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
+                    />
+
+                    {placeSearchStatus === "idle" && (
+                      <p className="rounded-lg bg-ink/[0.04] px-3 py-2 text-[11px] text-ink/45">
+                        Type at least 2 characters to search nearby places.
+                      </p>
+                    )}
+
+                    {placeSearchStatus === "loading" && (
+                      <p className="rounded-lg bg-ink/[0.04] px-3 py-2 text-[11px] text-ink/45">
+                        Finding nearby places...
+                      </p>
+                    )}
+
+                    {placeSearchStatus === "empty" && (
+                      <p className="rounded-lg bg-ink/[0.04] px-3 py-2 text-[11px] text-ink/45">
+                        No nearby places found yet. You can add a note instead.
+                      </p>
+                    )}
+
+                    {placeSearchStatus === "error" && (
+                      <p className="rounded-lg bg-amber-50 px-3 py-2 text-[11px] text-amber-800">
+                        Couldn’t load places. You can still add a location note.
+                      </p>
+                    )}
+
+                    {filteredPlaceResults.length > 0 && (
+                      <div className="max-h-36 space-y-1.5 overflow-y-auto pr-0.5">
+                        {filteredPlaceResults.slice(0, 6).map((place) => {
+                          const active = selectedPlace?.id === place.id;
+                          return (
+                            <button
+                              key={place.id}
+                              type="button"
+                              onClick={() => handleSelectPlace(place)}
+                              className={`w-full rounded-xl border px-3 py-2 text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
+                                active
+                                  ? "border-accent bg-accent/10"
+                                  : "border-line/65 bg-white"
+                              }`}
+                            >
+                              <span className="block truncate text-[13px] font-semibold text-ink">
+                                {place.name}
+                              </span>
+                              {place.address && (
+                                <span className="mt-0.5 block truncate text-[11px] text-ink/42">
+                                  {place.address}
+                                </span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {locationMode === "manual" && (
+                  <div className="mt-2.5">
+                    <label htmlFor="activity-location-label" className="sr-only">
+                      Add location note
+                    </label>
+                    <input
+                      id="activity-location-label"
+                      type="text"
+                      value={locationLabel}
+                      onChange={(e) => setLocationLabel(e.target.value)}
+                      onFocus={handleFieldFocus}
+                      placeholder="e.g. Bluebird Cafe, Main Street, near the trailhead"
+                      className="w-full rounded-xl border border-line/70 bg-white px-3.5 py-2.5 text-base text-ink placeholder:text-ink/30 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
+                    />
+                  </div>
+                )}
+
                 <p className="mt-1.5 text-[11px] leading-snug text-ink/38">
                   Only add a location if it helps people find it.
                 </p>

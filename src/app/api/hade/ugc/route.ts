@@ -31,10 +31,15 @@ function withDegradedHeader(headers: Record<string, string> = {}): Record<string
   return { ...headers, "x-hade-degraded": degraded ? "1" : "0" };
 }
 
-function extractGeo(body: unknown): GeoLocation | null {
-  if (!body || typeof body !== "object") return null;
+type GeoValidation =
+  | { ok: true; geo?: GeoLocation }
+  | { ok: false; error: string };
+
+function extractOptionalGeo(body: unknown): GeoValidation {
+  if (!body || typeof body !== "object") return { ok: true };
   const raw = (body as { geo?: unknown }).geo;
-  if (!raw || typeof raw !== "object") return null;
+  if (raw === undefined || raw === null) return { ok: true };
+  if (typeof raw !== "object") return { ok: false, error: "geo must have finite lat and lng when provided" };
   const { lat, lng } = raw as { lat?: unknown; lng?: unknown };
   if (
     typeof lat !== "number" ||
@@ -42,25 +47,25 @@ function extractGeo(body: unknown): GeoLocation | null {
     !Number.isFinite(lat) ||
     !Number.isFinite(lng)
   ) {
-    return null;
+    return { ok: false, error: "geo must have finite lat and lng when provided" };
   }
-  return { lat, lng };
-}
 
-function isZeroZeroGeo(geo: GeoLocation): boolean {
-  return geo.lat === 0 && geo.lng === 0;
+  if (lat === 0 && lng === 0) return { ok: true };
+
+  return { ok: true, geo: { lat, lng } };
 }
 
 function optionalTrimmedString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
-function normalizeLocationSource(value: unknown, geo: GeoLocation): UGCEntity["location_source"] | undefined {
+function normalizeLocationSource(value: unknown, geo: GeoLocation | undefined): UGCEntity["location_source"] | undefined {
   const source = typeof value === "string" && LOCATION_SOURCES.has(value as NonNullable<UGCEntity["location_source"]>)
     ? (value as NonNullable<UGCEntity["location_source"]>)
     : undefined;
 
-  if (isZeroZeroGeo(geo)) {
+  if (!geo) {
+    if (!source) return undefined;
     return source === "fallback_geo" || source === "manual" ? source : "unknown";
   }
 
@@ -86,10 +91,11 @@ function validateUgcEntity(body: unknown): ValidationOk | ValidationErr {
     return { ok: false, error: "category must be a non-empty string" };
   }
 
-  const geo = extractGeo(b);
-  if (!geo) {
-    return { ok: false, error: "geo must have finite lat and lng" };
+  const geoValidation = extractOptionalGeo(b);
+  if (!geoValidation.ok) {
+    return { ok: false, error: geoValidation.error };
   }
+  const geo = geoValidation.geo;
 
   if (typeof b.created_at !== "string" || !Number.isFinite(Date.parse(b.created_at))) {
     return { ok: false, error: "created_at must be an ISO-8601 timestamp" };
@@ -116,8 +122,8 @@ function validateUgcEntity(body: unknown): ValidationOk | ValidationErr {
     id: b.id.trim(),
     venue_name: b.venue_name.trim(),
     category: b.category.trim(),
-    geo,
     created_at: b.created_at,
+    ...(geo ? { geo } : {}),
     ...(typeof b.expires_at === "string" ? { expires_at: b.expires_at } : {}),
     ...(typeof b.created_by === "string" ? { created_by: b.created_by } : {}),
     ...(address ? { address } : {}),

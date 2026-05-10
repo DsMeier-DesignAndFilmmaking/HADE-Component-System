@@ -58,7 +58,7 @@ function computeTtlSeconds(entity: UGCEntity): number {
 }
 
 function deepCloneEntity(entity: UGCEntity): UGCEntity {
-  return { ...entity, geo: { ...entity.geo } };
+  return { ...entity, ...(entity.geo ? { geo: { ...entity.geo } } : {}) };
 }
 
 // ─── Write ───────────────────────────────────────────────────────────────────
@@ -161,7 +161,18 @@ export async function getUGC(id: string): Promise<UGCEntity | null> {
  * always produce identical candidate ordering regardless of Redis SET
  * iteration order.
  */
-function sortUGCEntities(entities: UGCEntity[], origin: GeoLocation): UGCEntity[] {
+type GeocodedUGCEntity = UGCEntity & { geo: GeoLocation };
+
+function hasUGCGeo(entity: UGCEntity): entity is GeocodedUGCEntity {
+  return Boolean(
+    entity.geo &&
+    Number.isFinite(entity.geo.lat) &&
+    Number.isFinite(entity.geo.lng) &&
+    !(entity.geo.lat === 0 && entity.geo.lng === 0),
+  );
+}
+
+function sortUGCEntities(entities: GeocodedUGCEntity[], origin: GeoLocation): GeocodedUGCEntity[] {
   return [...entities].sort((a, b) => {
     const distDiff =
       haversineDistanceMeters(origin, a.geo) - haversineDistanceMeters(origin, b.geo);
@@ -192,8 +203,10 @@ export async function getNearbyUGC(
   origin: GeoLocation,
   radiusMeters: number,
 ): Promise<UGCEntity[]> {
-  const filterByRadius = (entities: UGCEntity[]): UGCEntity[] =>
-    entities.filter((e) => haversineDistanceMeters(origin, e.geo) <= radiusMeters);
+  const filterByRadius = (entities: UGCEntity[]): GeocodedUGCEntity[] =>
+    entities
+      .filter(hasUGCGeo)
+      .filter((e) => haversineDistanceMeters(origin, e.geo) <= radiusMeters);
 
   const filterAndSort = (entities: UGCEntity[]): UGCEntity[] =>
     sortUGCEntities(filterByRadius(entities), origin);
@@ -245,7 +258,9 @@ export async function getNearbyUGC(
 export function ugcToPlaceOption(
   entity: UGCEntity,
   origin: GeoLocation,
-): PlaceOption {
+): PlaceOption | null {
+  if (!hasUGCGeo(entity)) return null;
+
   const displayAddress = entity.location_label ?? entity.address ?? entity.place_name;
 
   return {

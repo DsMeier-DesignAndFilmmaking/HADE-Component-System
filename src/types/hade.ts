@@ -793,7 +793,8 @@ export interface UGCEntity {
   id: string;
   venue_name: string;
   category: string;
-  geo: GeoLocation;
+  /** Optional: absent when the user saved only a human-readable location note. */
+  geo?: GeoLocation;
   /** ISO-8601 timestamp the entity was created. */
   created_at: string;
   /** ISO-8601 timestamp at which the entity expires. Drives Redis TTL when present. */
