@@ -21,6 +21,8 @@ describe("createDecisionViewModelFromUGC", () => {
       trust_score: 0.72,
       vibe_tag: "creative",
       source: "user",
+      location_label: "Bluebird Cafe patio",
+      location_source: "manual",
     };
 
     const viewModel = createDecisionViewModelFromUGC(activity);
@@ -45,6 +47,8 @@ describe("createDecisionViewModelFromUGC", () => {
       location: { lat: 39.7392, lng: -104.9903 },
       source: "user",
       vibe_tag: "creative",
+      location_label: "Bluebird Cafe patio",
+      location_source: "manual",
     });
     expect(viewModel?.ugc_meta).toEqual({
       is_ugc: true,

@@ -134,6 +134,11 @@ export function buildDecisionViewModel(response: HadeResponse): DecisionViewMode
     trust_score: dec.trust_score ?? dec.confidence,
     vibe_tag: dec.vibe_tag,
     source: dec.source,
+    address: dec.address,
+    place_name: dec.place_name,
+    location_label: dec.location_label,
+    location_source: dec.location_source,
+    place_id: dec.place_id,
   };
 
   return {

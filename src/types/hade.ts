@@ -762,6 +762,10 @@ export interface PlaceOption {
   distance_meters: number;
   is_open: boolean;
   address?: string;
+  place_name?: string;
+  location_label?: string;
+  location_source?: UGCEntity["location_source"];
+  place_id?: string;
   /** Google star rating 1–5 */
   rating?: number;
   /** Normalised price level: 0 (free) – 4 (very expensive) */
@@ -796,6 +800,16 @@ export interface UGCEntity {
   expires_at?: string;
   /** Opaque device id of the creator. */
   created_by?: string;
+  /** Optional human-readable address from a trusted place/geocoding source. */
+  address?: string;
+  /** Optional canonical place name when UGC is anchored to a known place. */
+  place_name?: string;
+  /** Optional short display label for the UGC location. */
+  location_label?: string;
+  /** How the UGC location was obtained. Never infer browser_geolocation from 0,0. */
+  location_source?: "browser_geolocation" | "fallback_geo" | "manual" | "place_picker" | "unknown";
+  /** Optional place provider id, e.g. Google Place ID. */
+  place_id?: string;
 }
 
 export interface FetchNearbyOptions {

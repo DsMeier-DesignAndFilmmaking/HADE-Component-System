@@ -16,6 +16,13 @@ import type { GeoLocation, UGCEntity } from "@/types/hade";
 
 const DEFAULT_RADIUS_METERS = 1500;
 const MAX_RADIUS_METERS = 10_000;
+const LOCATION_SOURCES = new Set<NonNullable<UGCEntity["location_source"]>>([
+  "browser_geolocation",
+  "fallback_geo",
+  "manual",
+  "place_picker",
+  "unknown",
+]);
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -38,6 +45,26 @@ function extractGeo(body: unknown): GeoLocation | null {
     return null;
   }
   return { lat, lng };
+}
+
+function isZeroZeroGeo(geo: GeoLocation): boolean {
+  return geo.lat === 0 && geo.lng === 0;
+}
+
+function optionalTrimmedString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function normalizeLocationSource(value: unknown, geo: GeoLocation): UGCEntity["location_source"] | undefined {
+  const source = typeof value === "string" && LOCATION_SOURCES.has(value as NonNullable<UGCEntity["location_source"]>)
+    ? (value as NonNullable<UGCEntity["location_source"]>)
+    : undefined;
+
+  if (isZeroZeroGeo(geo)) {
+    return source === "fallback_geo" || source === "manual" ? source : "unknown";
+  }
+
+  return source;
 }
 
 type ValidationOk = { ok: true; entity: UGCEntity };
@@ -79,6 +106,12 @@ function validateUgcEntity(body: unknown): ValidationOk | ValidationErr {
     return { ok: false, error: "created_by must be a string when provided" };
   }
 
+  const address = optionalTrimmedString(b.address);
+  const placeName = optionalTrimmedString(b.place_name);
+  const locationLabel = optionalTrimmedString(b.location_label);
+  const locationSource = normalizeLocationSource(b.location_source, geo);
+  const placeId = optionalTrimmedString(b.place_id);
+
   const entity: UGCEntity = {
     id: b.id.trim(),
     venue_name: b.venue_name.trim(),
@@ -87,6 +120,11 @@ function validateUgcEntity(body: unknown): ValidationOk | ValidationErr {
     created_at: b.created_at,
     ...(typeof b.expires_at === "string" ? { expires_at: b.expires_at } : {}),
     ...(typeof b.created_by === "string" ? { created_by: b.created_by } : {}),
+    ...(address ? { address } : {}),
+    ...(placeName ? { place_name: placeName } : {}),
+    ...(locationLabel ? { location_label: locationLabel } : {}),
+    ...(locationSource ? { location_source: locationSource } : {}),
+    ...(placeId ? { place_id: placeId } : {}),
   };
 
   return { ok: true, entity };

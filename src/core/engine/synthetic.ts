@@ -165,6 +165,10 @@ export interface RankedCandidate {
   distance_meters?: number;
   category: string;
   address?: string;
+  place_name?: string;
+  location_label?: string;
+  location_source?: UGCEntity["location_source"];
+  place_id?: string;
   rating?: number;
   /** Raw Google Place type tokens. Absent for UGC candidates — used by domain type filter. */
   types?: string[];
@@ -268,7 +272,7 @@ function candidateFromObject(
   obj: SpontaneousObject,
   origin: GeoLocation,
   category: string,
-  metadata: Pick<RankedCandidate, "address" | "rating"> = {},
+  metadata: Pick<RankedCandidate, "address" | "rating" | "place_name" | "location_label" | "location_source" | "place_id"> = {},
 ): RankedCandidate {
   return {
     obj,
@@ -281,11 +285,16 @@ function candidateFromObject(
 function ugcToCandidate(entity: UGCEntity, origin: GeoLocation, now: number): RankedCandidate | null {
   const createdAt = isoToEpochMs(entity.created_at) ?? now;
   const expiresAt = isoToEpochMs(entity.expires_at) ?? now + 2 * 60 * 60 * 1000;
+  const displayAddress = entity.location_label ?? entity.address ?? entity.place_name;
   const obj = fromUGC({
     id: entity.id,
     title: entity.venue_name,
     type: "ugc_event",
-    location: { lat: entity.geo.lat, lng: entity.geo.lng },
+    location: {
+      lat: entity.geo.lat,
+      lng: entity.geo.lng,
+      ...(entity.place_id ? { place_id: entity.place_id } : {}),
+    },
     time_window: { start: createdAt, end: expiresAt },
     created_at: createdAt,
     expires_at: expiresAt,
@@ -300,6 +309,13 @@ function ugcToCandidate(entity: UGCEntity, origin: GeoLocation, now: number): Ra
     normalizeSpontaneousObject({ ...obj, created_at: createdAt, expires_at: expiresAt }, now),
     origin,
     entity.category,
+    {
+      ...(displayAddress ? { address: displayAddress } : {}),
+      ...(entity.place_name ? { place_name: entity.place_name } : {}),
+      ...(entity.location_label ? { location_label: entity.location_label } : {}),
+      ...(entity.location_source ? { location_source: entity.location_source } : {}),
+      ...(entity.place_id ? { place_id: entity.place_id } : {}),
+    },
   );
 }
 

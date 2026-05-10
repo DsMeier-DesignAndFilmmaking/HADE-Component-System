@@ -1,5 +1,6 @@
 export type SpontaneousObjectType = "ugc_event" | "place_opportunity";
 export type UserState = "going" | "maybe" | null;
+export type LocationSource = "browser_geolocation" | "fallback_geo" | "manual" | "place_picker" | "unknown";
 
 export interface SpontaneousObject {
   id: string;
@@ -16,6 +17,11 @@ export interface SpontaneousObject {
   trust_score: number;
   vibe_tag?: string;
   source?: string;
+  address?: string;
+  place_name?: string;
+  location_label?: string;
+  location_source?: LocationSource;
+  place_id?: string;
 }
 
 /** Raw Google Places API response shape accepted by fromGooglePlace. */
@@ -39,6 +45,11 @@ export interface UGCInput {
   trust_score?: number;
   vibe_tag?: string;
   source?: string;
+  address?: string;
+  place_name?: string;
+  location_label?: string;
+  location_source?: LocationSource;
+  place_id?: string;
   created_at?: number;
   expires_at?: number;
 }
@@ -83,6 +94,11 @@ export function fromUGC(input: UGCInput): SpontaneousObject {
     trust_score: input.trust_score ?? 0.5,
     vibe_tag: input.vibe_tag,
     source: input.source,
+    address: input.address,
+    place_name: input.place_name,
+    location_label: input.location_label,
+    location_source: input.location_source,
+    place_id: input.place_id,
   };
 }
 

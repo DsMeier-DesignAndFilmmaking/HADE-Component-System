@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type FocusEvent, type MouseEvent, type PointerEvent } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import type { SpontaneousObject } from "@/types/hade";
+import type { SpontaneousObject, UGCEntity } from "@/types/hade";
 import { RADIUS } from "@/core/constants/radius";
 import { getDeviceId } from "@/lib/hade/deviceId";
 import { useHadeAdaptiveContext } from "@/lib/hade/hooks";
@@ -177,6 +177,15 @@ function debugUgcStorage(message: string, details: Record<string, unknown>) {
   console.debug("[HADE UGC STORAGE]", message, details);
 }
 
+function isUsableGeo(geo: { lat: number; lng: number } | null): geo is { lat: number; lng: number } {
+  return Boolean(
+    geo &&
+    Number.isFinite(geo.lat) &&
+    Number.isFinite(geo.lng) &&
+    !(geo.lat === 0 && geo.lng === 0),
+  );
+}
+
 function getStorageErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
@@ -331,9 +340,11 @@ export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
   const [title,     setTitle]     = useState("");
   const [vibeId,    setVibeId]    = useState<VibeId | null>(null);
   const [notes,     setNotes]     = useState("");
+  const [locationLabel, setLocationLabel] = useState("");
   const [timeText,  setTimeText]  = useState(getDefaultActivityTime);
   const [listening, setListening] = useState(false);
   const [location,  setLocation]  = useState<{ lat: number; lng: number } | null>(null);
+  const [locationSource, setLocationSource] = useState<NonNullable<UGCEntity["location_source"]>>("unknown");
   const [status,    setStatus]    = useState<Status>("idle");
   const [errorMsg,  setErrorMsg]  = useState<string | null>(null);
   const [particles, setParticles] = useState<Particle[]>([]);
@@ -344,10 +355,26 @@ export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
   const recogRef = useRef<any>(null);
 
   useEffect(() => {
-    if (!navigator.geolocation) return;
+    if (!navigator.geolocation) {
+      setLocationSource("unknown");
+      return;
+    }
     navigator.geolocation.getCurrentPosition(
-      (pos) => setLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-      () => {},
+      (pos) => {
+        const nextGeo = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        if (isUsableGeo(nextGeo)) {
+          setLocation(nextGeo);
+          setLocationSource("browser_geolocation");
+          return;
+        }
+
+        setLocation(null);
+        setLocationSource("unknown");
+      },
+      () => {
+        setLocation(null);
+        setLocationSource("unknown");
+      },
       { enableHighAccuracy: false, maximumAge: 60_000, timeout: 5_000 },
     );
   }, []);
@@ -599,13 +626,19 @@ export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
 
     const now      = Date.now();
     const end      = now + 60 * 60_000; // default 1 hr
-    const geo      = location ?? { lat: 0, lng: 0 };
+    const geo      = isUsableGeo(location) ? location : { lat: 0, lng: 0 };
     const entityId = crypto.randomUUID();
     const deviceId = getDeviceId();
     const expiresAt = new Date(end).toISOString();
     const resolvedTitle = title.trim();
+    const resolvedLocationLabel = locationLabel.trim();
     const category = selectedVibe?.vibe_tag ?? "social";
     const signalTag = selectedVibe?.signal ?? "good_energy";
+    const payloadLocationSource = isUsableGeo(location)
+      ? "browser_geolocation"
+      : resolvedLocationLabel
+        ? "manual"
+        : "unknown";
     const ugcPayload = {
       id:         entityId,
       venue_name: resolvedTitle,
@@ -614,6 +647,8 @@ export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
       created_at: new Date(now).toISOString(),
       expires_at: expiresAt,
       created_by: deviceId,
+      location_source: payloadLocationSource,
+      ...(resolvedLocationLabel ? { location_label: resolvedLocationLabel } : {}),
     };
     const signalPayload: SignalPayload = {
       signals: [{
@@ -629,7 +664,14 @@ export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
         source_user_id:   deviceId,
         type:             "ugc_event",
         vibe_tag:         category,
-        metadata:         { expires_at: expiresAt, is_meetup: true, notes, timeText },
+        metadata:         {
+          expires_at: expiresAt,
+          is_meetup: true,
+          notes,
+          timeText,
+          location_source: payloadLocationSource,
+          ...(resolvedLocationLabel ? { location_label: resolvedLocationLabel } : {}),
+        },
       }],
     };
 
@@ -648,6 +690,8 @@ export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
       trust_score: 0.7,
       vibe_tag:    category,
       source:      "user",
+      location_source: payloadLocationSource,
+      ...(resolvedLocationLabel ? { location_label: resolvedLocationLabel } : {}),
     };
 
     console.log("[HADE UGC CREATED]", spontaneous);
@@ -701,6 +745,7 @@ export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
       setTitle("");
       setVibeId(null);
       setNotes("");
+      setLocationLabel("");
       setTimeText(getDefaultActivityTime());
       setParticles([]);
     }, 2200);
@@ -903,6 +948,29 @@ export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
                   </p>
                 </div>
               </fieldset>
+
+              <div className="mb-2.5 rounded-xl border border-line bg-white/70 px-3.5 py-3">
+                <label htmlFor="activity-location-label" className="block">
+                  <span className="block text-[10px] font-semibold uppercase tracking-[0.16em] text-ink/38">
+                    Where is this?
+                  </span>
+                  <span className="mt-1 block text-[12px] leading-snug text-ink/45">
+                    Add a place note so HADE can surface it in the right context.
+                  </span>
+                </label>
+                <input
+                  id="activity-location-label"
+                  type="text"
+                  value={locationLabel}
+                  onChange={(e) => setLocationLabel(e.target.value)}
+                  onFocus={handleFieldFocus}
+                  placeholder="e.g. Bluebird Cafe, Main Street, near the trailhead"
+                  className="mt-2.5 w-full rounded-xl border border-line/70 bg-white px-3.5 py-2.5 text-base text-ink placeholder:text-ink/30 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
+                />
+                <p className="mt-1.5 text-[11px] leading-snug text-ink/38">
+                  Only add a location if it helps people find it.
+                </p>
+              </div>
 
               <textarea
                 value={notes}

@@ -60,6 +60,31 @@ function isLive(object: SpontaneousObject): boolean {
   return start <= now && now < end;
 }
 
+function hasSavedBrowserLocation(object: SpontaneousObject): boolean {
+  const { lat, lng } = object.location ?? {};
+  return (
+    typeof lat === "number" &&
+    typeof lng === "number" &&
+    Number.isFinite(lat) &&
+    Number.isFinite(lng) &&
+    !(lat === 0 && lng === 0)
+  );
+}
+
+function getCreatedLocationDisplay(object: SpontaneousObject): string | null {
+  const locationLabel = object.location_label?.trim();
+  if (locationLabel) return locationLabel;
+
+  const address = object.address?.trim();
+  if (address) return address;
+
+  if (object.location_source === "browser_geolocation" && hasSavedBrowserLocation(object)) {
+    return "Location saved nearby";
+  }
+
+  return null;
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function HeroDecisionCard({
@@ -86,6 +111,10 @@ export function HeroDecisionCard({
   const live         = useMemo(() => isLive(object), [object]);
   const isUGC        = object.type === "ugc_event";
   const isNewlyCreatedUGC = isUGC && confirmationState === "created";
+  const createdLocationDisplay = useMemo(
+    () => (isNewlyCreatedUGC ? getCreatedLocationDisplay(object) : null),
+    [isNewlyCreatedUGC, object],
+  );
   const temporalCopy = useMemo(() => {
     const activeFor = getActiveForCopy(object.expires_at);
     if (activeFor) return activeFor;
@@ -182,9 +211,17 @@ export function HeroDecisionCard({
 
           {/* ── UGC rationale ───────────────────────────────────────────────── */}
           {isNewlyCreatedUGC ? (
-            <p className="mt-1.5 rounded-xl border border-emerald-500/10 bg-emerald-500/[0.06] px-3 py-2 text-[12.5px] font-medium leading-snug text-emerald-800">
-              Saved. HADE can now use this in future decisions.
-            </p>
+            <div className="mt-1.5 rounded-xl border border-emerald-500/10 bg-emerald-500/[0.06] px-3 py-2">
+              <p className="text-[12.5px] font-medium leading-snug text-emerald-800">
+                Saved. HADE can now use this in future decisions.
+              </p>
+              {createdLocationDisplay && (
+                <div className="mt-2 inline-flex max-w-full items-center gap-1.5 rounded-full border border-emerald-500/15 bg-white/70 px-2.5 py-1 text-[11px] font-medium leading-tight text-ink/56">
+                  <span aria-hidden="true">⌖</span>
+                  <span className="min-w-0 truncate">{createdLocationDisplay}</span>
+                </div>
+              )}
+            </div>
           ) : isUGC ? (
             <p className="mt-1.5 text-[13px] leading-snug text-ink/55">
               A HADE user recently started a {object.title} here.

@@ -246,6 +246,8 @@ export function ugcToPlaceOption(
   entity: UGCEntity,
   origin: GeoLocation,
 ): PlaceOption {
+  const displayAddress = entity.location_label ?? entity.address ?? entity.place_name;
+
   return {
     id: entity.id,
     name: entity.venue_name,
@@ -254,6 +256,11 @@ export function ugcToPlaceOption(
     geo: { ...entity.geo },
     distance_meters: Math.round(haversineDistanceMeters(origin, entity.geo)),
     is_open: true,
+    ...(displayAddress ? { address: displayAddress } : {}),
+    ...(entity.place_name ? { place_name: entity.place_name } : {}),
+    ...(entity.location_label ? { location_label: entity.location_label } : {}),
+    ...(entity.location_source ? { location_source: entity.location_source } : {}),
+    ...(entity.place_id ? { place_id: entity.place_id } : {}),
     isUGC: true,
     created_at: entity.created_at,
     ...(entity.expires_at ? { expires_at: entity.expires_at } : {}),
