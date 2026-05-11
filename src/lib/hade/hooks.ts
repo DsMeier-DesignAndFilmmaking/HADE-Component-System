@@ -35,6 +35,9 @@ import { SignalQueue } from "./queue";
 import { getDeviceId } from "./deviceId";
 import { computeTemporalState, getUGCCta } from "./ugcCopy";
 import { HADE_ENDPOINTS } from "./api";
+import { hadeDebugLogsEnabled, hadeLog, safePayloadSummary } from "./logging";
+
+const DECISION_REQUEST_TIMEOUT_MS = 7_000;
 
 // ─── useHadeEngine ────────────────────────────────────────────────────────────
 
@@ -288,6 +291,13 @@ function validateDecidePayload(
   return true;
 }
 
+function isAbortError(err: unknown): boolean {
+  return (
+    (err instanceof DOMException && err.name === "AbortError") ||
+    (err instanceof Error && err.name === "AbortError")
+  );
+}
+
 /**
  * Primary hook — combines context, signals, and the /decide API.
  * Returns a single decision (HadeDecision | null), not a list.
@@ -306,10 +316,9 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
   const [rejectionHistory, setRejectionHistory] = useState<RejectionEntry[]>([]);
 
   useEffect(() => {
-    console.log("[HADE STATE]", {
+    hadeLog("debug", "[HADE STATE]", {
       rejection_history_length: rejectionHistory.length,
-      reasons: rejectionHistory.map((r) => r.pivot_reason),
-    });
+    }, { debugOnly: true });
   }, [rejectionHistory]);
 
   const [isLoading, setIsLoading] = useState(false);
@@ -533,7 +542,11 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
       source: "local_degraded_refine",
     } as HadeDecision;
 
-    console.log("[HADE LOCAL DECISION]", decision);
+    hadeLog("debug", "[HADE LOCAL DECISION]", {
+      id: decision.id,
+      source: decision.source,
+      is_fallback: decision.is_fallback === true,
+    }, { debugOnly: true });
 
     return decision;
   }
@@ -603,15 +616,27 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
       const controller = new AbortController();
       abortRef.current = controller;
       lastModeRef.current = body.mode;
+      let didTimeout = false;
+      const timeoutId = setTimeout(() => {
+        if (controller.signal.aborted) return;
+        didTimeout = true;
+        console.warn("[HADE FRONTEND] decision_request_timeout", {
+          timeout_ms: DECISION_REQUEST_TIMEOUT_MS,
+          mode: body.mode ?? "default",
+        });
+        controller.abort();
+      }, DECISION_REQUEST_TIMEOUT_MS);
 
       setIsLoading(true);
       setError(null);
 
       try {
-        if (process.env.NODE_ENV !== "production") {
-          console.log("[HADE ENDPOINT]", HADE_ENDPOINTS.decide);
-        }
-        console.log("[HADE REQUEST PAYLOAD]", body);
+        hadeLog("debug", "[HADE ENDPOINT]", HADE_ENDPOINTS.decide, { debugOnly: true });
+        console.log("[HADE FRONTEND] decision_request_started", {
+          timeout_ms: DECISION_REQUEST_TIMEOUT_MS,
+          mode: body.mode ?? "default",
+        });
+        hadeLog("debug", "[HADE REQUEST PAYLOAD]", safePayloadSummary(body as unknown as Record<string, unknown>), { debugOnly: true });
         const res = await fetch(HADE_ENDPOINTS.decide, {
           method: "POST",
           headers: {
@@ -632,7 +657,7 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
 
         const data = await res.json();
 
-        if (process.env.NODE_ENV !== "production") {
+        if (hadeDebugLogsEnabled()) {
           console.log("[HADE RESPONSE]", data);
           if (data?.debug) {
             console.log("[HADE DEBUG]", data.debug);
@@ -646,7 +671,7 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
         console.log(
           `[HADE stability] source=${hadeSource} | degraded=${newDegraded} | rejection_history=${(body.rejection_history ?? []).length}`,
         );
-        console.log("[HADE] full response:", data);
+        hadeLog("debug", "[HADE] full response:", data, { debugOnly: true });
 
         if (!data || !data.decision) {
           throw new Error("Invalid HADE response");
@@ -665,11 +690,16 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
           ugc_meta:   dec?.ugc_meta ?? undefined,
         } as HadeDecision;
 
-        const ux = _deriveUX(
+        const derivedUx = _deriveUX(
           safeDecision,
           data.context_snapshot?.decision_basis ?? "llm",
           req?.settings?.confidence_threshold ?? 0,
         );
+        const copyCta =
+          typeof data.ux?.cta === "string" && data.ux.cta.trim().length > 0 && data.ux.cta.length <= 36
+            ? data.ux.cta.trim()
+            : undefined;
+        const ux = copyCta ? { ...derivedUx, cta: copyCta } : derivedUx;
         const shaped: HadeResponse = {
           decision: safeDecision,
           ux,
@@ -713,11 +743,51 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
           ...(body.candidate_categories && { candidate_categories: body.candidate_categories }),
         });
       } catch (err) {
-        // Silently ignore aborted requests — a newer request replaced this one
-        if (err instanceof DOMException && err.name === "AbortError") return;
+        // Silently ignore aborted requests — a newer request replaced this one.
+        if (isAbortError(err) && !didTimeout) return;
+
+        if (isAbortError(err) && didTimeout) {
+          if (abortRef.current !== controller) return;
+          const local = generateLocalAlternative({
+            geo: body.geo,
+            rejection_history: body.rejection_history ?? [],
+            intent: body.situation?.intent ?? null,
+          });
+          const degradedDecision: HadeDecision = {
+            ...local,
+            is_fallback: true,
+            source: "decision_request_timeout",
+          } as HadeDecision;
+
+          setIsDegraded(true);
+          setError(null);
+          setDecision({ ...degradedDecision });
+          setResponse({
+            decision: { ...degradedDecision },
+            ux: _deriveUX(degradedDecision, "fallback", 0),
+            context_snapshot: {
+              situation_summary: "Decision request timed out",
+              interpreted_intent: body.situation?.intent ?? "",
+              decision_basis: "fallback",
+              candidates_evaluated: 0,
+            },
+            session_id: body.session_id ?? sessionIdRef.current,
+            source: "static_fallback",
+          });
+          lastPersonaRef.current = body.persona;
+          console.log("[HADE FRONTEND] degraded_decision_used", {
+            reason: "decision_request_timeout",
+            decision_id: degradedDecision.id,
+          });
+          return;
+        }
+
         setError(err instanceof Error ? err.message : "Unknown error");
       } finally {
-        setIsLoading(false);
+        clearTimeout(timeoutId);
+        if (abortRef.current === controller) {
+          setIsLoading(false);
+        }
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps

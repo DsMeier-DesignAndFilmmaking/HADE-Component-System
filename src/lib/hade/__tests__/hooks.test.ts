@@ -134,3 +134,66 @@ describe("useAdaptive — emitVibeSignal fallback ID rejection", () => {
     expect(body.node_hints).toContain(realVenueId);
   });
 });
+
+describe("useAdaptive — decision request timeout", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it("aborts a slow decide request and surfaces a degraded local decision", async () => {
+    vi.useFakeTimers();
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    const fetchSpy = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+      if (url.includes("/api/hade/signal")) return Promise.resolve(makeSignalOkResponse());
+      if (url.includes("/api/hade/decide")) {
+        return new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener(
+            "abort",
+            () => reject(new DOMException("Aborted", "AbortError")),
+            { once: true },
+          );
+        });
+      }
+      return Promise.reject(new Error(`Unexpected fetch: ${url}`));
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const { result } = renderHook(() => useAdaptive());
+    let decidePromise!: Promise<void>;
+
+    act(() => {
+      decidePromise = result.current.decide({ geo: mockGeo, persona: mockPersona });
+    });
+
+    expect(result.current.isLoading).toBe(true);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(7_000);
+      await decidePromise;
+    });
+
+    expect(result.current.isLoading).toBe(false);
+    expect(result.current.error).toBeNull();
+    expect(result.current.isDegraded).toBe(true);
+    expect(result.current.response?.decision).toBeTruthy();
+    expect(result.current.response?.decision.is_fallback).toBe(true);
+    expect(result.current.response?.source).toBe("static_fallback");
+    expect(result.current.response?.context_snapshot.decision_basis).toBe("fallback");
+
+    expect(logSpy).toHaveBeenCalledWith(
+      "[HADE FRONTEND] decision_request_started",
+      expect.objectContaining({ timeout_ms: 7_000 }),
+    );
+    expect(warnSpy).toHaveBeenCalledWith(
+      "[HADE FRONTEND] decision_request_timeout",
+      expect.objectContaining({ timeout_ms: 7_000 }),
+    );
+    expect(logSpy).toHaveBeenCalledWith(
+      "[HADE FRONTEND] degraded_decision_used",
+      expect.objectContaining({ reason: "decision_request_timeout" }),
+    );
+  });
+});

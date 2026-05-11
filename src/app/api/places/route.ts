@@ -16,6 +16,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fetchNearbyGrounded } from "@/core/services/places";
 import { RADIUS } from "@/core/constants/radius";
+import { hadeLog, roundGeo, safeError } from "@/lib/hade/logging";
 
 export const runtime = "nodejs";
 
@@ -28,13 +29,13 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   const lat = rawLat !== null ? Number(rawLat) : NaN;
   const lng = rawLng !== null ? Number(rawLng) : NaN;
 
-  console.log("[HADE ENV CHECK]", {
+  hadeLog("debug", "[HADE ENV CHECK]", {
     keyExists: !!process.env.GOOGLE_API_KEY,
     runtime: typeof window === "undefined" ? "server" : "client",
-  });
+  }, { debugOnly: true });
 
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-    console.error("[HADE GEO ERROR] Missing coordinates", { lat, lng });
+    hadeLog("error", "[HADE GEO ERROR] Missing coordinates");
     return NextResponse.json(
       { error: "lat and lng query params are required and must be finite numbers" },
       { status: 400 },
@@ -49,7 +50,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     );
   }
 
-  console.log("[HADE GEO VALID]", { lat, lng });
+  hadeLog("debug", "[HADE GEO VALID]", { geo: roundGeo({ lat, lng }) }, { debugOnly: true });
 
   const radius     = Number(searchParams.get("radius") ?? RADIUS.SEARCH_DEFAULT);
   const intent     = searchParams.get("intent") ?? undefined;
@@ -62,7 +63,13 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       ? (intent as "eat" | "drink" | "chill" | "scene" | "anything")
       : undefined;
 
-  console.log("[HADE PLACES] Fetching", { lat, lng });
+  hadeLog("log", "[HADE PLACES] Fetching", {
+    geo: roundGeo({ lat, lng }),
+    radius_meters: Number.isFinite(radius) && radius > 0 ? radius : 800,
+    intent: resolvedIntent ?? "inferred",
+    open_now: openNow,
+    max_results: maxResults,
+  });
 
   try {
     const places = await fetchNearbyGrounded({
@@ -73,7 +80,8 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       max_results: maxResults,
     });
 
-    console.log("[HADE PLACES] Parsed places", places);
+    hadeLog("log", "[HADE PLACES] Parsed places", { count: places.length });
+    hadeLog("debug", "[HADE PLACES DEBUG] Parsed places", places, { debugOnly: true });
 
     if (places.length === 0) {
       console.warn("[HADE] Falling back due to no places");
@@ -90,7 +98,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       },
     );
   } catch (err) {
-    console.error("[HADE PLACES ERROR]", err);
+    hadeLog("error", "[HADE PLACES ERROR]", safeError(err));
     return NextResponse.json(
       { error: "Places fetch failed", places: [] },
       { status: 500 },

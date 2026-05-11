@@ -1,4 +1,5 @@
 import { Redis } from "@upstash/redis";
+import { hadeDebugLogsEnabled, safeError } from "@/lib/hade/logging";
 
 // ─── Availability detection ───────────────────────────────────────────────────
 
@@ -113,9 +114,10 @@ export function handleRedisFailure(
 ): void {
   console.error("[HADE_NO_REDIS]", {
     ...context,
-    error: error instanceof Error
-      ? { name: error.name, message: error.message, stack: error.stack }
-      : String(error),
+    error: {
+      ...safeError(error),
+      ...(hadeDebugLogsEnabled() && error instanceof Error ? { stack: error.stack } : {}),
+    },
   });
   markRedisDegraded();
 }

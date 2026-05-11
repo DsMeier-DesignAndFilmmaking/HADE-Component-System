@@ -13,6 +13,7 @@ import asyncio
 import json
 import logging
 import math
+import os
 import random
 import re
 from typing import TYPE_CHECKING
@@ -25,6 +26,13 @@ if TYPE_CHECKING:
     from main import DecideRequest
 
 logger = logging.getLogger("hade.brain")
+
+HADE_DEBUG_LOGS = os.environ.get("HADE_DEBUG_LOGS") == "true"
+
+
+def debug_print(*args, **kwargs) -> None:
+    if HADE_DEBUG_LOGS:
+        print(*args, **kwargs)
 
 
 # ─── HADE System Prompt ───────────────────────────────────────────────────────
@@ -132,7 +140,7 @@ def infer_intent_probabilities(signals: list) -> dict[str, float]:
         if final_total > 0:
             intent_probs = {k: v / final_total for k, v in intent_probs.items()}
 
-    print("[HADE] intent_probabilities:", intent_probs)
+    debug_print("[HADE] intent_probabilities:", intent_probs)
     return intent_probs
 
 
@@ -301,8 +309,8 @@ def _rank_candidates(
     )
     weights = (w_prox, w_ctx, w_intent)
 
-    print(f"[HADE] weight profile: {profile} "
-          f"→ prox={w_prox:.2f} ctx={w_ctx:.2f} intent={w_intent:.2f}")
+    debug_print(f"[HADE] weight profile: {profile} "
+                f"→ prox={w_prox:.2f} ctx={w_ctx:.2f} intent={w_intent:.2f}")
 
     venue_by_id = {v.id: v for v in venues}
     scored_candidates = [
@@ -351,15 +359,15 @@ def _rank_candidates(
             f"{pool_scores[i]:.3f}→{probs[i]:.0%}"
             for i in range(len(probs))
         )
-        print(f"[HADE] selection: EXPLORE (top_score={top_score:.3f}, T={temperature:.2f}, forced={exploration_temp is not None})")
-        print(f"[HADE] softmax pool: {prob_str}")
-        print(f"[HADE] selected: {winner['venue_name']}")
+        debug_print(f"[HADE] selection: EXPLORE (top_score={top_score:.3f}, T={temperature:.2f}, forced={exploration_temp is not None})")
+        debug_print(f"[HADE] softmax pool: {prob_str}")
+        debug_print(f"[HADE] selected: {winner['venue_name']}")
     else:
-        print(f"[HADE] selection: EXPLOIT (top_score={top_score:.3f})")
+        debug_print(f"[HADE] selection: EXPLOIT (top_score={top_score:.3f})")
 
-    print("[HADE] TOP 5 CANDIDATES:")
+    debug_print("[HADE] TOP 5 CANDIDATES:")
     for c in ranked[:5]:
-        print({
+        debug_print({
             "venue": c["venue_name"],
             "scores": {
                 "proximity": round(c["proximity_score"], 3),
@@ -370,9 +378,9 @@ def _rank_candidates(
         })
 
     # ── Print final candidate order ──
-    print(f"[HADE] candidate scores (prox×{w_prox:.2f} + ctx×{w_ctx:.2f} + intent×{w_intent:.2f}):")
+    debug_print(f"[HADE] candidate scores (prox×{w_prox:.2f} + ctx×{w_ctx:.2f} + intent×{w_intent:.2f}):")
     for c in ranked:
-        print(
+        debug_print(
             f"  {c['venue_name'][:32]:<32} "
             f"prox={c['proximity_score']:.2f} ctx={c['context_score']:.2f} "
             f"intent={c['intent_score']:.2f} → {c['final_score']:.3f}"
@@ -613,7 +621,7 @@ def _apply_strict_constraints(
                   if getattr(v, "price_level", None) is None
                   or v.price_level <= max_level]
 
-    print(f"[HADE] strict_constraints: {before} → {len(result)} venues")
+    debug_print(f"[HADE] strict_constraints: {before} → {len(result)} venues")
     return result if result else venues  # never return empty
 
 
@@ -685,7 +693,7 @@ async def run_hade_decision(
     effective_mode     = _s.get("mode", "balanced")
     effective_intent_w = _s.get("intent_weight", None)
     strict             = _s.get("strict_constraints", False)
-    print(
+    debug_print(
         f"[HADE] settings: debug={effective_debug}, temp={effective_temp}, "
         f"model={effective_model}, mode={effective_mode}, "
         f"intent_w={effective_intent_w}, strict={strict}"
@@ -696,7 +704,7 @@ async def run_hade_decision(
     # exploration_temp is set, making decisions visibly more varied.
     if effective_mode == "explorative" and effective_temp is None:
         effective_temp = 0.30
-        print("[HADE] mode=explorative → exploration floor T=0.30")
+        debug_print("[HADE] mode=explorative → exploration floor T=0.30")
 
     # ── Strict constraint filtering ──
     if strict:
@@ -715,7 +723,7 @@ async def run_hade_decision(
     persona = getattr(req, "persona", None) or None
     system_prompt = _build_system_prompt(persona)
     if persona:
-        print(f"[HADE] persona injected: id={persona.get('id')}, tone={persona.get('tone')}")
+        debug_print(f"[HADE] persona injected: id={persona.get('id')}, tone={persona.get('tone')}")
 
     user_prompt = _build_user_prompt(req, candidates, situation_summary)
 
@@ -725,7 +733,7 @@ async def run_hade_decision(
     # ── LLM call ──
     provider = get_llm_provider(provider_override)
     try:
-        print(
+        debug_print(
             f"[HADE] entering LLM path "
             f"(provider={type(provider).__name__}, model_override={model_override}, "
             f"candidates={len(candidates)})"
@@ -735,11 +743,12 @@ async def run_hade_decision(
         raw_response = await provider.generate(
             system_prompt, user_prompt, model_override=model_override,
         )
-        logger.debug("LLM raw response: %s", raw_response[:200])
+        if HADE_DEBUG_LOGS:
+            logger.debug("LLM raw response: %s", raw_response[:200])
 
         decision = _parse_llm_response(raw_response, candidates)
         decision["debug_top_candidates"] = top_candidates_debug
-        print(f"[HADE] LLM success: venue='{decision['venue_name']}' confidence={decision['confidence']:.2f}")
+        logger.info("LLM success: confidence=%.2f", decision["confidence"])
         logger.info(
             "LLM decision: venue='%s' confidence=%.2f",
             decision["venue_name"],
@@ -747,25 +756,25 @@ async def run_hade_decision(
         )
 
     except asyncio.TimeoutError:
-        print("[HADE] entering fallback path (reason=timeout)")
+        logger.warning("LLM fallback path: timeout")
         logger.warning("LLM timeout", exc_info=True)
         decision = _fallback_decision(candidates, req, failure_reason="timeout")
         decision["debug_top_candidates"] = top_candidates_debug
 
     except json.JSONDecodeError as exc:
-        print(f"[HADE] entering fallback path (reason=parse_error): {exc}")
+        logger.warning("LLM fallback path: parse_error")
         logger.warning("LLM parse_error: %s", exc, exc_info=True)
         decision = _fallback_decision(candidates, req, failure_reason="parse_error")
         decision["debug_top_candidates"] = top_candidates_debug
 
     except ValueError as exc:
-        print(f"[HADE] entering fallback path (reason=validation_error): {exc}")
+        logger.warning("LLM fallback path: validation_error")
         logger.warning("LLM validation_error: %s", exc, exc_info=True)
         decision = _fallback_decision(candidates, req, failure_reason="validation_error")
         decision["debug_top_candidates"] = top_candidates_debug
 
     except Exception as exc:
-        print(f"[HADE] entering fallback path (reason=provider_error): {type(exc).__name__}: {exc}")
+        logger.warning("LLM fallback path: provider_error (%s)", type(exc).__name__)
         logger.warning("LLM provider_error: %s", type(exc).__name__, exc_info=True)
         decision = _fallback_decision(candidates, req, failure_reason="provider_error")
         decision["debug_top_candidates"] = top_candidates_debug

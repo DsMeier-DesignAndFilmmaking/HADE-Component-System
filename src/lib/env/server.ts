@@ -1,9 +1,10 @@
 import "server-only";
+import { hadeLog } from "@/lib/hade/logging";
 
-console.log("[HADE ENV CHECK]", {
+hadeLog("debug", "[HADE ENV CHECK]", {
   keyExists: !!process.env.GOOGLE_API_KEY,
   runtime: typeof window === "undefined" ? "server" : "client",
-});
+}, { debugOnly: true });
 
 export const serverEnv = {
   hadeUpstreamUrl: process.env.HADE_UPSTREAM_URL ?? "http://localhost:8000",

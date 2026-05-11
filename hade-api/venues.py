@@ -16,6 +16,11 @@ import httpx
 from pydantic import BaseModel
 
 logger = logging.getLogger("hade.venues")
+HADE_DEBUG_LOGS = os.environ.get("HADE_DEBUG_LOGS") == "true"
+
+
+def _round_coord(value: float) -> float:
+    return round(value, 3)
 
 # ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -111,7 +116,8 @@ async def get_nearby_venues(
         Returns an empty list on any API failure (graceful degradation).
     """
     api_key = os.environ.get("GOOGLE_API_KEY")
-    print(f"[venues] lat={lat}, lng={lng}, api_key_set={bool(api_key)}")
+    if HADE_DEBUG_LOGS:
+        print(f"[venues] lat={_round_coord(lat)}, lng={_round_coord(lng)}, api_key_set={bool(api_key)}")
     if not api_key:
         logger.warning("GOOGLE_API_KEY not set — skipping venue fetch")
         return []
@@ -145,10 +151,11 @@ async def get_nearby_venues(
         print(f"[venues] Google Places API status={response.status_code}")
         if response.status_code != 200:
             logger.error(
-                "Google Places API error: status=%d body=%s",
+                "Google Places API error: status=%d",
                 response.status_code,
-                response.text[:500],
             )
+            if HADE_DEBUG_LOGS:
+                logger.debug("Google Places API error body: %s", response.text[:500])
             return []
 
         data = response.json()
@@ -163,11 +170,11 @@ async def get_nearby_venues(
         print(f"[venues] after HADE filter={len(venues)}")
 
         logger.info(
-            "Venue fetch: %d raw results → %d after HADE filter (lat=%.4f, lng=%.4f)",
+            "Venue fetch: %d raw results → %d after HADE filter (lat=%.3f, lng=%.3f)",
             len(places),
             len(venues),
-            lat,
-            lng,
+            _round_coord(lat),
+            _round_coord(lng),
         )
 
         return venues

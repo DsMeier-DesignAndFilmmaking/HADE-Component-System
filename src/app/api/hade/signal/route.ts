@@ -40,6 +40,7 @@ import {
   filterExpiredSignals,
 }                                    from "@/lib/hade/signals";
 import { getRedisMode, handleRedisFailure, hasRedis, redis } from "@/lib/hade/redis";
+import { hadeLog } from "@/lib/hade/logging";
 
 // ─── Rate limit constants ─────────────────────────────────────────────────────
 
@@ -143,7 +144,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const reqId = randomUUID().slice(0, 8);
   const t0    = Date.now();
 
-  console.log(`[hade-signal ${reqId}] ← POST received`);
+  hadeLog("log", `[hade-signal ${reqId}] ← POST received`);
 
   // ── Extract caller identifiers ─────────────────────────────────────────────
   //
@@ -167,7 +168,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       RATE_WINDOW_SECS,
     );
     if (limited) {
-      console.warn("[HADE_RATE_LIMIT]", { layer: "device", deviceId, ip });
+      hadeLog("warn", "[HADE_RATE_LIMIT]", { layer: "device", hasDeviceId: true, hasIp: ip !== "unknown" });
       return new NextResponse("Rate limit exceeded", {
         status: 429,
         headers: { "Retry-After": String(RATE_WINDOW_SECS) },
@@ -183,7 +184,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       RATE_WINDOW_SECS,
     );
     if (limited) {
-      console.warn("[HADE_RATE_LIMIT]", { layer: "ip", deviceId, ip });
+      hadeLog("warn", "[HADE_RATE_LIMIT]", { layer: "ip", hasDeviceId: Boolean(deviceId), hasIp: ip !== "unknown" });
       return new NextResponse("Rate limit exceeded", {
         status: 429,
         headers: { "Retry-After": String(RATE_WINDOW_SECS) },
@@ -236,7 +237,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const fresh   = filterExpiredSignals(rawSignals);
   const deduped = aggregateSignals(fresh) as VibeSignal[];
 
-  console.log(
+  hadeLog("log",
     `[hade-signal ${reqId}]   raw=${rawSignals.length}` +
     ` fresh=${fresh.length} deduped=${deduped.length}`,
   );
@@ -260,7 +261,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   for (const signal of deduped) {
     const result = validateAndSanitize(signal, session_id);
     if (!result.ok) {
-      console.warn(`[hade-signal ${reqId}]   reject signal ${signal.id}: ${result.reason}`);
+      hadeLog("warn", `[hade-signal ${reqId}]   reject signal`, { reason: result.reason });
       rejectedCount += 1;
       continue;
     }
@@ -275,10 +276,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // is returned so attackers get no signal to rotate venues or identifiers.
     const dampened = await isVenueDampened(identifier, clean.location_node_id);
     if (dampened) {
-      console.warn("[HADE_RATE_LIMIT]", {
+      hadeLog("warn", "[HADE_RATE_LIMIT]", {
         layer:   "venue_dampening",
-        deviceId,
-        ip,
+        hasDeviceId: Boolean(deviceId),
+        hasIp: ip !== "unknown",
         venueId: clean.location_node_id,
       });
       rejectedCount += 1;
@@ -308,10 +309,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       anyUnpersisted = true;
     }
 
-    console.log(
+    hadeLog("debug",
       `[hade-signal ${reqId}]   accepted ${clean.id}` +
       ` venue=${clean.location_node_id} Δw=${delta.toFixed(3)}` +
       ` node.v=${signalPersisted ? node.version : "null(degraded)"}`,
+      undefined,
+      { debugOnly: true },
     );
   }
 
@@ -323,7 +326,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const persisted = !anyUnpersisted && getRedisMode() !== "DEGRADED";
   const degraded  = !persisted;
 
-  console.log(
+  hadeLog("log",
     `[hade-signal ${reqId}] → done in ${ms}ms` +
     ` accepted=${accepted.length} rejected=${rejectedCount}` +
     ` persisted=${persisted} degraded=${degraded}`,

@@ -1,6 +1,7 @@
 from __future__ import annotations
 import logging
 import math
+import os
 import uuid
 from datetime import datetime
 from typing import Optional, List, Any
@@ -22,6 +23,12 @@ logging.basicConfig(
     format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
 )
 logger = logging.getLogger("hade")
+HADE_DEBUG_LOGS = os.environ.get("HADE_DEBUG_LOGS") == "true"
+
+
+def debug_print(*args, **kwargs) -> None:
+    if HADE_DEBUG_LOGS:
+        print(*args, **kwargs)
 
 # ─── App Initialization ───────────────────────────────────────────────────────
 
@@ -158,7 +165,7 @@ async def decide(req: DecideRequest):
     lng = req.geo.lng
     if lat == 0.0 and lng == 0.0:
         logger.warning("geo=(0,0) detected — using San Francisco fallback")
-        print("[main] geo fallback: using San Francisco (37.7749, -122.4194)")
+        debug_print("[main] geo fallback: using San Francisco (37.775, -122.419)")
         lat = 37.7749
         lng = -122.4194
 
@@ -179,13 +186,13 @@ async def decide(req: DecideRequest):
     )
     rejected_ids = {rid for rid in rejected_ids if rid}
 
-    print("[HADE] rejected_ids:", rejected_ids)
-    print("[HADE] candidates_before:", len(candidates))
+    debug_print("[HADE] rejected_count:", len(rejected_ids))
+    debug_print("[HADE] candidates_before:", len(candidates))
     filtered_candidates = [
         v for v in candidates
         if v.id not in rejected_ids
     ]
-    print("[HADE] candidates_after_filter:", len(filtered_candidates))
+    debug_print("[HADE] candidates_after_filter:", len(filtered_candidates))
 
     if not filtered_candidates:
         logger.warning("No candidates remain after rejection filter (session=%s)", session_id)

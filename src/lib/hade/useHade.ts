@@ -13,6 +13,7 @@ import { useHadeSettings } from "./settings";
 import { deriveReasons } from "./deriveReasons";
 import { getScenario } from "./scenarios";
 import { buildDecisionViewModel, type DecisionViewModel } from "./viewModel";
+import { hadeLog, roundGeo } from "./logging";
 import agentData from "@/config/agent_definitions.json";
 
 const definitions = agentData as AgentDefinitions;
@@ -186,11 +187,10 @@ export function useHade(config?: UseHadeConfig): UseHadeReturn {
     const applyFallbackGeo = async () => {
       // 1. Scenario override (dev only)
       if (scenario?.geo) {
-        console.log("[HADE GEO SOURCE]", {
-          lat: scenario.geo.lat,
-          lng: scenario.geo.lng,
+        hadeLog("debug", "[HADE GEO SOURCE]", {
+          geo: roundGeo(scenario.geo),
           source: "fallback",
-        });
+        }, { debugOnly: true });
         if (!cancelled) {
           setUserGeo(scenario.geo);
           setGeo(scenario.geo);
@@ -205,7 +205,7 @@ export function useHade(config?: UseHadeConfig): UseHadeReturn {
       const ipGeo = await resolveIPGeo();
       if (cancelled) return;
       if (ipGeo) {
-        console.log("[HADE GEO SOURCE]", { lat: ipGeo.lat, lng: ipGeo.lng, source: "ip_fallback" });
+        hadeLog("debug", "[HADE GEO SOURCE]", { geo: roundGeo(ipGeo), source: "ip_fallback" }, { debugOnly: true });
         setUserGeo(ipGeo);
         setGeo(ipGeo);
         setGeoReady(true);
@@ -215,7 +215,7 @@ export function useHade(config?: UseHadeConfig): UseHadeReturn {
       // 3. Last known location from localStorage
       const lastKnown = loadLastKnownGeo();
       if (lastKnown) {
-        console.log("[HADE GEO SOURCE]", { lat: lastKnown.lat, lng: lastKnown.lng, source: "last_known" });
+        hadeLog("debug", "[HADE GEO SOURCE]", { geo: roundGeo(lastKnown), source: "last_known" }, { debugOnly: true });
         if (!cancelled) {
           setUserGeo(lastKnown);
           setGeo(lastKnown);
@@ -225,7 +225,7 @@ export function useHade(config?: UseHadeConfig): UseHadeReturn {
       }
 
       // 4. Hard default — always produces a non-zero usable coordinate
-      console.log("[HADE GEO SOURCE]", { lat: DEFAULT_GEO.lat, lng: DEFAULT_GEO.lng, source: "default" });
+      hadeLog("debug", "[HADE GEO SOURCE]", { geo: roundGeo(DEFAULT_GEO), source: "default" }, { debugOnly: true });
       if (!cancelled) {
         setUserGeo(DEFAULT_GEO);
         setGeo(DEFAULT_GEO);
@@ -242,7 +242,7 @@ export function useHade(config?: UseHadeConfig): UseHadeReturn {
       (pos) => {
         if (cancelled) return;
         const geo = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-        console.log("[HADE GEO SOURCE]", { lat: geo.lat, lng: geo.lng, source: "browser" });
+        hadeLog("debug", "[HADE GEO SOURCE]", { geo: roundGeo(geo), source: "browser" }, { debugOnly: true });
         saveLastKnownGeo(geo);
         setUserGeo(geo);
         setGeo(geo);
@@ -269,12 +269,13 @@ export function useHade(config?: UseHadeConfig): UseHadeReturn {
     if (firedRef.current) return;
     if (!geoReady) return;
     if (!context.geo?.lat || !context.geo?.lng) {
-      console.warn("[HADE GEO] Decision blocked — geo not ready or invalid", context.geo);
+      console.warn("[HADE GEO] Decision blocked — geo not ready or invalid", {
+        geo: roundGeo(context.geo),
+      });
       return;
     }
     console.log("[HADE GEO] Triggering decision with verified geo", {
-      lat: context.geo.lat,
-      lng: context.geo.lng,
+      geo: roundGeo(context.geo),
     });
     firedRef.current = true;
     void decide({
