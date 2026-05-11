@@ -18,6 +18,8 @@ const MODE_CONTEXT: Record<DomainMode, string> = {
 interface HeroDecisionCardProps {
   object: SpontaneousObject;
   mode?: DomainMode;
+  supportLabel?: string;
+  supportDetail?: string;
   contextLabel?: string;
   lensIcon?: string;
   lensLabel?: string;
@@ -92,6 +94,8 @@ function getCreatedLocationDisplay(object: SpontaneousObject): CreatedLocationDi
 export function HeroDecisionCard({
   object,
   mode,
+  supportLabel,
+  supportDetail,
   contextLabel,
   lensIcon,
   lensLabel,
@@ -122,6 +126,9 @@ export function HeroDecisionCard({
     if (activeFor) return activeFor;
     return temporalState && temporalState !== "suppressed" ? TEMPORAL_COPY[temporalState] : null;
   }, [object.expires_at, temporalState]);
+  const primarySupport = supportLabel ?? contextLabel ?? (mode ? MODE_CONTEXT[mode] : undefined);
+  const secondarySupport = supportDetail ?? (!supportLabel ? lensFrame : undefined);
+  const hasResolvedSupport = Boolean(supportLabel || supportDetail);
 
   return (
     <section
@@ -195,19 +202,19 @@ export function HeroDecisionCard({
             {object.title}
           </h1>
 
-          {(contextLabel || mode) && (
+          {primarySupport && (
             <p className="mt-1.5 text-[12px] font-medium leading-snug text-ink/42">
-              {contextLabel ?? MODE_CONTEXT[mode!]}
+              {primarySupport}
             </p>
           )}
 
-          {lensFrame && (
+          {secondarySupport && (
             <p
               className={`mt-1.5 text-[13px] leading-snug ${
                 isFallback ? "font-medium text-ink/64" : "text-ink/52"
               }`}
             >
-              {lensFrame}
+              {secondarySupport}
             </p>
           )}
 
@@ -229,7 +236,7 @@ export function HeroDecisionCard({
                 </div>
               )}
             </div>
-          ) : isUGC ? (
+          ) : isUGC && !hasResolvedSupport ? (
             <p className="mt-1.5 text-[13px] leading-snug text-ink/55">
               A HADE user recently started a {object.title} here.
             </p>

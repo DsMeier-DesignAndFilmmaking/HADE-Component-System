@@ -69,6 +69,14 @@ export interface DecisionViewModel {
   };
 
   // ── Explanation signals ("Why this?" sheet) ──────────────────────────────────
+  /** Backend-authored reasoning fields. Display components may use these as
+   * source material, but should keep rendered support copy concise. */
+  rationale?: string;
+  why_now?: string;
+  why_this?: string;
+  decision_frame?: string;
+  situation_summary?: string;
+
   explanation_signals?: {
     vibe_match:   "strong" | "moderate" | "none";
     social_proof: "high"   | "moderate" | "none";
@@ -169,6 +177,11 @@ export function buildDecisionViewModel(response: HadeResponse): DecisionViewMode
     ...(dec.ugc_meta               ? { ugc_meta: dec.ugc_meta }        : {}),
 
     // Signals
+    rationale: dec.rationale,
+    why_now: dec.why_now,
+    why_this: dec.why_this,
+    decision_frame: dec.decision_frame,
+    situation_summary: dec.situation_summary,
     explanation_signals: response.explanation_signals,
 
     // Default flags: HadeResponse carries all signals, so both are shown

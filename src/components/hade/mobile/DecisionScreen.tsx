@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import type { DomainMode } from "@/lib/hade/useHade";
 import { AnimatePresence, motion } from "framer-motion";
 import type { Intent, SpontaneousObject, VibeTag } from "@/types/hade";
@@ -12,6 +12,7 @@ import { recordNavigationTelemetry } from "@/lib/hade/navigationTelemetry";
 import { getLensCandidateCategories, getLensProfile } from "@/lib/hade/lensProfiles";
 import { resetMobileViewportAfterInput } from "@/lib/hade/mobileViewport";
 import { computeTemporalState, getUGCPivotReasons } from "@/lib/hade/ugcCopy";
+import { resolveDecisionSupportText } from "@/lib/hade/supportText";
 import { HeroDecisionCard } from "./HeroDecisionCard";
 import { RefineSheet } from "./RefineSheet";
 import { VibeSheet } from "./VibeSheet";
@@ -828,6 +829,32 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
   // Once a new live decision arrives, those overrides are cleared automatically.
   const displayDecision = previousOverride ?? createdDecisionOverride ?? decision;
   const activeLens = LENS_OPTIONS.find((lens) => lens.id === activeLensId) ?? LENS_OPTIONS[0];
+  const decisionSupport = useMemo(() => {
+    if (!displayDecision) return null;
+
+    const candidateType =
+      createdDecisionOverride?.id === displayDecision.id
+        ? "created_ugc"
+        : displayDecision.is_ugc
+          ? "ugc"
+          : displayDecision.is_fallback
+            ? "fallback"
+            : "venue";
+
+    return resolveDecisionSupportText({
+      lens: activeLens,
+      source: displayDecision.object.source ?? displayDecision.engine_source,
+      candidateType,
+      confidence: displayDecision.confidence,
+      isFallback: displayDecision.is_fallback,
+      isUGC: displayDecision.is_ugc,
+      vibe: displayDecision.object.vibe_tag,
+      context: adaptiveContext,
+      rationale: displayDecision.rationale,
+      whyNow: displayDecision.why_now,
+      decisionFrame: displayDecision.decision_frame,
+    });
+  }, [activeLens, adaptiveContext, createdDecisionOverride?.id, displayDecision]);
 
   // Derived pivot reasons list — UGC-specific when applicable
   const pivotReasons: string[] = displayDecision?.is_ugc && displayDecision.ugc_meta
@@ -880,10 +907,12 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
                   <HeroDecisionCard
                     object={displayDecision.object}
                     mode={mode}
+                    supportLabel={decisionSupport?.label}
+                    supportDetail={decisionSupport?.detail}
                     contextLabel={activeLens.context}
                     lensIcon={activeLens.icon}
                     lensLabel={activeLens.label}
-                    lensFrame={activeLens.frame}
+                    lensFrame={undefined}
                     isFallback={displayDecision.is_fallback}
                     isReframing={isReframing || lensTransitioning}
                     pivotLabel={lensTransitioning ? activeLens.transitionCopy : pivotLabel}
