@@ -33,10 +33,6 @@ interface HeroDecisionCardProps {
   temporalState?: TemporalState;
   /** Lightweight confirmation treatment for the immediate post-save UGC card. */
   confirmationState?: "created";
-  /** Called when user taps "Join" (strong intent — emits worth_it at 0.9). */
-  onJoin?: () => void;
-  /** Called when user taps "I'm Interested" (light intent — emits worth_it at 0.5). */
-  onInterested?: () => void;
   /** Called when user submits an Add Vibe note. */
   onAddVibe?: (text: string) => void;
 }
@@ -105,8 +101,6 @@ export function HeroDecisionCard({
   pivotLabel,
   temporalState,
   confirmationState,
-  onJoin,
-  onInterested,
   onAddVibe,
 }: HeroDecisionCardProps) {
   const [vibeOpen, setVibeOpen]   = useState(false);
@@ -252,25 +246,6 @@ export function HeroDecisionCard({
             </span>
           </div>
 
-          {/* ── UGC inline CTAs ─────────────────────────────────────────────── */}
-          {isUGC && (
-            <div className="mt-3 flex gap-2">
-              <button
-                type="button"
-                onClick={onJoin}
-                className="h-9 flex-1 rounded-xl bg-accent text-sm font-semibold text-white transition-opacity active:opacity-80 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-              >
-                Join
-              </button>
-              <button
-                type="button"
-                onClick={onInterested}
-                className="h-9 flex-1 rounded-xl border border-line bg-white/70 text-sm font-medium text-ink/70 transition-colors active:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
-              >
-                I'm Interested
-              </button>
-            </div>
-          )}
         </>
       )}
       {/* ── Add Vibe ────────────────────────────────────────────────────────── */}

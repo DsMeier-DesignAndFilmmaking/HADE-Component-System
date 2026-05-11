@@ -666,12 +666,6 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
     setShowPivotReasons((prev) => !prev);
   }, []);
 
-  const handleSave = useCallback(() => {
-    const target = previousOverride ?? createdDecisionOverride ?? decision;
-    if (!target) return;
-    console.log("[HADE] Save →", target.title);
-  }, [createdDecisionOverride, decision, previousOverride]);
-
   const handleReject = useCallback(
     (reason: string) => {
       const target = previousOverride ?? createdDecisionOverride ?? decision;
@@ -727,20 +721,6 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
     },
     [emitVibeSignal],
   );
-
-  const handleJoin = useCallback(() => {
-    const target = previousOverride ?? createdDecisionOverride ?? decision;
-    if (!target) return;
-    emitVibeSignal(target.id, ["worth_it"] as VibeTag[], "positive", 0.9);
-    console.log("[HADE] Join →", target.title);
-  }, [createdDecisionOverride, decision, previousOverride, emitVibeSignal]);
-
-  const handleInterested = useCallback(() => {
-    const target = previousOverride ?? createdDecisionOverride ?? decision;
-    if (!target) return;
-    emitVibeSignal(target.id, ["worth_it"] as VibeTag[], "positive", 0.5);
-    console.log("[HADE] Interested →", target.title);
-  }, [createdDecisionOverride, decision, previousOverride, emitVibeSignal]);
 
   const handleVibeText = useCallback((text: string) => {
     const target = previousOverride ?? createdDecisionOverride ?? decision;
@@ -866,7 +846,7 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
   }
 
   return (
-    <div className="mx-auto flex min-h-[100dvh] w-full max-w-[430px] flex-col bg-background px-4 pb-[210px] pt-4 min-[390px]:px-5 min-[390px]:pt-5">
+    <div className="mx-auto flex min-h-[100dvh] w-full max-w-[430px] flex-col bg-background px-4 pb-[180px] pt-4 min-[390px]:px-5 min-[390px]:pt-5">
       {status === "error" && (
         <div className="flex flex-1 flex-col items-center justify-center gap-4">
           <p className="text-base text-ink/70">Something got in the way.</p>
@@ -920,8 +900,6 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
                     confirmationState={
                       createdDecisionOverride?.id === displayDecision.id ? "created" : undefined
                     }
-                    onJoin={handleJoin}
-                    onInterested={handleInterested}
                     onAddVibe={handleVibeText}
                   />
                 </ErrorBoundary>
@@ -967,43 +945,51 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
       )}
 
       {/* ── Pinned CTA bar — thumb-reach zone ──────────────────────────────── */}
-      <div className="fixed bottom-0 left-0 right-0 z-10 mx-auto w-full max-w-[430px] border-t border-line/10 bg-background/78 px-4 pb-[max(12px,env(safe-area-inset-bottom,12px))] pt-2.5 backdrop-blur-sm min-[390px]:px-5">
-        <div className="flex flex-col gap-1.5">
+      <div className="fixed bottom-0 left-0 right-0 z-10 mx-auto w-full max-w-[430px] border-t border-line/10 bg-background/82 px-4 pb-[max(12px,env(safe-area-inset-bottom,12px))] pt-2 backdrop-blur-sm min-[390px]:px-5">
+        <div className="flex flex-col gap-2">
 
           {/* Utility row: Previous (contextual) + overflow */}
-          <div className="flex h-6 items-center justify-between">
+          <div className="flex min-h-7 items-center justify-between">
             <button
               type="button"
               onClick={handlePrevious}
               disabled={decisionHistory.length <= 1}
-              className="flex items-center gap-1 text-[11px] text-ink/40 transition-colors active:text-ink/70 disabled:opacity-0 focus:outline-none focus-visible:text-ink/70"
+              className="flex min-h-7 items-center gap-1 rounded-full pr-2 text-[11px] text-ink/40 transition-colors active:text-ink/70 disabled:opacity-0 focus:outline-none focus-visible:text-ink/70"
             >
               ← Previous
             </button>
             <button
               type="button"
               onClick={() => setOverflowOpen((v) => !v)}
-              className="flex h-6 w-6 items-center justify-center rounded-full text-sm text-ink/35 transition-colors active:text-ink/60 focus:outline-none focus-visible:text-ink/60"
+              className="flex h-7 w-7 items-center justify-center rounded-full text-sm text-ink/35 transition-colors active:bg-white/60 active:text-ink/60 focus:outline-none focus-visible:bg-white/60 focus-visible:text-ink/60"
               aria-label="More options"
             >
               ···
             </button>
           </div>
 
-          {/* Overflow panel — Compare Modes + Add Note */}
+          {/* Overflow panel — secondary tools */}
           {overflowOpen && (
-            <div className="grid grid-cols-2 gap-1.5">
+            <div className="grid grid-cols-3 gap-1.5">
+              <button
+                type="button"
+                onClick={() => { setRefineOpen(true); setOverflowOpen(false); }}
+                disabled={!displayDecision}
+                className="min-h-10 rounded-xl border border-line bg-white/60 px-2 text-[11px] font-medium leading-tight text-ink/60 transition-colors active:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-line disabled:opacity-40"
+              >
+                Refine
+              </button>
               <button
                 type="button"
                 onClick={() => { setShowCompareModes(true); setOverflowOpen(false); }}
-                className="h-9 rounded-xl border border-line bg-white/60 px-3 text-[11px] font-medium text-ink/60 transition-colors active:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
+                className="min-h-10 rounded-xl border border-line bg-white/60 px-2 text-[11px] font-medium leading-tight text-ink/60 transition-colors active:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
               >
                 Compare Modes
               </button>
               <button
                 type="button"
                 onClick={() => { setShowCreationFlow(true); setOverflowOpen(false); }}
-                className="h-9 rounded-xl border border-line bg-white/60 px-3 text-[11px] font-medium text-ink/60 transition-colors active:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
+                className="min-h-10 rounded-xl border border-line bg-white/60 px-2 text-[11px] font-medium leading-tight text-ink/60 transition-colors active:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
               >
                 Start Meetup
               </button>
@@ -1018,7 +1004,7 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
                   key={reason}
                   type="button"
                   onClick={() => handleReject(reason)}
-                  className="h-9 rounded-xl border border-line bg-white/60 px-3 text-[11px] font-medium text-ink/70 transition-colors active:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
+                  className="min-h-10 rounded-xl border border-line bg-white/60 px-3 text-[11px] font-medium leading-tight text-ink/70 transition-colors active:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
                 >
                   {reason}
                 </button>
@@ -1036,32 +1022,12 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
             Navigate
           </button>
 
-          {/* SECONDARY + TERTIARY */}
-          <div className="grid grid-cols-2 gap-1.5">
-            <button
-              type="button"
-              onClick={() => setRefineOpen(true)}
-              disabled={!displayDecision}
-              className="h-9 rounded-xl border border-line bg-white/60 text-[13px] font-semibold text-ink transition-colors active:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-line disabled:opacity-40"
-            >
-              Refine
-            </button>
-            <button
-              type="button"
-              onClick={handleSave}
-              disabled={!displayDecision}
-              className="h-9 rounded-xl border border-line bg-white/60 text-[13px] font-medium text-ink/50 transition-colors active:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-line disabled:opacity-40"
-            >
-              Save
-            </button>
-          </div>
-
           {/* REJECTION — text-only, lowest visual weight */}
           <button
             type="button"
             onClick={handleNotThis}
             disabled={!displayDecision}
-            className="w-full py-0 text-[13px] text-ink/35 transition-colors active:text-ink/60 focus:outline-none focus-visible:text-ink/60 disabled:opacity-0"
+            className="min-h-8 w-full rounded-xl text-[13px] text-ink/35 transition-colors active:bg-white/40 active:text-ink/60 focus:outline-none focus-visible:bg-white/40 focus-visible:text-ink/60 disabled:opacity-0"
           >
             Not this
           </button>
