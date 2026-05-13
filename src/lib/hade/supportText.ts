@@ -20,6 +20,8 @@ export type DecisionSupportInput = {
   context?: HadeContext | null;
   rationale?: string;
   whyNow?: string;
+  /** ≤12-word contextual badge — preferred detail source when present. */
+  whyThis?: string;
   decisionFrame?: string;
 };
 
@@ -116,7 +118,7 @@ function venueSupport(input: DecisionSupportInput): DecisionSupportText {
   const group = isGroupContext(context);
   const knownLocation = isKnownLocation(context);
 
-  if (lens.id === "food") {
+  if (lens.id === "food" || lens.id === "food_dining") {
     if (urgency === "high") return { label: "Closest useful food option right now." };
     if (group) return { label: "Nearby food option that should be easy for the group." };
     if (energy === "low") return { label: "Low-friction nearby food option for your current energy." };
@@ -124,7 +126,7 @@ function venueSupport(input: DecisionSupportInput): DecisionSupportText {
     return { label: "Low-friction nearby food option for your current window." };
   }
 
-  if (lens.id === "wellness") {
+  if (lens.id === "wellness" || lens.id === "wellness_reset") {
     if (urgency === "high") return { label: "Closest useful reset for your current energy." };
     if (group) return { label: "Nearby reset that can work for the group." };
     return {
@@ -168,6 +170,7 @@ function venueSupport(input: DecisionSupportInput): DecisionSupportText {
           : "Useful browse for an open-ended moment.",
       };
     case "mobility":
+    case "urban_mobility":
       return {
         label: knownLocation
           ? "Good nearby option based on your current direction."
@@ -180,6 +183,7 @@ function venueSupport(input: DecisionSupportInput): DecisionSupportText {
           : "Low-planning activity for right now.",
       };
     case "social":
+    case "social_interaction":
       return {
         label: knownLocation
           ? "Nearby place with optional social energy."
@@ -219,10 +223,14 @@ export function resolveDecisionSupportText(input: DecisionSupportInput): Decisio
   }
 
   const resolved = venueSupport(input);
+  // Prefer the shortest contextual signal first (why_this ≤12 words),
+  // then why_now (moment-specific reasoning), then rationale (full sentence),
+  // with decision_frame as last resort since it's the most generic.
   const groundedDetail =
-    cleanCopy(input.decisionFrame, input.lens) ??
+    cleanCopy(input.whyThis, input.lens) ??
     cleanCopy(input.whyNow, input.lens) ??
-    cleanCopy(input.rationale, input.lens);
+    cleanCopy(input.rationale, input.lens) ??
+    cleanCopy(input.decisionFrame, input.lens);
 
   return {
     ...resolved,

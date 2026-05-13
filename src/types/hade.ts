@@ -129,6 +129,12 @@ export interface RejectionEntry {
   pivot_reason: string;
 }
 
+/** A decision that was surfaced (shown) to the user in the current session. */
+export interface SurfacedEntry {
+  venue_id: string;
+  venue_name: string;
+}
+
 // ─── HADE Context (v0 Contract) ───────────────────────────────────────────────
 
 /**
@@ -188,6 +194,8 @@ export interface DecideRequest {
   session_id?: string | null;
   signals?: Signal[];
   rejection_history?: RejectionEntry[];
+  /** Decisions surfaced (shown) to the user this session — used for soft repeat-penalty scoring. */
+  surfaced_history?: SurfacedEntry[];
   settings?: HadeSettings;
   /**
    * Venue IDs the client knows have recent LocationNode weight updates.
@@ -808,7 +816,7 @@ export interface UGCEntity {
   /** Optional short display label for the UGC location. */
   location_label?: string;
   /** How the UGC location was obtained. Never infer browser_geolocation from 0,0. */
-  location_source?: "browser_geolocation" | "fallback_geo" | "manual" | "place_picker" | "unknown";
+  location_source?: "browser_geolocation" | "fallback_geo" | "manual" | "map_pin" | "place_picker" | "unknown";
   /** Optional place provider id, e.g. Google Place ID. */
   place_id?: string;
 }

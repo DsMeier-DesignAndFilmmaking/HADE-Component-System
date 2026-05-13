@@ -19,9 +19,11 @@
     "framer-motion": "^12.0.0",
     "idb-keyval": "^6.2.2",
     "lucide-react": "^0.577.0",
+    "mapbox-gl": "^3.23.1",
     "next": "^15.5.13",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "react-map-gl": "^7.1.9",
     "serwist": "^9.5.7"
   },
   "devDependencies": {
@@ -29,6 +31,7 @@
     "@serwist/next": "^9.5.7",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
+    "@types/mapbox-gl": "^3.4.1",
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",

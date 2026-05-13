@@ -103,6 +103,39 @@ describe("resolveDecisionSupportText", () => {
     expect(support.label.toLowerCase()).not.toContain("tonight");
   });
 
+  it("surfaces why_this as detail for venue cards when present", () => {
+    const support = resolveDecisionSupportText({
+      lens: entertainmentLens,
+      source: "synthetic",
+      candidateType: "venue",
+      confidence: 0.65,
+      isFallback: false,
+      isUGC: false,
+      context,
+      whyThis: "Crowd is already there tonight.",
+      whyNow: "Lively atmosphere, just around the corner.",
+      decisionFrame: "Something nearby worth doing tonight.",
+    });
+
+    expect(support.detail).toBe("Crowd is already there tonight.");
+  });
+
+  it("falls back to why_now when why_this is absent", () => {
+    const support = resolveDecisionSupportText({
+      lens: entertainmentLens,
+      source: "synthetic",
+      candidateType: "venue",
+      confidence: 0.65,
+      isFallback: false,
+      isUGC: false,
+      context,
+      whyNow: "Lively atmosphere, just around the corner.",
+      decisionFrame: "Something nearby worth doing tonight.",
+    });
+
+    expect(support.detail).toBe("Lively atmosphere, just around the corner.");
+  });
+
   it("uses honest fallback copy for degraded cards", () => {
     const support = resolveDecisionSupportText({
       lens: entertainmentLens,

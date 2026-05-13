@@ -60,3 +60,14 @@ export function computeConfidence(node?: LocationNode): number {
   let confidence = signalStrength * agreementScore * trustScore * recencyScore;
   return clamp(confidence, 0.3, 0.95);
 }
+
+/**
+ * Maps a synthetic ranking score (0–1) to a confidence value (0.30–0.95).
+ * Used when no LocationNode is available — derives confidence from the
+ * composite finalScore produced by the ranking engine rather than UGC signals.
+ * A finalScore of ~0.54 is equivalent to the prior hardcoded constant (0.65).
+ */
+export function syntheticConfidence(finalScore: number): number {
+  if (!Number.isFinite(finalScore)) return 0.5;
+  return clamp(0.3 + finalScore * 0.65, 0.3, 0.95);
+}

@@ -1,12 +1,25 @@
 "use client";
 
 import { useEffect, useRef, useState, type FocusEvent, type MouseEvent, type PointerEvent } from "react";
+import dynamic from "next/dynamic";
 import { AnimatePresence, motion } from "framer-motion";
 import type { GeoLocation, PlaceOption, SpontaneousObject, UGCEntity } from "@/types/hade";
 import { RADIUS } from "@/core/constants/radius";
 import { getDeviceId } from "@/lib/hade/deviceId";
 import { useHadeAdaptiveContext } from "@/lib/hade/hooks";
+import { isMapboxEnabled } from "@/lib/hade/mapboxConfig";
 import { resetMobileViewportAfterInput } from "@/lib/hade/mobileViewport";
+
+// PinSpotSheet ships mapbox-gl (~210 KB gz). Lazy + client-only so users
+// who never tap the Pin step pay zero bytes for it.
+const PinSpotSheet = dynamic(() => import("./PinSpotSheet"), {
+  ssr: false,
+  loading: () => (
+    <div className="rounded-2xl border border-line/70 bg-white px-3 py-6 text-center text-[12px] text-ink/55">
+      Loading map…
+    </div>
+  ),
+});
 
 // ─── Vibe options ─────────────────────────────────────────────────────────────
 
@@ -58,7 +71,7 @@ type TimeParts = {
   minute: string;
   period: TimePeriod;
 };
-type LocationCaptureMode = "none" | "current" | "place" | "manual";
+type LocationCaptureMode = "none" | "current" | "place" | "manual" | "pin";
 type LocationAvailability = "checking" | "available" | "denied" | "unavailable";
 type PlaceSearchStatus = "idle" | "loading" | "ready" | "empty" | "error";
 type SheetKeyboardEnvironment = {
@@ -388,6 +401,9 @@ export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
   const [placeQuery, setPlaceQuery] = useState("");
   const [placeResults, setPlaceResults] = useState<PlaceOption[]>([]);
   const [placeSearchStatus, setPlaceSearchStatus] = useState<PlaceSearchStatus>("idle");
+  const [pinnedGeo, setPinnedGeo] = useState<{ lat: number; lng: number } | null>(null);
+  const [pinSheetOpen, setPinSheetOpen] = useState(false);
+  const mapboxEnabled = isMapboxEnabled();
   const [status,    setStatus]    = useState<Status>("idle");
   const [errorMsg,  setErrorMsg]  = useState<string | null>(null);
   const [particles, setParticles] = useState<Particle[]>([]);
@@ -514,17 +530,27 @@ export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
     "Start Something";
   const manualLocationNote = locationLabel.trim();
   const locationSummary =
-    locationMode === "place" && selectedPlace
-      ? getPlaceDisplay(selectedPlace)
-      : locationMode === "current" && isUsableGeo(location)
-        ? "Current location saved"
-        : locationMode === "manual" && manualLocationNote
-          ? manualLocationNote
-          : locationStatus === "denied"
-            ? "Location permission was denied. You can still search for a place or add a note."
-            : locationStatus === "unavailable"
-              ? "Location unavailable"
-              : "No location added yet";
+    locationMode === "pin" && pinnedGeo
+      ? selectedPlace
+        ? `Pinned spot near ${selectedPlace.name}`
+        : "Pinned spot saved"
+      : locationMode === "place" && selectedPlace
+        ? getPlaceDisplay(selectedPlace)
+        : locationMode === "current" && isUsableGeo(location)
+          ? "Current location saved"
+          : locationMode === "manual" && manualLocationNote
+            ? manualLocationNote
+            : locationStatus === "denied"
+              ? "Location permission was denied. You can still search for a place or add a note."
+              : locationStatus === "unavailable"
+                ? "Location unavailable"
+                : "No location added yet";
+
+  const pinInitialGeo: { lat: number; lng: number } | null =
+    pinnedGeo
+    ?? (selectedPlace && isUsableGeo(selectedPlace.geo) ? selectedPlace.geo : null)
+    ?? (locationMode === "current" && isUsableGeo(location) ? location : null)
+    ?? (context?.geo && isUsableGeo(context.geo) ? { lat: context.geo.lat, lng: context.geo.lng } : null);
 
   useEffect(() => {
     if (locationMode !== "place") return;
@@ -653,17 +679,20 @@ export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
   function handleUseCurrentLocation() {
     setSelectedPlace(null);
     setLocationLabel("");
+    setPinnedGeo(null);
     requestCurrentLocation(true);
   }
 
   function handleManualLocationMode() {
     setLocationMode("manual");
     setSelectedPlace(null);
+    setPinnedGeo(null);
   }
 
   function handlePlaceSearchMode() {
     setLocationMode("place");
     setSelectedPlace(null);
+    setPinnedGeo(null);
   }
 
   function handlePlaceQueryChange(value: string) {
@@ -723,6 +752,38 @@ export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
     setLocationSource("place_picker");
     setLocationStatus("available");
     setLocationLabel("");
+    setPinnedGeo(null);
+  }
+
+  function handlePinSpotMode() {
+    setPinSheetOpen(true);
+  }
+
+  function handlePinConfirm(geo: { lat: number; lng: number }) {
+    setPinnedGeo(geo);
+    setLocation(geo);
+    setLocationMode("pin");
+    setLocationSource("map_pin");
+    setLocationStatus("available");
+    setLocationLabel("");
+    setPinSheetOpen(false);
+  }
+
+  function handlePinCancel() {
+    setPinSheetOpen(false);
+  }
+
+  function handleChangePin() {
+    setPinSheetOpen(true);
+  }
+
+  function handleRemovePin() {
+    setPinnedGeo(null);
+    if (locationMode === "pin") {
+      setLocation(null);
+      setLocationSource("unknown");
+      setLocationMode("none");
+    }
   }
 
   async function persistUgc(ugcPayload: Record<string, unknown>): Promise<UgcPersistResult> {
@@ -815,14 +876,19 @@ export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
     const signalTag = selectedVibe?.signal ?? "good_energy";
     const selectedPlaceGeo = selectedPlace && isUsableGeo(selectedPlace.geo) ? selectedPlace.geo : null;
     const currentGeoSelected = locationMode === "current" && isUsableGeo(location) ? location : null;
-    const resolvedGeo: GeoLocation | null = selectedPlaceGeo ?? currentGeoSelected;
-    const payloadLocationSource: UGCEntity["location_source"] = selectedPlace
-      ? "place_picker"
-      : currentGeoSelected
-        ? "browser_geolocation"
-        : resolvedLocationLabel
-          ? "manual"
-          : undefined;
+    const pinSelected = locationMode === "pin" && pinnedGeo && isUsableGeo(pinnedGeo) ? pinnedGeo : null;
+    const resolvedGeo: GeoLocation | null = pinSelected ?? selectedPlaceGeo ?? currentGeoSelected;
+    const payloadLocationSource: UGCEntity["location_source"] = pinSelected
+      ? "map_pin"
+      : selectedPlace
+        ? "place_picker"
+        : currentGeoSelected
+          ? "browser_geolocation"
+          : resolvedLocationLabel
+            ? "manual"
+            : undefined;
+    // When the pin started from a selected place, preserve place_id / place_name
+    // so the backend keeps canonical anchor identity alongside the exact geo.
     const resolvedLocationMetadata = {
       ...(selectedPlace
         ? {
@@ -947,6 +1013,8 @@ export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
       setPlaceQuery("");
       setPlaceResults([]);
       setPlaceSearchStatus("idle");
+      setPinnedGeo(null);
+      setPinSheetOpen(false);
       setTimeText(getDefaultActivityTime());
       setParticles([]);
     }, 2200);
@@ -1194,6 +1262,19 @@ export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
                   >
                     Add location note
                   </button>
+                  {mapboxEnabled && (
+                    <button
+                      type="button"
+                      onClick={handlePinSpotMode}
+                      className={`min-h-10 rounded-xl border px-2.5 text-[12px] font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
+                        locationMode === "pin"
+                          ? "border-accent bg-accent text-white"
+                          : "border-line/70 bg-white text-ink/65"
+                      }`}
+                    >
+                      Pin exact spot
+                    </button>
+                  )}
                 </div>
 
                 <div
@@ -1206,6 +1287,36 @@ export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
                 >
                   {locationSummary}
                 </div>
+
+                {pinSheetOpen && (
+                  <div className="mt-2.5">
+                    <PinSpotSheet
+                      initialGeo={pinInitialGeo}
+                      anchorLabel={selectedPlace?.name}
+                      onConfirm={handlePinConfirm}
+                      onCancel={handlePinCancel}
+                    />
+                  </div>
+                )}
+
+                {locationMode === "pin" && pinnedGeo && !pinSheetOpen && (
+                  <div className="mt-2.5 flex gap-2">
+                    <button
+                      type="button"
+                      onClick={handleChangePin}
+                      className="min-h-[44px] flex-1 rounded-xl border border-line/70 bg-white px-3 text-[12px] font-semibold text-ink/70 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent active:bg-ink/[0.04]"
+                    >
+                      Change pin
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleRemovePin}
+                      className="min-h-[44px] flex-1 rounded-xl border border-line/70 bg-white px-3 text-[12px] font-semibold text-ink/55 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent active:bg-ink/[0.04]"
+                    >
+                      Remove pin
+                    </button>
+                  </div>
+                )}
 
                 {locationMode === "place" && (
                   <div className="mt-2.5 space-y-2">

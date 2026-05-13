@@ -601,15 +601,17 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
     const platform = getPlatformLabel();
 
     if (blockReason) {
-      console.warn("[HADE NAV HANDOFF]", {
-        status: "blocked",
-        reason: blockReason,
-        platform,
-        venueId: target.id,
-        title: target.title,
-        lat,
-        lng,
-      });
+      if (process.env.NODE_ENV !== "production") {
+        console.warn("[HADE NAVIGATION HANDOFF]", {
+          status: "blocked",
+          reason: blockReason,
+          platform,
+          venueId: target.id,
+          title: target.title,
+          lat,
+          lng,
+        });
+      }
       return;
     }
 
@@ -643,13 +645,15 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
       coordinatesValid: true,
     });
 
-    console.log("[HADE NAV HANDOFF]", {
-      status: "opening",
-      method: "window.open(_self)",
-      platform,
-      venueId: target.id,
-      url,
-    });
+    if (process.env.NODE_ENV !== "production") {
+      console.log("[HADE NAVIGATION HANDOFF]", {
+        status: "opening",
+        method: "window.open(_self)",
+        platform,
+        venueId: target.id,
+        url,
+      });
+    }
     window.open(url, "_self");
   }, [createdDecisionOverride, decision, previousOverride]);
 
@@ -808,6 +812,12 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
   // The card to display — temporary local overrides sit above the live engine result.
   // Once a new live decision arrives, those overrides are cleared automatically.
   const displayDecision = previousOverride ?? createdDecisionOverride ?? decision;
+  const navigationBlocked =
+    !displayDecision ||
+    getCoordinateBlockReason(
+      displayDecision.object.location?.lat,
+      displayDecision.object.location?.lng,
+    ) !== null;
   const activeLens = LENS_OPTIONS.find((lens) => lens.id === activeLensId) ?? LENS_OPTIONS[0];
   const decisionSupport = useMemo(() => {
     if (!displayDecision) return null;
@@ -832,6 +842,7 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
       context: adaptiveContext,
       rationale: displayDecision.rationale,
       whyNow: displayDecision.why_now,
+      whyThis: displayDecision.why_this,
       decisionFrame: displayDecision.decision_frame,
     });
   }, [activeLens, adaptiveContext, createdDecisionOverride?.id, displayDecision]);
@@ -1016,10 +1027,10 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
           <button
             type="button"
             onClick={handleGo}
-            disabled={!displayDecision}
+            disabled={!displayDecision || navigationBlocked}
             className="h-12 w-full rounded-2xl bg-blue-600 text-[15px] font-bold text-white transition-colors hover:bg-blue-700 active:bg-blue-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 disabled:opacity-40"
           >
-            Navigate
+            {navigationBlocked && displayDecision ? "No location" : "Navigate"}
           </button>
 
           {/* REJECTION — text-only, lowest visual weight */}

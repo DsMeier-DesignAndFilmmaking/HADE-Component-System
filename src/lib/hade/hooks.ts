@@ -10,6 +10,7 @@ import type {
   HadeUX,
   UiState,
   RejectionEntry,
+  SurfacedEntry,
   Signal,
   SignalType,
   DecideRequest,
@@ -314,6 +315,7 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
   const [decision, setDecision] = useState<HadeDecision | null>(null);
   const [response, setResponse] = useState<HadeResponse | null>(null);
   const [rejectionHistory, setRejectionHistory] = useState<RejectionEntry[]>([]);
+  const [surfacedHistory, setSurfacedHistory] = useState<SurfacedEntry[]>([]);
 
   useEffect(() => {
     hadeLog("debug", "[HADE STATE]", {
@@ -349,6 +351,8 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
   signalsRef.current = signals;
   const rejectionHistoryRef = useRef(rejectionHistory);
   rejectionHistoryRef.current = rejectionHistory;
+  const surfacedHistoryRef = useRef(surfacedHistory);
+  surfacedHistoryRef.current = surfacedHistory;
 
   const abortRef = useRef<AbortController | null>(null);
   const configRef = useRef(config);
@@ -362,6 +366,7 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
   const sessionIdRef = useRef(crypto.randomUUID());
 
   const REJECTION_HISTORY_CAP = 20;
+  const SURFACED_HISTORY_CAP = 10;
 
   // ── Vibe Signal / UGC queue ──────────────────────────────────────────────
   // A Set of venue IDs that have received VibeSignal updates since the last
@@ -574,6 +579,14 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
             !r.venue_id.startsWith("offline-"),
         )
         .slice(-REJECTION_HISTORY_CAP);
+
+      const cleanSurfacedHistory = surfacedHistoryRef.current
+        .filter(
+          (s) =>
+            !s.venue_id.startsWith("fallback-") &&
+            !s.venue_id.startsWith("offline-"),
+        )
+        .slice(-SURFACED_HISTORY_CAP);
       const candidateCategories = mergeCandidateCategories(
         ctx.candidate_categories,
         req?.candidate_categories,
@@ -592,6 +605,7 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
         session_id:        req?.session_id ?? sessionIdRef.current,
         signals:           req?.signals ?? sigs,
         rejection_history: cleanRejHistory,
+        surfaced_history:  cleanSurfacedHistory.length > 0 ? cleanSurfacedHistory : undefined,
         settings:          {
           ...(req?.settings ?? {}),
           debug: process.env.NODE_ENV !== "production",
@@ -718,6 +732,16 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
           usingFallback: safeDecision?.is_fallback === true,
         });
         setDecision({ ...safeDecision });
+        if (
+          !safeDecision.is_fallback &&
+          !safeDecision.id.startsWith("fallback-") &&
+          !safeDecision.id.startsWith("offline-")
+        ) {
+          setSurfacedHistory((prev) => [
+            ...prev,
+            { venue_id: safeDecision.id, venue_name: safeDecision.venue_name },
+          ]);
+        }
         setResponse(shaped);
         console.log("[hade-trace]", JSON.stringify({
           event:        "decision_node_received",

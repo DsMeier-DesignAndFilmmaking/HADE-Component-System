@@ -30,6 +30,8 @@ import {
   inferIntentFromTime,
 } from "@/lib/hade/engine";
 import { getNodeTrustScore, getNodeVibeScore } from "@/lib/hade/weights";
+import { syntheticConfidence } from "@/lib/hade/confidence";
+import { computeSurfacedPenalty } from "@/lib/hade/surfacedPenalty";
 import { getDistanceCopy } from "@/lib/hade/ugcCopy";
 import { getNearbyUGC } from "@/lib/hade/ugc";
 import { getDomainConfig, type ExtendedDomainConfig, type ScoringWeights } from "@/core/domain/domainConfigs";
@@ -191,6 +193,8 @@ export interface SpontaneousScoreBreakdown {
   uniquenessBonus: number;
   /** Lens-only soft boost from candidate_categories. Positive-only; never filters. */
   lensCategoryBoost: number;
+  /** Negative penalty when this venue was already surfaced earlier in the session (0, -0.08, or -0.14). */
+  surfacedPenalty: number;
   finalScore: number;
 }
 
@@ -710,6 +714,7 @@ function scoreSpontaneousCandidate(
   domainId?: string,
   groupSize?: number,
   lensCategories?: readonly string[],
+  surfacedCount = 0,
 ): SpontaneousScoreBreakdown {
   const { obj, distance_meters } = candidate;
 
@@ -742,6 +747,7 @@ function scoreSpontaneousCandidate(
   const uniquenessBonus  = computeUniquenessBonus(candidate.types, trustScore, domainId);
   const lensCategoryBoost = computeLensCategoryBoost(candidate, lensCategories);
   const jitter = explorationBias > 0 ? (Math.random() - 0.5) * explorationBias * 0.2 : 0;
+  const surfacedPenalty = computeSurfacedPenalty(surfacedCount);
 
   return {
     timeProximityScore,
@@ -754,6 +760,7 @@ function scoreSpontaneousCandidate(
     groupFitBonus,
     uniquenessBonus,
     lensCategoryBoost,
+    surfacedPenalty,
     finalScore: clamp(
       baseScore +
         userStateBonus +
@@ -761,7 +768,8 @@ function scoreSpontaneousCandidate(
         groupFitBonus +
         uniquenessBonus +
         lensCategoryBoost +
-        jitter,
+        jitter +
+        surfacedPenalty,
       0,
       1,
     ),
@@ -776,6 +784,7 @@ export async function rankSpontaneousObjects(
   domainId?: string,
   groupSize?: number,
   lensCategories?: readonly string[],
+  surfacedCounts?: Map<string, number>,
 ): Promise<Array<{ candidate: RankedCandidate; score: number; breakdown: SpontaneousScoreBreakdown }>> {
   const scoredCandidates = await Promise.all(
     candidates.map(async (candidate) => {
@@ -792,6 +801,7 @@ export async function rankSpontaneousObjects(
       console.log(
         `[hade-trace] Vibe Weight Applied: ${candidate.obj.id} -> Score: ${nodeVibe.toFixed(3)} (Impact: +${(nodeVibe * vibeWeight).toFixed(3)})`,
       );
+      const surfacedCount = surfacedCounts?.get(candidate.obj.id) ?? 0;
       const breakdown = scoreSpontaneousCandidate(
         candidateWithTrust,
         now,
@@ -801,6 +811,7 @@ export async function rankSpontaneousObjects(
         domainId,
         groupSize,
         lensCategories,
+        surfacedCount,
       );
       return { candidate: candidateWithTrust, score: breakdown.finalScore, breakdown };
     }),
@@ -872,6 +883,21 @@ export async function generateSyntheticDecision(
         : config.categoryResolver(ctx);
     const primaryCategory = categories[0] ?? "broad";
     console.log("[HADE DEBUG] categories:", categories);
+
+    // ── Pre-extract surfaced counts — used for soft repeat-penalty in scoring ───
+    const rawSurfaced = (body as { surfaced_history?: unknown }).surfaced_history;
+    const surfacedCounts = new Map<string, number>();
+    if (Array.isArray(rawSurfaced)) {
+      for (const entry of rawSurfaced) {
+        const id =
+          typeof entry === "string"
+            ? entry
+            : entry && typeof entry === "object" && "venue_id" in entry
+              ? (() => { const v = (entry as { venue_id: unknown }).venue_id; return typeof v === "string" ? v : null; })()
+              : null;
+        if (id && id.length > 0) surfacedCounts.set(id, (surfacedCounts.get(id) ?? 0) + 1);
+      }
+    }
 
     // ── Pre-extract rejected IDs — reused in Places pre-filter and Step 3 ──────
     const rawRejections = (body as { rejection_history?: unknown }).rejection_history;
@@ -1031,6 +1057,7 @@ export async function generateSyntheticDecision(
       config.id,
       ctx.social?.group_size,
       categories,
+      surfacedCounts.size > 0 ? surfacedCounts : undefined,
     );
 
     const best = sorted[0];
@@ -1080,7 +1107,7 @@ export async function generateSyntheticDecision(
         { title: bestObj.title, category: bestCategory, distance_meters: bestDistance, vibe_tag: bestObj.vibe_tag, address: best.candidate.address },
         ctx,
       ),
-      confidence: 0.65,
+      confidence: syntheticConfidence(best.breakdown.finalScore),
       confidence_label: deriveConfidenceLabel(best.breakdown.finalScore, true),
       situation_summary: situationSummary,
       ...(best.candidate.address ? { neighborhood: best.candidate.address } : {}),

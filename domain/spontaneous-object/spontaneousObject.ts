@@ -1,6 +1,6 @@
 export type SpontaneousObjectType = "ugc_event" | "place_opportunity";
 export type UserState = "going" | "maybe" | null;
-export type LocationSource = "browser_geolocation" | "fallback_geo" | "manual" | "place_picker" | "unknown";
+export type LocationSource = "browser_geolocation" | "fallback_geo" | "manual" | "map_pin" | "place_picker" | "unknown";
 
 export interface SpontaneousObject {
   id: string;

@@ -16,6 +16,12 @@ export const runtime = "nodejs";
 
 import { computeConfidence } from "@/lib/hade/confidence";
 import { buildExplanation } from "@/lib/hade/explanation";
+import {
+  extractRejectedVenueIds,
+  extractSurfacedFallbackTitles,
+  sortFallbackCandidates,
+  recoverLeastRecentlySurfaced,
+} from "@/lib/hade/fallbackSelection";
 
 
 // ─── Configuration ───────────────────────────────────────────────────────────
@@ -736,15 +742,17 @@ function buildStaticFallbackEntries(
   const source: FallbackSource = context.hasKnownLocation ? "static_fallback" : "degraded_location";
 
   const domainEntries = FALLBACK_CATALOG[profile.id];
-  const scored = domainEntries
+  const surfacedPositions = extractSurfacedFallbackTitles(body);
+
+  const scoredAvailable = domainEntries
     .filter((entry) => !rejectedTitles.has(entry.title.toLowerCase()))
     .map((entry) => ({
       entry,
-      score: entry.tags.filter((tag) => contextTags.has(tag)).length,
-    }))
-    .sort((a, b) => b.score - a.score || a.entry.id.localeCompare(b.entry.id));
+      contextScore: entry.tags.filter((tag) => contextTags.has(tag)).length,
+    }));
 
-  const ranked = scored.map(({ entry }) => entry);
+  const ranked = sortFallbackCandidates(scoredAvailable, surfacedPositions);
+
   const genericEntries = STATIC_FALLBACK_TITLES.map((title, index): FallbackCatalogEntry => ({
     id: `generic-${index}`,
     domain: profile.id,
@@ -759,13 +767,19 @@ function buildStaticFallbackEntries(
   }));
   const fallbackEntries = genericEntries.filter((entry) => !rejectedTitles.has(entry.title.toLowerCase()));
 
-  const candidates = ranked.length > 0 ? ranked : (fallbackEntries.length > 0 ? fallbackEntries : genericEntries);
-  const offset = stableFallbackOffset(
-    `${reqId}:${context.timeOfDay}:${context.dayType}:${context.urgency}:${context.energy}:${context.openness}:${context.groupType}`,
-    candidates.length,
-  );
-  const rotated = [...candidates.slice(offset), ...candidates.slice(0, offset)];
-  const entries = rotated.slice(0, 3);
+  let candidates: FallbackCatalogEntry[];
+  if (ranked.length > 0) {
+    candidates = ranked;
+  } else {
+    // All domain entries filtered (rejected). Recover via least-recently-surfaced
+    // before falling to generic copy — keeps the response domain-relevant.
+    const recovery = recoverLeastRecentlySurfaced(domainEntries, surfacedPositions);
+    candidates = recovery
+      ? [recovery]
+      : fallbackEntries.length > 0 ? fallbackEntries : genericEntries;
+  }
+
+  const entries = candidates.slice(0, 3);
 
   return {
     profile,
@@ -826,6 +840,7 @@ async function buildFallbackCandidates(
   body?: Record<string, unknown> | null,
 ): Promise<Array<SpontaneousObject & { fallback_entry?: FallbackCatalogEntry; source?: string }>> {
   const now = Date.now();
+  const rejectedIds = extractRejectedVenueIds(body);
 
   if (isKnownGeo(geo)) {
     try {
@@ -837,10 +852,7 @@ async function buildFallbackCandidates(
       }, { debugOnly: true });
       const places = await fetchNearbyGrounded({ geo, radius_meters: RADIUS.SEARCH_DEFAULT, open_now: true });
       if (places.length > 0) {
-        hadeLog("log", `[hade-decide ${reqId}] fallback: resolved Google Places`, {
-          count: places.length,
-        });
-        return places.map((place) => ({
+        const objects = places.map((place) => ({
           id: place.id,
           type: "place_opportunity" as const,
           title: place.name,
@@ -858,6 +870,17 @@ async function buildFallbackCandidates(
           vibe_tag: place.vibe,
           source: "static_fallback",
         }));
+        const available = rejectedIds.size > 0
+          ? objects.filter((c) => !rejectedIds.has(c.id))
+          : objects;
+        if (available.length > 0) {
+          hadeLog("log", `[hade-decide ${reqId}] fallback: resolved Google Places`, {
+            count: available.length,
+            rejected: objects.length - available.length,
+          });
+          return available;
+        }
+        hadeLog("log", `[hade-decide ${reqId}] fallback: all ${objects.length} Places result(s) rejected — using static`);
       }
     } catch (err) {
       const detail = err instanceof Error ? err.message : String(err);

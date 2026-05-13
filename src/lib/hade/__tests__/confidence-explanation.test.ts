@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { computeConfidence } from "../confidence";
+import { computeConfidence, syntheticConfidence } from "../confidence";
 import { buildExplanation } from "../explanation";
 
 type TestNode = {
@@ -93,5 +93,28 @@ describe("confidence + explanation", () => {
     const confidence = computeConfidence(strongNode);
 
     expect(confidence).toBeGreaterThan(0.75);
+  });
+});
+
+describe("syntheticConfidence", () => {
+  it("low finalScore maps to low-end confidence (>= 0.30, < 0.50)", () => {
+    const result = syntheticConfidence(0.1);
+    expect(result).toBeGreaterThanOrEqual(0.30);
+    expect(result).toBeLessThan(0.50);
+  });
+
+  it("high finalScore maps to high-end confidence (<= 0.95, > 0.75)", () => {
+    const result = syntheticConfidence(0.9);
+    expect(result).toBeGreaterThan(0.75);
+    expect(result).toBeLessThanOrEqual(0.95);
+  });
+
+  it("NaN input returns safety fallback 0.5", () => {
+    expect(syntheticConfidence(NaN)).toBe(0.5);
+  });
+
+  it("boundary values clamp correctly: 0 → 0.30, 1 → 0.95", () => {
+    expect(syntheticConfidence(0)).toBe(0.30);
+    expect(syntheticConfidence(1)).toBe(0.95);
   });
 });
