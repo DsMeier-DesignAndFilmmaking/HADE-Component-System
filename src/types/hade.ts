@@ -121,18 +121,28 @@ export interface HadeConstraints {
   distance_tolerance?: "walking" | "short_drive" | "any";
 }
 
+// ─── Geo source provenance ────────────────────────────────────────────────────
+
+/**
+ * How the geo coordinate in the request was obtained.
+ *
+ *   "browser"  — navigator.geolocation resolved; coordinates are accurate
+ *   "ip"       — ipapi.co city-level estimate; accurate to ~50 km
+ *   "stored"   — localStorage entry from a previous successful browser fix
+ *   "scenario" — developer / demo override; intentionally hardcoded location
+ *   "unknown"  — no real location available; server must skip Google Places
+ */
+export type GeoSource = "browser" | "ip" | "stored" | "scenario" | "unknown";
+
 // ─── Rejection History ────────────────────────────────────────────────────────
 
 export interface RejectionEntry {
   venue_id: string;
   venue_name: string;
   pivot_reason: string;
-}
-
-/** A decision that was surfaced (shown) to the user in the current session. */
-export interface SurfacedEntry {
-  venue_id: string;
-  venue_name: string;
+  /** Category of the rejected venue (e.g. "restaurant", "bar"). Used server-side
+   *  for post-ranking diversity selection — prevents same-category repetition. */
+  category?: string;
 }
 
 // ─── HADE Context (v0 Contract) ───────────────────────────────────────────────
@@ -148,6 +158,8 @@ export interface SurfacedEntry {
 export interface HadeContext {
   // Where
   geo: GeoLocation | null;
+  /** How geo was obtained — propagated into every decide request body. */
+  geo_source?: GeoSource;
 
   // When (auto-derived by buildContext unless provided)
   time_of_day: TimeOfDay;
@@ -194,8 +206,12 @@ export interface DecideRequest {
   session_id?: string | null;
   signals?: Signal[];
   rejection_history?: RejectionEntry[];
-  /** Decisions surfaced (shown) to the user this session — used for soft repeat-penalty scoring. */
-  surfaced_history?: SurfacedEntry[];
+  /**
+   * How the geo coordinate was obtained. "unknown" tells the server to skip
+   * Google Places and UGC fetches — preventing fake SF recommendations when no
+   * real location is available.
+   */
+  geo_source?: GeoSource;
   settings?: HadeSettings;
   /**
    * Venue IDs the client knows have recent LocationNode weight updates.
@@ -263,6 +279,21 @@ export interface HadeDecision extends Partial<SpontaneousObject> {
     /** Pre-computed walking-distance bucket copy ("Around the corner"). */
     distance_copy: string;
   };
+
+  /**
+   * Scoring breakdown emitted in non-production environments only.
+   * Maps from SpontaneousScoreBreakdown fields to human-readable signal names.
+   * Never sent to clients in production.
+   */
+  score_debug?: {
+    distance_fit:     number;  // distanceScore — inverse linear decay over 3000 m
+    timing_fit:       number;  // timeProximityScore — how soon the window starts
+    intent_fit:       number;  // vibeScore + lensCategoryBoost — vibe + lens alignment
+    novelty:          number;  // uniquenessBonus — diversity / rarity signal
+    social_signal:    number;  // socialScore — going_count normalised to [0, 1]
+    fallback_penalty: number;  // 0 for Tier 1 synthetic; non-zero when degraded path used
+    final_score:      number;  // composite finalScore as sent to the client
+  };
 }
 
 /**
@@ -281,10 +312,12 @@ export interface DecideResponse {
   session_id: string;
   /**
    * Which tier produced this response.
-   * - "llm"            — upstream engine responded successfully
-   * - "synthetic"      — upstream failed; decision built from real Places API candidates
-   * - "static_fallback"— Places API unavailable or returned nothing; hardcoded stub
-   * Absent on upstream responses that predate this field.
+   * - "synthetic"        — Tier 1 deterministic selection from Places/UGC (primary path)
+   * - "cold_start_synthetic" — deterministic selection on first request (no prior context)
+   * - "offline_cache"    — Tier 2 scored cached venues
+   * - "static_fallback"  — Tier 3 guaranteed non-null stub
+   * - "llm"              — reserved; upstream LLM is no longer primary decision authority
+   * Absent on legacy responses.
    */
   source?: "llm" | "synthetic" | "static_fallback";
   /**
@@ -368,6 +401,21 @@ export interface HadeResponse {
    * been recorded yet for this venue. Absent on static fallback paths.
    */
   decision_node?: LocationNode | null;
+  /**
+   * Deterministic provenance for the selected candidate.
+   * Present on all synthetic responses (Tier 1, cold-start).
+   * Absent on offline-cache and static-fallback paths.
+   */
+  decision_provenance?: {
+    /** ID of the winning candidate from deterministic ranking. */
+    candidate_id: string;
+    /** Data source of the winning candidate. */
+    source: "places" | "ugc" | "synthetic" | "offline" | "static";
+    /** Composite score (0–1) from the ranking formula. Null if unavailable. */
+    score: number | null;
+    /** Human-readable reason this candidate won (e.g. "highest_score", "only_candidate"). */
+    ranking_reason: string | null;
+  };
 }
 
 // ─── Debug Payload ────────────────────────────────────────────────────────────
@@ -495,10 +543,11 @@ export interface AdaptiveState {
    */
   isDegraded: boolean;
   setGeo: (geo: { lat: number; lng: number }) => void;
+  setGeoSource: (source: GeoSource) => void;
   setRadius: (radius_meters: number | ((prev: number) => number)) => void;
   emit: (type: SignalType, payload?: Partial<Signal>) => Signal;
   decide: (req?: Partial<DecideRequest>) => Promise<void>;
-  pivot: (reason: string, target?: Pick<HadeDecision, "id" | "venue_name" | "is_fallback">) => void;
+  pivot: (reason: string, target?: Pick<HadeDecision, "id" | "venue_name" | "is_fallback"> & { category?: string }) => void;
 
   // ── Community Signals (UGC) ──
   communitySignals: CommunitySignalsConfig;
@@ -816,7 +865,7 @@ export interface UGCEntity {
   /** Optional short display label for the UGC location. */
   location_label?: string;
   /** How the UGC location was obtained. Never infer browser_geolocation from 0,0. */
-  location_source?: "browser_geolocation" | "fallback_geo" | "manual" | "map_pin" | "place_picker" | "unknown";
+  location_source?: "browser_geolocation" | "fallback_geo" | "manual" | "place_picker" | "unknown";
   /** Optional place provider id, e.g. Google Place ID. */
   place_id?: string;
 }

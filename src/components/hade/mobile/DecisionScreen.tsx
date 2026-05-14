@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import type { DomainMode } from "@/lib/hade/useHade";
 import { AnimatePresence, motion } from "framer-motion";
 import type { Intent, SpontaneousObject, VibeTag } from "@/types/hade";
@@ -12,7 +12,6 @@ import { recordNavigationTelemetry } from "@/lib/hade/navigationTelemetry";
 import { getLensCandidateCategories, getLensProfile } from "@/lib/hade/lensProfiles";
 import { resetMobileViewportAfterInput } from "@/lib/hade/mobileViewport";
 import { computeTemporalState, getUGCPivotReasons } from "@/lib/hade/ugcCopy";
-import { resolveDecisionSupportText } from "@/lib/hade/supportText";
 import { HeroDecisionCard } from "./HeroDecisionCard";
 import { RefineSheet } from "./RefineSheet";
 import { VibeSheet } from "./VibeSheet";
@@ -21,8 +20,6 @@ import { LoadingState } from "./LoadingState";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { ActivityCreationView } from "./ActivityCreationView";
 import { CompareModesSheet } from "./CompareModesSheet";
-import { VoiceSheet } from "./VoiceSheet";
-import type { VoiceIntent } from "@/lib/hade/voiceIntentParser";
 
 type Urgency = "low" | "medium" | "high";
 type PivotReason = "Too crowded" | "Wrong vibe" | "Too far" | "Overpriced";
@@ -243,12 +240,6 @@ function mapReasonToTags(reason: string): string[] {
   }
 }
 
-function buildVoiceCandidateCategories(lensId: LensId, exclude: string[]): string[] | undefined {
-  const base = getLensCandidateCategories(lensId);
-  const filtered = (base as readonly string[]).filter((cat) => !exclude.includes(cat));
-  return filtered.length > 0 ? filtered : undefined;
-}
-
 function toVibeTags(tags: string[]): VibeTag[] {
   const validTags: VibeTag[] = [
     "too_crowded",
@@ -390,7 +381,6 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
   const [rejectionHistory, setRejectionHistory] = useState<Array<{ venueId: string; reason: string; timestamp: number }>>([]);
   const [decisionHistory, setDecisionHistory] = useState<DecisionViewModel[]>([]);
   const [overflowOpen, setOverflowOpen] = useState(false);
-  const [voiceSheetOpen, setVoiceSheetOpen] = useState(false);
   const [createdCardHighlight, setCreatedCardHighlight] = useState(false);
 
   const closeCreationFlow = useCallback(() => {
@@ -610,17 +600,15 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
     const platform = getPlatformLabel();
 
     if (blockReason) {
-      if (process.env.NODE_ENV !== "production") {
-        console.warn("[HADE NAVIGATION HANDOFF]", {
-          status: "blocked",
-          reason: blockReason,
-          platform,
-          venueId: target.id,
-          title: target.title,
-          lat,
-          lng,
-        });
-      }
+      console.warn("[HADE NAV HANDOFF]", {
+        status: "blocked",
+        reason: blockReason,
+        platform,
+        venueId: target.id,
+        title: target.title,
+        lat,
+        lng,
+      });
       return;
     }
 
@@ -654,15 +642,13 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
       coordinatesValid: true,
     });
 
-    if (process.env.NODE_ENV !== "production") {
-      console.log("[HADE NAVIGATION HANDOFF]", {
-        status: "opening",
-        method: "window.open(_self)",
-        platform,
-        venueId: target.id,
-        url,
-      });
-    }
+    console.log("[HADE NAV HANDOFF]", {
+      status: "opening",
+      method: "window.open(_self)",
+      platform,
+      venueId: target.id,
+      url,
+    });
     window.open(url, "_self");
   }, [createdDecisionOverride, decision, previousOverride]);
 
@@ -675,26 +661,15 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
     [clearCreatedDecisionConfirmation, refine],
   );
 
-  const handleVoiceApply = useCallback(
-    async (parsed: VoiceIntent) => {
-      setVoiceSheetOpen(false);
-      clearCreatedDecisionConfirmation("voice_refine");
-      await refine({
-        intent: parsed.intent ?? null,
-        urgency: parsed.urgency ?? "medium",
-        state: parsed.state,
-        constraints: parsed.constraints,
-        candidate_categories: parsed.candidate_categories_exclude?.length
-          ? buildVoiceCandidateCategories(activeLensId, parsed.candidate_categories_exclude)
-          : undefined,
-      });
-    },
-    [clearCreatedDecisionConfirmation, refine, activeLensId],
-  );
-
   const handleNotThis = useCallback(() => {
     setShowPivotReasons((prev) => !prev);
   }, []);
+
+  const handleSave = useCallback(() => {
+    const target = previousOverride ?? createdDecisionOverride ?? decision;
+    if (!target) return;
+    console.log("[HADE] Save →", target.title);
+  }, [createdDecisionOverride, decision, previousOverride]);
 
   const handleReject = useCallback(
     (reason: string) => {
@@ -751,6 +726,20 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
     },
     [emitVibeSignal],
   );
+
+  const handleJoin = useCallback(() => {
+    const target = previousOverride ?? createdDecisionOverride ?? decision;
+    if (!target) return;
+    emitVibeSignal(target.id, ["worth_it"] as VibeTag[], "positive", 0.9);
+    console.log("[HADE] Join →", target.title);
+  }, [createdDecisionOverride, decision, previousOverride, emitVibeSignal]);
+
+  const handleInterested = useCallback(() => {
+    const target = previousOverride ?? createdDecisionOverride ?? decision;
+    if (!target) return;
+    emitVibeSignal(target.id, ["worth_it"] as VibeTag[], "positive", 0.5);
+    console.log("[HADE] Interested →", target.title);
+  }, [createdDecisionOverride, decision, previousOverride, emitVibeSignal]);
 
   const handleVibeText = useCallback((text: string) => {
     const target = previousOverride ?? createdDecisionOverride ?? decision;
@@ -838,40 +827,7 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
   // The card to display — temporary local overrides sit above the live engine result.
   // Once a new live decision arrives, those overrides are cleared automatically.
   const displayDecision = previousOverride ?? createdDecisionOverride ?? decision;
-  const navigationBlocked =
-    !displayDecision ||
-    getCoordinateBlockReason(
-      displayDecision.object.location?.lat,
-      displayDecision.object.location?.lng,
-    ) !== null;
   const activeLens = LENS_OPTIONS.find((lens) => lens.id === activeLensId) ?? LENS_OPTIONS[0];
-  const decisionSupport = useMemo(() => {
-    if (!displayDecision) return null;
-
-    const candidateType =
-      createdDecisionOverride?.id === displayDecision.id
-        ? "created_ugc"
-        : displayDecision.is_ugc
-          ? "ugc"
-          : displayDecision.is_fallback
-            ? "fallback"
-            : "venue";
-
-    return resolveDecisionSupportText({
-      lens: activeLens,
-      source: displayDecision.object.source ?? displayDecision.engine_source,
-      candidateType,
-      confidence: displayDecision.confidence,
-      isFallback: displayDecision.is_fallback,
-      isUGC: displayDecision.is_ugc,
-      vibe: displayDecision.object.vibe_tag,
-      context: adaptiveContext,
-      rationale: displayDecision.rationale,
-      whyNow: displayDecision.why_now,
-      whyThis: displayDecision.why_this,
-      decisionFrame: displayDecision.decision_frame,
-    });
-  }, [activeLens, adaptiveContext, createdDecisionOverride?.id, displayDecision]);
 
   // Derived pivot reasons list — UGC-specific when applicable
   const pivotReasons: string[] = displayDecision?.is_ugc && displayDecision.ugc_meta
@@ -883,7 +839,7 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
   }
 
   return (
-    <div className="mx-auto flex min-h-[100dvh] w-full max-w-[430px] flex-col bg-background px-4 pb-[180px] pt-4 min-[390px]:px-5 min-[390px]:pt-5">
+    <div className="mx-auto flex min-h-[100dvh] w-full max-w-[430px] flex-col bg-background px-4 pb-[168px] pt-4 min-[390px]:px-5 min-[390px]:pt-5">
       {status === "error" && (
         <div className="flex flex-1 flex-col items-center justify-center gap-4">
           <p className="text-base text-ink/70">Something got in the way.</p>
@@ -924,12 +880,10 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
                   <HeroDecisionCard
                     object={displayDecision.object}
                     mode={mode}
-                    supportLabel={decisionSupport?.label}
-                    supportDetail={decisionSupport?.detail}
                     contextLabel={activeLens.context}
                     lensIcon={activeLens.icon}
                     lensLabel={activeLens.label}
-                    lensFrame={undefined}
+                    lensFrame={activeLens.frame}
                     isFallback={displayDecision.is_fallback}
                     isReframing={isReframing || lensTransitioning}
                     pivotLabel={lensTransitioning ? activeLens.transitionCopy : pivotLabel}
@@ -937,6 +891,8 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
                     confirmationState={
                       createdDecisionOverride?.id === displayDecision.id ? "created" : undefined
                     }
+                    onJoin={handleJoin}
+                    onInterested={handleInterested}
                     onAddVibe={handleVibeText}
                   />
                 </ErrorBoundary>
@@ -982,62 +938,53 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
       )}
 
       {/* ── Pinned CTA bar — thumb-reach zone ──────────────────────────────── */}
-      <div className="fixed bottom-0 left-0 right-0 z-10 mx-auto w-full max-w-[430px] border-t border-line/10 bg-background/82 px-4 pb-[max(12px,env(safe-area-inset-bottom,12px))] pt-2 backdrop-blur-sm min-[390px]:px-5">
-        <div className="flex flex-col gap-2">
+      <div className="fixed bottom-0 left-0 right-0 z-10 mx-auto w-full max-w-[430px] border-t border-line/10 bg-background/78 px-4 pb-[max(12px,env(safe-area-inset-bottom,12px))] pt-2.5 backdrop-blur-sm min-[390px]:px-5">
+        <div className="flex flex-col gap-1.5">
 
           {/* Utility row: Previous (contextual) + overflow */}
-          <div className="flex min-h-7 items-center justify-between">
+          <div className="flex h-6 items-center justify-between">
             <button
               type="button"
               onClick={handlePrevious}
               disabled={decisionHistory.length <= 1}
-              className="flex min-h-7 items-center gap-1 rounded-full pr-2 text-[11px] text-ink/40 transition-colors active:text-ink/70 disabled:opacity-0 focus:outline-none focus-visible:text-ink/70"
+              className="flex items-center gap-1 text-[11px] text-ink/40 transition-colors active:text-ink/70 disabled:opacity-0 focus:outline-none focus-visible:text-ink/70"
             >
               ← Previous
             </button>
             <button
               type="button"
               onClick={() => setOverflowOpen((v) => !v)}
-              className="flex h-7 w-7 items-center justify-center rounded-full text-sm text-ink/35 transition-colors active:bg-white/60 active:text-ink/60 focus:outline-none focus-visible:bg-white/60 focus-visible:text-ink/60"
+              className="flex h-6 w-6 items-center justify-center rounded-full text-sm text-ink/35 transition-colors active:text-ink/60 focus:outline-none focus-visible:text-ink/60"
               aria-label="More options"
             >
               ···
             </button>
           </div>
 
-          {/* Overflow panel — secondary tools */}
+          {/* Overflow panel — Refine + Compare Modes + Start Meetup */}
           {overflowOpen && (
-            <div className="grid grid-cols-2 gap-1.5">
+            <div className="flex flex-col gap-1.5">
               <button
                 type="button"
                 onClick={() => { setRefineOpen(true); setOverflowOpen(false); }}
                 disabled={!displayDecision}
-                className="min-h-10 rounded-xl border border-line bg-white/60 px-2 text-[11px] font-medium leading-tight text-ink/60 transition-colors active:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-line disabled:opacity-40"
+                className="h-9 rounded-xl border border-line bg-white/60 px-3 text-[11px] font-medium text-ink/60 transition-colors active:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-line disabled:opacity-40"
               >
                 Refine
               </button>
               <button
                 type="button"
                 onClick={() => { setShowCompareModes(true); setOverflowOpen(false); }}
-                className="min-h-10 rounded-xl border border-line bg-white/60 px-2 text-[11px] font-medium leading-tight text-ink/60 transition-colors active:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
+                className="h-9 rounded-xl border border-line bg-white/60 px-3 text-[11px] font-medium text-ink/60 transition-colors active:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
               >
                 Compare Modes
               </button>
               <button
                 type="button"
                 onClick={() => { setShowCreationFlow(true); setOverflowOpen(false); }}
-                className="min-h-10 rounded-xl border border-line bg-white/60 px-2 text-[11px] font-medium leading-tight text-ink/60 transition-colors active:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
+                className="h-9 rounded-xl border border-line bg-white/60 px-3 text-[11px] font-medium text-ink/60 transition-colors active:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
               >
                 Start Meetup
-              </button>
-              <button
-                type="button"
-                onClick={() => { setVoiceSheetOpen(true); setOverflowOpen(false); }}
-                disabled={!displayDecision}
-                className="min-h-10 rounded-xl border border-line bg-white/60 px-2 text-[11px] font-medium leading-tight text-ink/60 transition-colors active:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-line disabled:opacity-40"
-                aria-label="Voice input"
-              >
-                Voice Input
               </button>
             </div>
           )}
@@ -1050,7 +997,7 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
                   key={reason}
                   type="button"
                   onClick={() => handleReject(reason)}
-                  className="min-h-10 rounded-xl border border-line bg-white/60 px-3 text-[11px] font-medium leading-tight text-ink/70 transition-colors active:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
+                  className="h-9 rounded-xl border border-line bg-white/60 px-3 text-[11px] font-medium text-ink/70 transition-colors active:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
                 >
                   {reason}
                 </button>
@@ -1062,10 +1009,10 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
           <button
             type="button"
             onClick={handleGo}
-            disabled={!displayDecision || navigationBlocked}
+            disabled={!displayDecision}
             className="h-12 w-full rounded-2xl bg-blue-600 text-[15px] font-bold text-white transition-colors hover:bg-blue-700 active:bg-blue-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 disabled:opacity-40"
           >
-            {navigationBlocked && displayDecision ? "No location" : "Navigate"}
+            Navigate
           </button>
 
           {/* REJECTION — text-only, lowest visual weight */}
@@ -1073,7 +1020,7 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
             type="button"
             onClick={handleNotThis}
             disabled={!displayDecision}
-            className="min-h-8 w-full rounded-xl text-[13px] text-ink/35 transition-colors active:bg-white/40 active:text-ink/60 focus:outline-none focus-visible:bg-white/40 focus-visible:text-ink/60 disabled:opacity-0"
+            className="w-full py-0 text-[13px] text-ink/35 transition-colors active:text-ink/60 focus:outline-none focus-visible:text-ink/60 disabled:opacity-0"
           >
             Not this
           </button>
@@ -1102,14 +1049,6 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
           open={refineOpen}
           onClose={() => setRefineOpen(false)}
           onConfirm={handleRefineConfirm}
-        />
-      </ErrorBoundary>
-
-      <ErrorBoundary name="VoiceSheet" onReset={() => setVoiceSheetOpen(false)}>
-        <VoiceSheet
-          open={voiceSheetOpen}
-          onClose={() => setVoiceSheetOpen(false)}
-          onApply={handleVoiceApply}
         />
       </ErrorBoundary>
 

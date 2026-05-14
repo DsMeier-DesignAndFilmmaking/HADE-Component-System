@@ -6,8 +6,6 @@ import type {
   AgentPersona,
   GeoLocation,
   HadeAPIMeta,
-  HadeConstraints,
-  HadeState,
   Intent,
 } from "@/types/hade";
 import { useHadeAdaptiveContext } from "./hooks";
@@ -15,7 +13,6 @@ import { useHadeSettings } from "./settings";
 import { deriveReasons } from "./deriveReasons";
 import { getScenario } from "./scenarios";
 import { buildDecisionViewModel, type DecisionViewModel } from "./viewModel";
-import { hadeLog, roundGeo } from "./logging";
 import agentData from "@/config/agent_definitions.json";
 
 const definitions = agentData as AgentDefinitions;
@@ -117,9 +114,6 @@ export interface UseHadeReturn {
   refine: (input: {
     intent?: Intent | null;
     urgency?: Urgency;
-    state?: Partial<HadeState>;
-    constraints?: HadeConstraints;
-    candidate_categories?: string[];
   }) => Promise<void>;
   getAlternative: () => void;
 }
@@ -154,6 +148,7 @@ export function useHade(config?: UseHadeConfig): UseHadeReturn {
     pivot,
     emit,
     setGeo,
+    setGeoSource,
   } = useHadeAdaptiveContext();
   const { settings } = useHadeSettings();
 
@@ -187,32 +182,36 @@ export function useHade(config?: UseHadeConfig): UseHadeReturn {
      *   1. Scenario geo  — developer URL param override (intentional hardcode)
      *   2. IP geolocation — ipapi.co, 3 s timeout
      *   3. Last known    — localStorage from previous successful browser fix
-     *   4. Default       — San Francisco; always produces a usable coordinate
+     *   4. Unknown       — DEFAULT_GEO kept for route validation, but geo_source
+     *                      is set to "unknown" so the server skips Google Places
      */
     const applyFallbackGeo = async () => {
-      // 1. Scenario override (dev only)
+      // 1. Scenario override — intentionally hardcoded location for demo/dev
       if (scenario?.geo) {
-        hadeLog("debug", "[HADE GEO SOURCE]", {
-          geo: roundGeo(scenario.geo),
-          source: "fallback",
-        }, { debugOnly: true });
+        console.log("[HADE GEO SOURCE]", {
+          lat: scenario.geo.lat,
+          lng: scenario.geo.lng,
+          source: "scenario",
+        });
         if (!cancelled) {
           setUserGeo(scenario.geo);
           setGeo(scenario.geo);
+          setGeoSource("scenario");
           setGeoReady(true);
         }
         return;
       }
 
-      console.warn("[HADE GEO FALLBACK] Using fallback location");
+      console.warn("[HADE GEO FALLBACK] Browser geo unavailable — trying IP then localStorage");
 
-      // 2. IP-based geolocation
+      // 2. IP-based geolocation (city-level, ~50 km accuracy)
       const ipGeo = await resolveIPGeo();
       if (cancelled) return;
       if (ipGeo) {
-        hadeLog("debug", "[HADE GEO SOURCE]", { geo: roundGeo(ipGeo), source: "ip_fallback" }, { debugOnly: true });
+        console.log("[HADE GEO SOURCE]", { lat: ipGeo.lat, lng: ipGeo.lng, source: "ip" });
         setUserGeo(ipGeo);
         setGeo(ipGeo);
+        setGeoSource("ip");
         setGeoReady(true);
         return;
       }
@@ -220,20 +219,26 @@ export function useHade(config?: UseHadeConfig): UseHadeReturn {
       // 3. Last known location from localStorage
       const lastKnown = loadLastKnownGeo();
       if (lastKnown) {
-        hadeLog("debug", "[HADE GEO SOURCE]", { geo: roundGeo(lastKnown), source: "last_known" }, { debugOnly: true });
+        console.log("[HADE GEO SOURCE]", { lat: lastKnown.lat, lng: lastKnown.lng, source: "stored" });
         if (!cancelled) {
           setUserGeo(lastKnown);
           setGeo(lastKnown);
+          setGeoSource("stored");
           setGeoReady(true);
         }
         return;
       }
 
-      // 4. Hard default — always produces a non-zero usable coordinate
-      hadeLog("debug", "[HADE GEO SOURCE]", { geo: roundGeo(DEFAULT_GEO), source: "default" }, { debugOnly: true });
+      // 4. No real location available — use DEFAULT_GEO as a non-zero sentinel
+      // so route validation passes, but mark geo_source "unknown" so the server
+      // skips Google Places and returns a generic non-local decision instead.
+      console.warn("[HADE GEO SOURCE] unknown — no real location available; Places will be skipped", {
+        fallback_coords: DEFAULT_GEO,
+      });
       if (!cancelled) {
         setUserGeo(DEFAULT_GEO);
         setGeo(DEFAULT_GEO);
+        setGeoSource("unknown");
         setGeoReady(true);
       }
     };
@@ -247,10 +252,11 @@ export function useHade(config?: UseHadeConfig): UseHadeReturn {
       (pos) => {
         if (cancelled) return;
         const geo = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-        hadeLog("debug", "[HADE GEO SOURCE]", { geo: roundGeo(geo), source: "browser" }, { debugOnly: true });
+        console.log("[HADE GEO SOURCE]", { lat: geo.lat, lng: geo.lng, source: "browser" });
         saveLastKnownGeo(geo);
         setUserGeo(geo);
         setGeo(geo);
+        setGeoSource("browser");
         setGeoReady(true);
       },
       () => {
@@ -261,7 +267,7 @@ export function useHade(config?: UseHadeConfig): UseHadeReturn {
     );
 
     return () => { cancelled = true; };
-  }, [setGeo, scenario]);
+  }, [setGeo, setGeoSource, scenario]);
 
   // ── Auto-fire on mount ───────────────────────────────────────────────────
   // Guard order:
@@ -274,13 +280,12 @@ export function useHade(config?: UseHadeConfig): UseHadeReturn {
     if (firedRef.current) return;
     if (!geoReady) return;
     if (!context.geo?.lat || !context.geo?.lng) {
-      console.warn("[HADE GEO] Decision blocked — geo not ready or invalid", {
-        geo: roundGeo(context.geo),
-      });
+      console.warn("[HADE GEO] Decision blocked — geo not ready or invalid", context.geo);
       return;
     }
     console.log("[HADE GEO] Triggering decision with verified geo", {
-      geo: roundGeo(context.geo),
+      lat: context.geo.lat,
+      lng: context.geo.lng,
     });
     firedRef.current = true;
     void decide({
@@ -366,13 +371,7 @@ export function useHade(config?: UseHadeConfig): UseHadeReturn {
   }, [decide, scenario, activeAgent, settings]);
 
   const refine = useCallback(
-    async (input: {
-      intent?: Intent | null;
-      urgency?: Urgency;
-      state?: Partial<HadeState>;
-      constraints?: HadeConstraints;
-      candidate_categories?: string[];
-    }) => {
+    async (input: { intent?: Intent | null; urgency?: Urgency }) => {
       const urgency = input.urgency ?? "medium";
 
       const behavioralSig = emit("BEHAVIORAL", {
@@ -388,22 +387,15 @@ export function useHade(config?: UseHadeConfig): UseHadeReturn {
 
       await decide({
         situation: { intent: input.intent ?? null, urgency },
-        state: { energy: input.state?.energy ?? urgency },
-        constraints: input.constraints,
+        state: { energy: urgency },
         signals: [...signals, behavioralSig, intentSig],
         persona: activeAgent,
         settings,
         mode: modeRef.current,
-        candidate_categories: input.candidate_categories
-          ? mergeCandidateCategories(
-              scenario?.request?.candidate_categories,
-              candidateCategoriesRef.current,
-              input.candidate_categories,
-            )
-          : mergeCandidateCategories(
-              scenario?.request?.candidate_categories,
-              candidateCategoriesRef.current,
-            ),
+        candidate_categories: mergeCandidateCategories(
+          scenario?.request?.candidate_categories,
+          candidateCategoriesRef.current,
+        ),
       });
     },
     [emit, signals, activeAgent, settings, decide, userGeo, scenario],
