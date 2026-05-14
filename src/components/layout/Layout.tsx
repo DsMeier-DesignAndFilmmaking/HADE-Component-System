@@ -11,7 +11,7 @@ export function Layout({ children }: LayoutProps) {
   return (
     <div className="min-h-screen bg-background text-textPrimary">
       <Navbar />
-      <div>{children}</div>
+      <div className="pt-[53px]">{children}</div>
     </div>
   );
 }

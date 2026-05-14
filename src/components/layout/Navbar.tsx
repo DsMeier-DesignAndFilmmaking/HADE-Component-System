@@ -13,7 +13,7 @@ export function Navbar() {
   const [isOpen, setIsOpen] = useState(false);
 
   return (
-    <header className="sticky top-0 z-40 border-b border-border bg-surface/95 backdrop-blur">
+    <header className="fixed inset-x-0 top-0 z-40 border-b border-border bg-surface/95 backdrop-blur">
       <nav
         aria-label="Primary"
         className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6"
