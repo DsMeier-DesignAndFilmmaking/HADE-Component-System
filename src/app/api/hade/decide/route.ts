@@ -714,11 +714,31 @@ function extractGeo(body: Record<string, unknown> | null | undefined): GeoLocati
   return { lat, lng };
 }
 
+const VALID_GEO_SOURCES = new Set(["browser", "ip", "stored", "scenario"]);
+
 function extractGeoSource(body: Record<string, unknown> | null | undefined): GeoSource {
   if (!body) return "unknown";
-  const raw = (body as { geo_source?: unknown }).geo_source;
-  if (raw === "browser" || raw === "ip" || raw === "stored" || raw === "scenario") return raw;
-  return "unknown";
+
+  // Primary path: top-level geo_source field
+  const b = body as { geo_source?: unknown; geo?: { source?: unknown }; context?: { geo_source?: unknown } };
+  const raw =
+    b.geo_source ??
+    // Alternate: geo.source (in case client nests it)
+    b.geo?.source ??
+    // Alternate: context.geo_source (legacy shape)
+    b.context?.geo_source;
+
+  const normalized: GeoSource = VALID_GEO_SOURCES.has(raw as string)
+    ? (raw as GeoSource)
+    : "unknown";
+
+  console.log("[HADE GEO SOURCE NORMALIZED]", {
+    raw: raw ?? "(absent)",
+    normalized,
+    field_found: raw !== undefined ? (b.geo_source !== undefined ? "geo_source" : b.geo?.source !== undefined ? "geo.source" : "context.geo_source") : "none",
+  });
+
+  return normalized;
 }
 
 // ─── Stage 3: Copy enhancement ───────────────────────────────────────────────
