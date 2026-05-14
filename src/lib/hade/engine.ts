@@ -128,6 +128,7 @@ export function buildContext(
 
   return {
     geo: input.geo ?? null,
+    geo_source: input.geo_source,
     time_of_day: input.time_of_day ?? getTimeOfDay(),
     day_type: input.day_type ?? getDayType(),
 
