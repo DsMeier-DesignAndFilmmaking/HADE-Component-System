@@ -342,6 +342,19 @@ async function generateDecision(
       (!Array.isArray(signals) || signals.length === 0) &&
       (!Array.isArray(rejectionHistory) || rejectionHistory.length === 0);
 
+    console.log(`[HADE DECIDE INPUT] reqId=${reqId}`, {
+      hasGeo: !!geoHint,
+      lat: geoHint?.lat ?? null,
+      lng: geoHint?.lng ?? null,
+      geoSource,
+      mode: (body as { mode?: unknown }).mode ?? "default",
+      isColdStart,
+      signal_count: (Array.isArray(signals) ? signals : []).length,
+      rejection_history_count: (Array.isArray(rejectionHistory) ? rejectionHistory : []).length,
+      candidate_categories: (body as { candidate_categories?: unknown }).candidate_categories ?? null,
+      hasGoogleKey: !!serverEnv.googleApiKey,
+    });
+
     if (isColdStart) {
       console.log(`[hade-decide ${reqId}] cold start — attempting Places fetch before fallback`);
 

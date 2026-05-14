@@ -15,6 +15,10 @@ export default defineConfig({
     setupFiles: ["./src/lib/hade/__tests__/setup.ts"],
   },
   resolve: {
-    alias: { "@": path.resolve(__dirname, "./src") },
+    alias: {
+      "@": path.resolve(__dirname, "./src"),
+      // "server-only" throws in non-server contexts; stub it out for tests.
+      "server-only": path.resolve(__dirname, "./src/__mocks__/server-only.ts"),
+    },
   },
 });

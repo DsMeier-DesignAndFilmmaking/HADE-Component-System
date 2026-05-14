@@ -1000,18 +1000,66 @@ export async function generateSyntheticDecision(
       console.warn(`[hade-synthetic ${reqId}] Places fetch failed (${detail}) — continuing with UGC-only`);
       places = [];
     }
+    const rawPlacesCount = places.length;
+
+    console.log("[HADE PLACES RAW]", {
+      count: rawPlacesCount,
+      sample: places.slice(0, 3).map((p) => ({
+        id: p.id,
+        name: p.name,
+        hasLocation: !!(p.geo?.lat && p.geo?.lng),
+        lat: p.geo?.lat ?? null,
+        lng: p.geo?.lng ?? null,
+        rating: p.rating ?? null,
+        types: (p.types ?? []).slice(0, 5),
+      })),
+    });
+
     const filteredPlaces = filterPlacesByDomainWithLens(places, config.id, callerCategoryList);
 
     console.log("[HADE FILTER ENFORCED]", {
       mode: config.id,
-      input: places.length,
+      input: rawPlacesCount,
       output: filteredPlaces.length,
     });
 
-    if (filteredPlaces.length === 0 && ugcCandidates.length === 0) {
+    // ── Last-resort bypass ────────────────────────────────────────────────────
+    // When the domain type-filter drops EVERY candidate but Google returned real
+    // data, fall back to blacklist-only filtering rather than giving up entirely.
+    // This prevents cold_start_fallback when valid Places data is available but
+    // doesn't match the strict domain/lens whitelist (e.g. restaurants returned
+    // for a travel-mode Urban Mobility query).
+    let candidatePlaces = filteredPlaces;
+    let isLastResort = false;
+
+    if (filteredPlaces.length === 0 && rawPlacesCount > 0) {
+      const blacklistOnly = places.filter(
+        (p) => !p.types?.some((t) => DOMAIN_TYPE_BLACKLIST.has(t)),
+      );
+      console.warn("[HADE FALLBACK REASON]", {
+        reason: "places_returned_but_zero_valid_candidates",
+        raw_places_count: rawPlacesCount,
+        normalized_count: 0,
+        scored_count: 0,
+        rejection_summary: {
+          domain_filter_dropped_all: rawPlacesCount,
+          blacklist_only_survivors: blacklistOnly.length,
+        },
+      });
+      if (blacklistOnly.length > 0) {
+        candidatePlaces = blacklistOnly;
+        isLastResort = true;
+        console.log(
+          `[hade-synthetic ${reqId}] last-resort: domain filter dropped all ${rawPlacesCount}` +
+            ` place(s) — using ${blacklistOnly.length} blacklist-only survivor(s)`,
+        );
+      }
+    }
+
+    if (candidatePlaces.length === 0 && ugcCandidates.length === 0) {
       return { ok: false, reason: "no_domain_candidates" };
     }
-    if (filteredPlaces.length === 0) {
+    if (candidatePlaces.length === 0 && !isLastResort) {
       console.log(`[hade-synthetic ${reqId}] no Places results — proceeding with ${ugcCandidates.length} UGC candidate(s)`);
     }
 
@@ -1020,12 +1068,12 @@ export async function generateSyntheticDecision(
     // (fallback for SDK-style entries that omit venue_id).
     const freshCandidates =
       rejectedIds.size > 0 || rejectedNames.size > 0
-        ? filteredPlaces.filter(
+        ? candidatePlaces.filter(
             (p) =>
               !rejectedIds.has(p.id) &&
               !rejectedNames.has(p.name.toLowerCase().trim()),
           )
-        : filteredPlaces;
+        : candidatePlaces;
 
     console.log("[HADE FRESH COUNT]", freshCandidates.length);
 
@@ -1041,12 +1089,25 @@ export async function generateSyntheticDecision(
     const googleCount = placeCandidates.length;
     const ugcInjectedCount = ugcCandidates.length;
 
+    console.log("[HADE CANDIDATE NORMALIZED]", {
+      input_count: freshCandidates.length,
+      output_count: googleCount,
+      rejected_count: freshCandidates.length - googleCount,
+      rejected_reasons: freshCandidates.length > googleCount ? ["missing_location_or_id"] : [],
+      is_last_resort: isLastResort,
+    });
+
     // ── Step 2: Merge SpontaneousObject arrays ────────────────────────────────
-    const mergedCandidates = filterCandidatesByDomain(
-      mergeCandidates(ugcCandidates, placeCandidates),
-      config,
-      callerCategoryList,
-    );
+    // In last-resort mode the domain type-gate is already bypassed upstream —
+    // running filterCandidatesByDomain here would re-apply the same whitelist
+    // and drop the survivors again. Skip it; only UGC candidates need gating.
+    const mergedCandidates = isLastResort
+      ? mergeCandidates(ugcCandidates, placeCandidates)
+      : filterCandidatesByDomain(
+          mergeCandidates(ugcCandidates, placeCandidates),
+          config,
+          callerCategoryList,
+        );
 
     // ── Step 3: HARD EXCLUSION of rejected objects ────────────────────────────
     // "Not This" must guarantee a rejected venue is NEVER returned again in the
@@ -1125,6 +1186,18 @@ export async function generateSyntheticDecision(
 
     // ── Step 5: Score and rank ────────────────────────────────────────────────
     console.log("[HADE SCORING INPUT COUNT]", timeWindowCandidates.length);
+    console.log("[HADE SCORING]", {
+      candidate_count: timeWindowCandidates.length,
+      scored_count: timeWindowCandidates.length,
+      is_last_resort: isLastResort,
+      top_candidates: timeWindowCandidates.slice(0, 3).map((c) => ({
+        id: c.obj.id,
+        title: c.obj.title,
+        distance_meters: c.distance_meters ?? null,
+        category: c.category,
+        types: (c.types ?? []).slice(0, 4),
+      })),
+    });
     const sorted = await rankSpontaneousObjects(
       timeWindowCandidates,
       now,
