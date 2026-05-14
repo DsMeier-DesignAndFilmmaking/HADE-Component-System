@@ -134,7 +134,10 @@ interface GoogleOpeningHours {
 
 interface GooglePlace {
   id: string;
-  displayName?: GoogleDisplayName;
+  /** Google Places New API: { text, languageCode }. Legacy / edge: may be a bare string. */
+  displayName?: GoogleDisplayName | string;
+  /** Legacy field name — present in some older response shapes. */
+  name?: string;
   types?: string[];
   location?: GoogleLatLng;
   currentOpeningHours?: GoogleOpeningHours;
@@ -194,16 +197,34 @@ const PRICE_LEVEL_MAP: Record<string, number> = {
 };
 
 /**
+ * Resolves the display name from a GooglePlace, supporting:
+ *   - New API: displayName = { text: "...", languageCode: "..." }
+ *   - Edge case: displayName = "bare string"
+ *   - Legacy fallback: name field
+ */
+function resolveDisplayName(place: GooglePlace): string | null {
+  const dn = place.displayName;
+  if (typeof dn === "string" && dn.trim()) return dn.trim();
+  if (dn && typeof dn === "object" && typeof dn.text === "string" && dn.text.trim()) return dn.text.trim();
+  if (typeof place.name === "string" && place.name.trim()) return place.name.trim();
+  return null;
+}
+
+/**
  * Converts a raw Google Place into a PlaceOption.
  * Returns null if required fields (id, name, location) are absent, or if the
  * place is closed and openNowFilter is active.
+ *
+ * Required: id, any of displayName.text/displayName(string)/name, location.
+ * Optional: rating, priceLevel, types, shortFormattedAddress — never cause rejection.
  */
-function toPlaceOption(
+export function toPlaceOption(
   place: GooglePlace,
   origin: GeoLocation,
   openNowFilter: boolean,
 ): PlaceOption | null {
-  if (!place.id || !place.displayName?.text || !place.location) return null;
+  const resolvedName = resolveDisplayName(place);
+  if (!place.id || !resolvedName || !place.location) return null;
 
   // Honour open_now filter. Places without hours data are included (openNow = undefined → treat as open).
   if (openNowFilter && place.currentOpeningHours?.openNow === false) return null;
@@ -218,7 +239,7 @@ function toPlaceOption(
 
   return {
     id: place.id,
-    name: place.displayName.text,
+    name: resolvedName,
     category,
     vibe,
     geo: placeGeo,
@@ -305,7 +326,8 @@ export async function fetchNearbyGrounded(
 
   if (!apiKey) {
     console.warn(
-      "[places] GOOGLE_API_KEY not configured — skipping Places fetch",
+      "[HADE CONFIG] GOOGLE_API_KEY not configured — skipping Places fetch. " +
+      "Engine will return cold_start_fallback until a real key is set in .env.local.",
     );
     return [];
   }
@@ -412,9 +434,47 @@ export async function fetchNearbyGrounded(
 
     const rawPlaces = data.places ?? [];
 
+    console.log("[HADE PLACES RAW]", {
+      count: rawPlaces.length,
+      sample: rawPlaces.slice(0, 3).map((p) => ({
+        id: p.id ?? null,
+        name: resolveDisplayName(p) ?? "(none)",
+        hasLocation: !!p.location,
+        lat: p.location?.latitude ?? null,
+        lng: p.location?.longitude ?? null,
+        rating: p.rating ?? null,
+        types: (p.types ?? []).slice(0, 5),
+      })),
+    });
+
     const candidates: PlaceOption[] = rawPlaces
       .map((p) => toPlaceOption(p, geo, open_now))
       .filter((p): p is PlaceOption => p !== null);
+
+    const rejectedCount = rawPlaces.length - candidates.length;
+    if (rejectedCount > 0) {
+      const rejectedReasons: Array<{ id: string | null; reason: string }> = [];
+      for (const p of rawPlaces) {
+        if (candidates.some((c) => c.id === p.id)) continue;
+        const reason = !p.id
+          ? "missing_id"
+          : !resolveDisplayName(p)
+            ? "missing_title"
+            : !p.location
+              ? "missing_location"
+              : open_now && p.currentOpeningHours?.openNow === false
+                ? "closed"
+                : "unknown";
+        rejectedReasons.push({ id: p.id ?? null, reason });
+        if (rejectedReasons.length >= 5) break;
+      }
+      console.log("[HADE CANDIDATE NORMALIZED]", {
+        input_count: rawPlaces.length,
+        output_count: candidates.length,
+        rejected_count: rejectedCount,
+        rejected_reasons: rejectedReasons,
+      });
+    }
 
     hadeLog("log", "[HADE PLACES] Parsed places", { count: candidates.length });
     hadeLog("debug", "[HADE PLACES DEBUG] Parsed places", candidates, { debugOnly: true });
