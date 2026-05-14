@@ -21,6 +21,8 @@ import { LoadingState } from "./LoadingState";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { ActivityCreationView } from "./ActivityCreationView";
 import { CompareModesSheet } from "./CompareModesSheet";
+import { VoiceSheet } from "./VoiceSheet";
+import type { VoiceIntent } from "@/lib/hade/voiceIntentParser";
 
 type Urgency = "low" | "medium" | "high";
 type PivotReason = "Too crowded" | "Wrong vibe" | "Too far" | "Overpriced";
@@ -241,6 +243,12 @@ function mapReasonToTags(reason: string): string[] {
   }
 }
 
+function buildVoiceCandidateCategories(lensId: LensId, exclude: string[]): string[] | undefined {
+  const base = getLensCandidateCategories(lensId);
+  const filtered = (base as readonly string[]).filter((cat) => !exclude.includes(cat));
+  return filtered.length > 0 ? filtered : undefined;
+}
+
 function toVibeTags(tags: string[]): VibeTag[] {
   const validTags: VibeTag[] = [
     "too_crowded",
@@ -382,6 +390,7 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
   const [rejectionHistory, setRejectionHistory] = useState<Array<{ venueId: string; reason: string; timestamp: number }>>([]);
   const [decisionHistory, setDecisionHistory] = useState<DecisionViewModel[]>([]);
   const [overflowOpen, setOverflowOpen] = useState(false);
+  const [voiceSheetOpen, setVoiceSheetOpen] = useState(false);
   const [createdCardHighlight, setCreatedCardHighlight] = useState(false);
 
   const closeCreationFlow = useCallback(() => {
@@ -664,6 +673,23 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
       await refine({ intent, urgency });
     },
     [clearCreatedDecisionConfirmation, refine],
+  );
+
+  const handleVoiceApply = useCallback(
+    async (parsed: VoiceIntent) => {
+      setVoiceSheetOpen(false);
+      clearCreatedDecisionConfirmation("voice_refine");
+      await refine({
+        intent: parsed.intent ?? null,
+        urgency: parsed.urgency ?? "medium",
+        state: parsed.state,
+        constraints: parsed.constraints,
+        candidate_categories: parsed.candidate_categories_exclude?.length
+          ? buildVoiceCandidateCategories(activeLensId, parsed.candidate_categories_exclude)
+          : undefined,
+      });
+    },
+    [clearCreatedDecisionConfirmation, refine, activeLensId],
   );
 
   const handleNotThis = useCallback(() => {
@@ -981,7 +1007,7 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
 
           {/* Overflow panel — secondary tools */}
           {overflowOpen && (
-            <div className="grid grid-cols-3 gap-1.5">
+            <div className="grid grid-cols-2 gap-1.5">
               <button
                 type="button"
                 onClick={() => { setRefineOpen(true); setOverflowOpen(false); }}
@@ -1003,6 +1029,15 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
                 className="min-h-10 rounded-xl border border-line bg-white/60 px-2 text-[11px] font-medium leading-tight text-ink/60 transition-colors active:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
               >
                 Start Meetup
+              </button>
+              <button
+                type="button"
+                onClick={() => { setVoiceSheetOpen(true); setOverflowOpen(false); }}
+                disabled={!displayDecision}
+                className="min-h-10 rounded-xl border border-line bg-white/60 px-2 text-[11px] font-medium leading-tight text-ink/60 transition-colors active:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-line disabled:opacity-40"
+                aria-label="Voice input"
+              >
+                Voice Input
               </button>
             </div>
           )}
@@ -1067,6 +1102,14 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
           open={refineOpen}
           onClose={() => setRefineOpen(false)}
           onConfirm={handleRefineConfirm}
+        />
+      </ErrorBoundary>
+
+      <ErrorBoundary name="VoiceSheet" onReset={() => setVoiceSheetOpen(false)}>
+        <VoiceSheet
+          open={voiceSheetOpen}
+          onClose={() => setVoiceSheetOpen(false)}
+          onApply={handleVoiceApply}
         />
       </ErrorBoundary>
 

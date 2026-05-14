@@ -6,6 +6,8 @@ import type {
   AgentPersona,
   GeoLocation,
   HadeAPIMeta,
+  HadeConstraints,
+  HadeState,
   Intent,
 } from "@/types/hade";
 import { useHadeAdaptiveContext } from "./hooks";
@@ -115,6 +117,9 @@ export interface UseHadeReturn {
   refine: (input: {
     intent?: Intent | null;
     urgency?: Urgency;
+    state?: Partial<HadeState>;
+    constraints?: HadeConstraints;
+    candidate_categories?: string[];
   }) => Promise<void>;
   getAlternative: () => void;
 }
@@ -361,7 +366,13 @@ export function useHade(config?: UseHadeConfig): UseHadeReturn {
   }, [decide, scenario, activeAgent, settings]);
 
   const refine = useCallback(
-    async (input: { intent?: Intent | null; urgency?: Urgency }) => {
+    async (input: {
+      intent?: Intent | null;
+      urgency?: Urgency;
+      state?: Partial<HadeState>;
+      constraints?: HadeConstraints;
+      candidate_categories?: string[];
+    }) => {
       const urgency = input.urgency ?? "medium";
 
       const behavioralSig = emit("BEHAVIORAL", {
@@ -377,15 +388,22 @@ export function useHade(config?: UseHadeConfig): UseHadeReturn {
 
       await decide({
         situation: { intent: input.intent ?? null, urgency },
-        state: { energy: urgency },
+        state: { energy: input.state?.energy ?? urgency },
+        constraints: input.constraints,
         signals: [...signals, behavioralSig, intentSig],
         persona: activeAgent,
         settings,
         mode: modeRef.current,
-        candidate_categories: mergeCandidateCategories(
-          scenario?.request?.candidate_categories,
-          candidateCategoriesRef.current,
-        ),
+        candidate_categories: input.candidate_categories
+          ? mergeCandidateCategories(
+              scenario?.request?.candidate_categories,
+              candidateCategoriesRef.current,
+              input.candidate_categories,
+            )
+          : mergeCandidateCategories(
+              scenario?.request?.candidate_categories,
+              candidateCategoriesRef.current,
+            ),
       });
     },
     [emit, signals, activeAgent, settings, decide, userGeo, scenario],
