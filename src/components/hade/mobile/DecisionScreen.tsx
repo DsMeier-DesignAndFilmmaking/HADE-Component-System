@@ -22,6 +22,7 @@ import { ActivityCreationView } from "./ActivityCreationView";
 import { CompareModesSheet } from "./CompareModesSheet";
 import { VoiceSheet } from "./VoiceSheet";
 import type { VoiceIntent } from "@/lib/hade/voiceIntentParser";
+import { Mic } from "lucide-react";
 
 type Urgency = "low" | "medium" | "high";
 type PivotReason = "Too crowded" | "Wrong vibe" | "Too far" | "Overpriced";
@@ -955,6 +956,22 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
             <span className="text-[10px] text-black/55">Create a hangout nearby</span>
           </button>
 
+          {/* ── Voice refinement CTA ─────────────────────────────────────── */}
+          <button
+            type="button"
+            onClick={() => setVoiceSheetOpen(true)}
+            className="mt-2 flex min-h-[52px] w-full items-center gap-3 rounded-2xl border border-line/55 bg-white/55 px-4 py-3 text-left transition-all active:scale-[0.99] active:bg-white/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
+            aria-label="Tell HADE what you want — voice input"
+          >
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-ink/6">
+              <Mic className="h-4 w-4 text-ink/50" aria-hidden="true" />
+            </span>
+            <div className="min-w-0">
+              <p className="text-[13px] font-semibold leading-tight text-ink/70">Tell HADE what you want</p>
+              <p className="mt-0.5 text-[10px] leading-tight text-ink/38">Speak or type what you&apos;re in the mood for.</p>
+            </div>
+          </button>
+
           {process.env.NODE_ENV !== "production" && (
             <DebugOverlay decision={displayDecision} />
           )}
@@ -1009,15 +1026,6 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
                 className="h-9 rounded-xl border border-line bg-white/60 px-3 text-[11px] font-medium text-ink/60 transition-colors active:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
               >
                 Start Meetup
-              </button>
-              <button
-                type="button"
-                onClick={() => { setVoiceSheetOpen(true); setOverflowOpen(false); }}
-                disabled={!displayDecision}
-                className="h-9 rounded-xl border border-line bg-white/60 px-3 text-[11px] font-medium text-ink/60 transition-colors active:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-line disabled:opacity-40"
-                aria-label="Voice input"
-              >
-                Voice Input
               </button>
             </div>
           )}
