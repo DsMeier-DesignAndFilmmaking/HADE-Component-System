@@ -148,6 +148,7 @@ export function useHade(config?: UseHadeConfig): UseHadeReturn {
     pivot,
     emit,
     setGeo,
+    setGeoSource,
   } = useHadeAdaptiveContext();
   const { settings } = useHadeSettings();
 
@@ -181,33 +182,36 @@ export function useHade(config?: UseHadeConfig): UseHadeReturn {
      *   1. Scenario geo  — developer URL param override (intentional hardcode)
      *   2. IP geolocation — ipapi.co, 3 s timeout
      *   3. Last known    — localStorage from previous successful browser fix
-     *   4. Default       — San Francisco; always produces a usable coordinate
+     *   4. Unknown       — DEFAULT_GEO kept for route validation, but geo_source
+     *                      is set to "unknown" so the server skips Google Places
      */
     const applyFallbackGeo = async () => {
-      // 1. Scenario override (dev only)
+      // 1. Scenario override — intentionally hardcoded location for demo/dev
       if (scenario?.geo) {
         console.log("[HADE GEO SOURCE]", {
           lat: scenario.geo.lat,
           lng: scenario.geo.lng,
-          source: "fallback",
+          source: "scenario",
         });
         if (!cancelled) {
           setUserGeo(scenario.geo);
           setGeo(scenario.geo);
+          setGeoSource("scenario");
           setGeoReady(true);
         }
         return;
       }
 
-      console.warn("[HADE GEO FALLBACK] Using fallback location");
+      console.warn("[HADE GEO FALLBACK] Browser geo unavailable — trying IP then localStorage");
 
-      // 2. IP-based geolocation
+      // 2. IP-based geolocation (city-level, ~50 km accuracy)
       const ipGeo = await resolveIPGeo();
       if (cancelled) return;
       if (ipGeo) {
-        console.log("[HADE GEO SOURCE]", { lat: ipGeo.lat, lng: ipGeo.lng, source: "ip_fallback" });
+        console.log("[HADE GEO SOURCE]", { lat: ipGeo.lat, lng: ipGeo.lng, source: "ip" });
         setUserGeo(ipGeo);
         setGeo(ipGeo);
+        setGeoSource("ip");
         setGeoReady(true);
         return;
       }
@@ -215,20 +219,26 @@ export function useHade(config?: UseHadeConfig): UseHadeReturn {
       // 3. Last known location from localStorage
       const lastKnown = loadLastKnownGeo();
       if (lastKnown) {
-        console.log("[HADE GEO SOURCE]", { lat: lastKnown.lat, lng: lastKnown.lng, source: "last_known" });
+        console.log("[HADE GEO SOURCE]", { lat: lastKnown.lat, lng: lastKnown.lng, source: "stored" });
         if (!cancelled) {
           setUserGeo(lastKnown);
           setGeo(lastKnown);
+          setGeoSource("stored");
           setGeoReady(true);
         }
         return;
       }
 
-      // 4. Hard default — always produces a non-zero usable coordinate
-      console.log("[HADE GEO SOURCE]", { lat: DEFAULT_GEO.lat, lng: DEFAULT_GEO.lng, source: "default" });
+      // 4. No real location available — use DEFAULT_GEO as a non-zero sentinel
+      // so route validation passes, but mark geo_source "unknown" so the server
+      // skips Google Places and returns a generic non-local decision instead.
+      console.warn("[HADE GEO SOURCE] unknown — no real location available; Places will be skipped", {
+        fallback_coords: DEFAULT_GEO,
+      });
       if (!cancelled) {
         setUserGeo(DEFAULT_GEO);
         setGeo(DEFAULT_GEO);
+        setGeoSource("unknown");
         setGeoReady(true);
       }
     };
@@ -246,6 +256,7 @@ export function useHade(config?: UseHadeConfig): UseHadeReturn {
         saveLastKnownGeo(geo);
         setUserGeo(geo);
         setGeo(geo);
+        setGeoSource("browser");
         setGeoReady(true);
       },
       () => {
@@ -256,7 +267,7 @@ export function useHade(config?: UseHadeConfig): UseHadeReturn {
     );
 
     return () => { cancelled = true; };
-  }, [setGeo, scenario]);
+  }, [setGeo, setGeoSource, scenario]);
 
   // ── Auto-fire on mount ───────────────────────────────────────────────────
   // Guard order:

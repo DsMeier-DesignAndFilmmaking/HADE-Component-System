@@ -18,10 +18,6 @@ interface DecisionCardProps {
   onGoing?: () => void;
   onMaybe?: () => void;
   onNotThis?: () => void;
-  /** Called when user taps "Join" on a ugc_event card (strong intent signal). */
-  onJoin?: () => void;
-  /** Called when user taps "I'm Interested" on a ugc_event card (light intent signal). */
-  onInterested?: () => void;
   /** When true, replaces card content with the reframing microcopy. */
   isReframing?: boolean;
   /** Shown below the reframing headline — e.g. "Adjusting for: Too far" */
@@ -131,8 +127,6 @@ export function DecisionCard({
   onGoing,
   onMaybe,
   onNotThis,
-  onJoin,
-  onInterested,
   isReframing = false,
   pivotLabel,
   className = "",
@@ -329,30 +323,17 @@ export function DecisionCard({
 
             {/* ── CTAs ─────────────────────────────────────────────────────── */}
             <div className="flex items-center gap-2 pt-3 border-t border-line">
-              {isUGC ? (
-                <>
-                  <HadeButton variant="primary" size="sm" onClick={onJoin ?? onGoing}>
-                    Join
-                  </HadeButton>
-                  <HadeButton variant="secondary" size="sm" onClick={onInterested ?? onMaybe}>
-                    I'm Interested
-                  </HadeButton>
-                </>
-              ) : (
-                <>
-                  <HadeButton
-                    variant="primary"
-                    size="sm"
-                    onClick={launchNavigation}
-                    loading={openingMaps}
-                  >
-                    {openingMaps ? "Opening Maps..." : "Let's Go"}
-                  </HadeButton>
-                  <HadeButton variant="secondary" size="sm" onClick={onMaybe}>
-                    Maybe
-                  </HadeButton>
-                </>
-              )}
+              <HadeButton
+                variant="primary"
+                size="sm"
+                onClick={launchNavigation}
+                loading={openingMaps}
+              >
+                {openingMaps ? "Opening Maps..." : "Let's Go"}
+              </HadeButton>
+              <HadeButton variant="secondary" size="sm" onClick={onMaybe}>
+                Maybe
+              </HadeButton>
               <button
                 type="button"
                 onClick={onNotThis}

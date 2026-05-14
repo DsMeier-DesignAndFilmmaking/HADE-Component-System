@@ -48,11 +48,11 @@ export function GuidedDemoSection() {
   const geoRef     = useRef<{ lat: number; lng: number }>(DEFAULT_GEO);
   const geoResolvedRef = useRef(false);
 
-  const resolveGeo = useCallback((): Promise<{ lat: number; lng: number }> => {
-    if (geoResolvedRef.current) return Promise.resolve(geoRef.current);
+  const resolveGeo = useCallback((): Promise<{ lat: number; lng: number; geo_source: "browser" | "scenario" }> => {
+    if (geoResolvedRef.current) return Promise.resolve({ ...geoRef.current, geo_source: "browser" as const });
     return new Promise((resolve) => {
       if (!navigator.geolocation) {
-        resolve(DEFAULT_GEO);
+        resolve({ ...DEFAULT_GEO, geo_source: "scenario" as const });
         return;
       }
       navigator.geolocation.getCurrentPosition(
@@ -60,9 +60,9 @@ export function GuidedDemoSection() {
           const geo = { lat: pos.coords.latitude, lng: pos.coords.longitude };
           geoRef.current = geo;
           geoResolvedRef.current = true;
-          resolve(geo);
+          resolve({ ...geo, geo_source: "browser" as const });
         },
-        () => resolve(DEFAULT_GEO),
+        () => resolve({ ...DEFAULT_GEO, geo_source: "scenario" as const }),
         { timeout: 4_000, maximumAge: 120_000 },
       );
     });
@@ -74,7 +74,7 @@ export function GuidedDemoSection() {
       setActiveMode(mode);
       setResult(null);
 
-      const geo = await resolveGeo();
+      const { geo_source, ...geo } = await resolveGeo();
 
       try {
         const res = await fetch(HADE_ENDPOINTS.decide, {
@@ -83,6 +83,7 @@ export function GuidedDemoSection() {
           body: JSON.stringify({
             ...BASE_CONTEXT,
             geo,
+            geo_source,
             mode,
             settings: { debug: false },
           }),

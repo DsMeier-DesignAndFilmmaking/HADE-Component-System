@@ -13,6 +13,7 @@ import type {
   Signal,
   SignalType,
   DecideRequest,
+  GeoSource,
   Intent,
   EnergyLevel,
   Openness,
@@ -133,6 +134,11 @@ export function useHadeEngine(config: HadeConfig = {}) {
     [updateContext]
   );
 
+  const setGeoSource = useCallback(
+    (source: GeoSource) => updateContext({ geo_source: source }),
+    [updateContext]
+  );
+
   return {
     context,
     updateContext,
@@ -143,6 +149,7 @@ export function useHadeEngine(config: HadeConfig = {}) {
     setGroupSize,
     setRadius,
     setGeo,
+    setGeoSource,
   };
 }
 
@@ -299,7 +306,7 @@ function validateDecidePayload(
  */
 
 export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
-  const { context, updateContext, setGeo, setRadius } = useHadeEngine(config);
+  const { context, updateContext, setGeo, setGeoSource, setRadius } = useHadeEngine(config);
   const { signals, emit } = useSignals();
   const [decision, setDecision] = useState<HadeDecision | null>(null);
   const [response, setResponse] = useState<HadeResponse | null>(null);
@@ -557,8 +564,8 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
       const cleanRejHistory = rawRejHistory
         .filter(
           (r) =>
-            !r.venue_id.startsWith("fallback-") &&
-            !r.venue_id.startsWith("offline-"),
+            typeof r.venue_id !== "string" ||
+            (!r.venue_id.startsWith("fallback-") && !r.venue_id.startsWith("offline-")),
         )
         .slice(-REJECTION_HISTORY_CAP);
       const candidateCategories = mergeCandidateCategories(
@@ -569,6 +576,7 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
       const body: DecidePayloadCandidate = {
         persona:           req?.persona ?? lastPersonaRef.current ?? undefined,
         geo:               req?.geo ?? ctx.geo,
+        geo_source:        req?.geo_source ?? ctx.geo_source,
         situation:         req?.situation ?? ctx.situation,
         state:             req?.state ?? ctx.state,
         social:            req?.social ?? ctx.social,
@@ -725,7 +733,7 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
   );
 
   const pivot = useCallback(
-    (reason: string, target?: Pick<HadeDecision, "id" | "venue_name" | "is_fallback">) => {
+    (reason: string, target?: Pick<HadeDecision, "id" | "venue_name" | "is_fallback"> & { category?: string }) => {
       const rejectionTarget = target ?? decision;
       if (!rejectionTarget) return;
 
@@ -813,6 +821,7 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
         venue_id: rejectionTarget.id,
         venue_name: rejectionTarget.venue_name,
         pivot_reason: reason,
+        ...(rejectionTarget.category ? { category: rejectionTarget.category } : {}),
       };
 
       // Use ref for read — always current even under rapid calls.
@@ -919,6 +928,7 @@ export function useAdaptive(config: HadeConfig = {}): AdaptiveState {
     error,
     isDegraded,
     setGeo,
+    setGeoSource,
     setRadius,
     emit,
     decide,

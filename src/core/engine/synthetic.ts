@@ -145,7 +145,8 @@ const r3 = (v: number) => Math.round(v * 1000) / 1000;
 /**
  * Map a 0–1 composite score to a scannable trust label.
  * Synthetic (Tier 2) is fallback-tier and caps at "Good fit".
- * "Strong pick" is reserved for the LLM (Tier 1) path.
+ * "Strong pick" is reachable for high-scoring synthetic (Tier 1) decisions.
+ * isFallback=true caps at "Good fit" — used only for Tier 2/3 degraded paths.
  */
 function deriveConfidenceLabel(score: number, isFallback = false): ConfidenceLabel {
   if (isFallback) {
@@ -688,6 +689,49 @@ function computeUniquenessBonus(
   return bonus;
 }
 
+// ─── Post-ranking diversity selection ────────────────────────────────────────
+
+/**
+ * Selects the winner from the sorted ranking list, applying one pass of
+ * category diversity to avoid same-category repetition.
+ *
+ * Rules:
+ *   • Activates only after 2+ rejections (first two picks use pure score).
+ *   • If the top candidate's category is in the rejected-categories set, look
+ *     for the highest-scoring alternative in a different category.
+ *   • The alternative must score within 15% of the top score — nearby relevance
+ *     is preserved; a distant café never beats an obvious close restaurant.
+ *   • If no in-threshold alternative exists, the top candidate is returned as-is.
+ */
+function selectWithDiversity(
+  sorted: Array<{ candidate: RankedCandidate; score: number; breakdown: SpontaneousScoreBreakdown }>,
+  rejectedCategories: Set<string>,
+  rejectionCount: number,
+): (typeof sorted)[0] {
+  if (sorted.length < 2 || rejectionCount < 2 || rejectedCategories.size === 0) return sorted[0];
+
+  const top = sorted[0];
+  if (!rejectedCategories.has(top.candidate.category.toLowerCase())) return top;
+
+  const threshold = top.score * 0.85;
+  const alternative = sorted.find(
+    (c, i) =>
+      i > 0 &&
+      c.score >= threshold &&
+      !rejectedCategories.has(c.candidate.category.toLowerCase()),
+  );
+
+  if (alternative) {
+    console.log(
+      `[hade-diversity] category-swap: "${alternative.candidate.obj.title}" ` +
+        `(${alternative.candidate.category}, score=${r3(alternative.score)})` +
+        ` over "${top.candidate.obj.title}" (${top.candidate.category}, score=${r3(top.score)})`,
+    );
+  }
+
+  return alternative ?? top;
+}
+
 /**
  * Scores a SpontaneousObject candidate using the new ranking formula:
  *
@@ -851,6 +895,15 @@ export async function generateSyntheticDecision(
       return { ok: false };
     }
 
+    // ── Guard: unknown geo — skip Places to avoid fake-location results ───────
+    // The route gates Tier 1 before calling here, but this check provides an
+    // additional defence for any future call sites that omit the gate.
+    const geoSourceRaw = (body as { geo_source?: unknown }).geo_source;
+    if (geoSourceRaw === "unknown") {
+      console.warn(`[hade-synthetic ${reqId}] geo_source=unknown — skipping Places fetch`);
+      return { ok: false, reason: "unknown_geo" };
+    }
+
     const intent = extractIntent(body);
     const radius = extractRadius(body);
     const ctx = buildContext(body as Partial<HadeContext>);
@@ -889,6 +942,36 @@ export async function generateSyntheticDecision(
             .filter((id): id is string => typeof id === "string" && id.length > 0)
         : [],
     );
+
+    // Name-based exclusion set — catches SDK-style entries that omit venue_id.
+    // Normalised to lowercase trim for case-insensitive matching.
+    const rejectedNames = new Set<string>(
+      Array.isArray(rawRejections)
+        ? rawRejections.flatMap((entry) => {
+            if (entry && typeof entry === "object" && "venue_name" in entry) {
+              const n = (entry as { venue_name: unknown }).venue_name;
+              return typeof n === "string" && n.trim() ? [n.trim().toLowerCase()] : [];
+            }
+            return [];
+          })
+        : [],
+    );
+
+    // Category exclusion set — populated from RejectionEntry.category (added in Task 4).
+    // Used by selectWithDiversity() to avoid same-category repetition.
+    const rejectedCategories = new Set<string>(
+      Array.isArray(rawRejections)
+        ? rawRejections.flatMap((entry) => {
+            if (entry && typeof entry === "object" && "category" in entry) {
+              const c = (entry as { category: unknown }).category;
+              return typeof c === "string" && c.trim() ? [c.trim().toLowerCase()] : [];
+            }
+            return [];
+          })
+        : [],
+    );
+
+    const rejectionCount = Array.isArray(rawRejections) ? rawRejections.length : 0;
 
     console.log(`[HADE Tier 2] domain=${config.id} intent="${intent ?? "any"}" category="${primaryCategory}"`);
 
@@ -933,9 +1016,16 @@ export async function generateSyntheticDecision(
     }
 
     // ── Rejection pre-filter: strip already-rejected Places before conversion ──
-    const freshCandidates = rejectedIds.size > 0
-      ? filteredPlaces.filter((p) => !rejectedIds.has(p.id))
-      : filteredPlaces;
+    // Two signals: ID (primary, always present from hooks.ts) + normalised name
+    // (fallback for SDK-style entries that omit venue_id).
+    const freshCandidates =
+      rejectedIds.size > 0 || rejectedNames.size > 0
+        ? filteredPlaces.filter(
+            (p) =>
+              !rejectedIds.has(p.id) &&
+              !rejectedNames.has(p.name.toLowerCase().trim()),
+          )
+        : filteredPlaces;
 
     console.log("[HADE FRESH COUNT]", freshCandidates.length);
 
@@ -960,11 +1050,16 @@ export async function generateSyntheticDecision(
 
     // ── Step 3: HARD EXCLUSION of rejected objects ────────────────────────────
     // "Not This" must guarantee a rejected venue is NEVER returned again in the
-    // same session. rejectedIds was extracted early and already applied to Places;
-    // this second pass catches any UGC candidates that slipped through the merge.
-    const admittedCandidates = rejectedIds.size > 0
-      ? mergedCandidates.filter((candidate) => !rejectedIds.has(candidate.obj.id))
-      : mergedCandidates;
+    // same session. ID filter is the primary signal; name filter is the fallback
+    // for SDK-style entries and any UGC candidate that slipped through the merge.
+    const admittedCandidates =
+      rejectedIds.size > 0 || rejectedNames.size > 0
+        ? mergedCandidates.filter(
+            (candidate) =>
+              !rejectedIds.has(candidate.obj.id) &&
+              !rejectedNames.has(candidate.obj.title.toLowerCase().trim()),
+          )
+        : mergedCandidates;
 
     if (admittedCandidates.length === 0) {
       console.warn(
@@ -1007,6 +1102,8 @@ export async function generateSyntheticDecision(
     // ── Step 4.5: Apply rejection sensitivity ────────────────────────────────
     // Each rejection entry's pivot_reason may shift scoring weights so the
     // engine steers away from the same failure mode on subsequent requests.
+    // "Not This" entries also ratchet up exploration_bias, making successive
+    // rankings progressively less deterministic.
     let effectiveWeights = { ...config.scoringWeights };
     if (Array.isArray(rawRejections)) {
       for (const entry of rawRejections) {
@@ -1021,20 +1118,25 @@ export async function generateSyntheticDecision(
       }
     }
 
+    // If any transformer wrote exploration_bias into the weights, use it;
+    // otherwise fall back to the domain's static explorationBias.
+    const effectiveExplorationBias =
+      effectiveWeights.exploration_bias ?? config.explorationBias;
+
     // ── Step 5: Score and rank ────────────────────────────────────────────────
     console.log("[HADE SCORING INPUT COUNT]", timeWindowCandidates.length);
     const sorted = await rankSpontaneousObjects(
       timeWindowCandidates,
       now,
       effectiveWeights,
-      config.explorationBias,
+      effectiveExplorationBias,
       config.id,
       ctx.social?.group_size,
       categories,
     );
 
-    const best = sorted[0];
-    if (!best) return { ok: false };
+    if (!sorted[0]) return { ok: false };
+    const best = selectWithDiversity(sorted, rejectedCategories, rejectionCount);
 
     if (process.env.NODE_ENV !== "production") {
       console.log("[HADE TOP RESULT TYPES]", best.candidate.types ?? []);
@@ -1080,11 +1182,24 @@ export async function generateSyntheticDecision(
         { title: bestObj.title, category: bestCategory, distance_meters: bestDistance, vibe_tag: bestObj.vibe_tag, address: best.candidate.address },
         ctx,
       ),
-      confidence: 0.65,
-      confidence_label: deriveConfidenceLabel(best.breakdown.finalScore, true),
+      confidence: best.breakdown.finalScore,
+      confidence_label: deriveConfidenceLabel(best.breakdown.finalScore, false),
       situation_summary: situationSummary,
       ...(best.candidate.address ? { neighborhood: best.candidate.address } : {}),
       ...ugcMeta,
+      ...(process.env.NODE_ENV !== "production"
+        ? {
+            score_debug: {
+              distance_fit:     r3(best.breakdown.distanceScore),
+              timing_fit:       r3(best.breakdown.timeProximityScore),
+              intent_fit:       r3(best.breakdown.vibeScore + best.breakdown.lensCategoryBoost),
+              novelty:          r3(best.breakdown.uniquenessBonus),
+              social_signal:    r3(best.breakdown.socialScore),
+              fallback_penalty: 0,
+              final_score:      r3(best.breakdown.finalScore),
+            },
+          }
+        : {}),
     };
 
     if (process.env.NODE_ENV !== "production") {

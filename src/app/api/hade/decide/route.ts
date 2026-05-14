@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { serverEnv } from "@/lib/env/server";
 import { generateSyntheticDecision } from "@/core/engine/synthetic";
-import type { GeoLocation, LocationNode, ScoringWeights, SpontaneousObject } from "@/types/hade";
+import type { GeoLocation, GeoSource, LocationNode, ScoringWeights, SpontaneousObject, HadeDebugPayload, DecideResponse } from "@/types/hade";
 import { getLocationWeights, locationNodeExists, createLocationNode } from "@/lib/hade/weights";
 import { setOfflineCache, getValidCache } from "@/lib/hade/cache";
 import type { CacheEntry, CachedVenue, CachedLocationNode } from "@/lib/hade/cache";
@@ -15,11 +15,13 @@ export const runtime = "nodejs";
 
 import { computeConfidence } from "@/lib/hade/confidence";
 import { buildExplanation } from "@/lib/hade/explanation";
+import { assertDecisionValid, extractSafeCopyPatch } from "./validateDecision";
 
 
 // ─── Configuration ───────────────────────────────────────────────────────────
 
 const UPSTREAM_TIMEOUT_MS = 8000;
+const COPY_ENHANCE_TIMEOUT_MS = 1500;
 
 // ─── Stage result types ──────────────────────────────────────────────────────
 
@@ -44,6 +46,49 @@ type UpstreamResult =
 async function getDecisionNode(venueId: string): Promise<LocationNode | null> {
   const [node] = await getLocationWeights([venueId]);
   return node ?? null;
+}
+
+// ─── Deterministic provenance ────────────────────────────────────────────────
+
+type ProvenanceSource = "places" | "ugc" | "synthetic" | "offline" | "static";
+
+/**
+ * Derives the authoritative source label for the winning candidate and
+ * packages it with the composite score and ranking reason. Added to every
+ * response that comes from the deterministic engine (Tier 1 and cold-start).
+ *
+ * source resolution:
+ *   ugc_event type         → "ugc"
+ *   google_places source   → "places"
+ *   everything else        → "synthetic"
+ */
+function buildDecisionProvenance(result: {
+  data: DecideResponse;
+  debugPayload: HadeDebugPayload;
+}): {
+  candidate_id: string;
+  source: ProvenanceSource;
+  score: number | null;
+  ranking_reason: string | null;
+} {
+  const decision = result.data.decision;
+
+  let source: ProvenanceSource = "synthetic";
+  if (decision.type === "ugc_event") {
+    source = "ugc";
+  } else if (
+    decision.source === "google_places" ||
+    decision.source === "google_places_fallback"
+  ) {
+    source = "places";
+  }
+
+  return {
+    candidate_id: decision.id,
+    source,
+    score: result.debugPayload.scoring_breakdown?.[0]?.final_score ?? null,
+    ranking_reason: result.debugPayload.final_reasoning ?? null,
+  };
 }
 
 // ─── Degraded-state observability ────────────────────────────────────────────
@@ -155,11 +200,15 @@ function buildStaticFallbackTitles(body?: Record<string, unknown> | null): {
 async function buildFallbackCandidates(
   geo: GeoLocation | null,
   reqId: string,
+  geoSource: GeoSource,
   body?: Record<string, unknown> | null,
 ): Promise<SpontaneousObject[]> {
   const now = Date.now();
 
-  if (geo) {
+  // Only call Places when we have a verified real location. "unknown" geo means
+  // the coordinate is a fake default — fetching Places with it would return
+  // venues from the wrong city entirely.
+  if (geo && geoSource !== "unknown") {
     try {
       console.log("[HADE TRACE] Places fetch executing at: src/app/api/hade/decide/route.ts", {
         geo,
@@ -229,42 +278,48 @@ export async function POST(request: NextRequest) {
     const parsed = await safeParseBody(request, reqId);
     if (!parsed.ok) {
       console.log("[HADE FALLBACK TRIGGER]", { reason: "INVALID_RESPONSE", error: parsed.error });
-      return await fallbackResponse(reqId, "parse_error", parsed.error, null);
+      return await fallbackResponse(reqId, "parse_error", parsed.error, null, "unknown");
     }
 
     // Stage 2: Validate minimal shape
     const validated = validatePayload(parsed.body, reqId);
     const geoHint = extractGeo(parsed.body);
+    const geoSource = extractGeoSource(parsed.body);
     if (!validated.ok) {
       console.log("[HADE FALLBACK TRIGGER]", { reason: "INVALID_RESPONSE", error: validated.error });
-      return await fallbackResponse(reqId, "validation_error", validated.error, geoHint, parsed.body);
+      return await fallbackResponse(reqId, "validation_error", validated.error, geoHint, geoSource, parsed.body);
     }
+
+    console.log(`[hade-decide ${reqId}]   geo_source=${geoSource}`);
 
     // Stage 3: Inject LocationNode weights for any node_hints in the body
     const enrichedBody = await enrichWithNodeWeights(parsed.body, reqId);
 
     // Stage 4+5: Generate the decision (upstream call + success/fallback routing)
-    return await generateDecision(enrichedBody, reqId, geoHint, startedAt);
+    return await generateDecision(enrichedBody, reqId, geoHint, geoSource, startedAt);
   } catch (err) {
     // Belt-and-braces — should be unreachable because every stage catches its own errors.
     const detail = err instanceof Error ? err.message : String(err);
     console.error(`[hade-decide ${reqId}] ✗ unexpected throw: ${detail}`);
     console.log("[HADE FALLBACK TRIGGER]", { reason: "LLM_ERROR", error: detail });
-    return await fallbackResponse(reqId, "unexpected_error", detail, null);
+    return await fallbackResponse(reqId, "unexpected_error", detail, null, "unknown");
   }
 }
 
 // ─── Decision generation ─────────────────────────────────────────────────────
 
 /**
- * Three-tier decision pipeline:
+ * Three-tier decision pipeline (deterministic-first):
  *
- *  Cold-start — Return fallback SpontaneousObject immediately when the request
- *               carries no intent, signals, or rejection history.
- *  Tier 1 — Upstream LLM  : forward to HADE_UPSTREAM_URL, inject source tag
- *  Tier 2 — Synthetic     : build a grounded decision from real Places API results
- *  Tier 2.5 — Offline cache: scored cached venues when Tiers 1-2 both fail
+ *  Cold-start — real-world context → synthetic engine → Places/UGC → ranking
+ *               → deterministic card (no intent / no signals / no rejections)
+ *  Tier 1 — Synthetic     : Places/UGC candidates → ranking/filtering
+ *                           → selected candidate (authoritative for ALL paths)
+ *  Tier 2 — Offline cache : scored cached venues when Tier 1 fails
  *  Tier 3 — Static fallback: guaranteed non-null SpontaneousObject, always 200
+ *
+ * Upstream/LLM is never the primary decision authority. It may be used for
+ * optional copy enhancement after candidate selection in a future iteration.
  *
  * Always returns a valid Response with a non-null decision — never throws past
  * this boundary and never emits a 503.
@@ -273,6 +328,7 @@ async function generateDecision(
   body: Record<string, unknown>,
   reqId: string,
   geoHint: GeoLocation | null,
+  geoSource: GeoSource,
   startedAt: number,
 ): Promise<Response> {
   try {
@@ -289,7 +345,8 @@ async function generateDecision(
     if (isColdStart) {
       console.log(`[hade-decide ${reqId}] cold start — attempting Places fetch before fallback`);
 
-      if (geoHint) {
+      // Skip Places when geo is unknown — avoids returning SF venues to non-SF users.
+      if (geoHint && geoSource !== "unknown") {
         let coldStartSynthetic: Awaited<ReturnType<typeof generateSyntheticDecision>>;
         try {
           coldStartSynthetic = await generateSyntheticDecision(body, reqId, geoHint);
@@ -300,37 +357,59 @@ async function generateDecision(
         }
 
         if (coldStartSynthetic.ok) {
-          const elapsed = Date.now() - startedAt;
-          console.log(
-            `[hade-decide ${reqId}] ✓ cold-start Places ok in ${elapsed}ms` +
-              ` — ${coldStartSynthetic.objects.length} object(s)`,
+          const decisionValid = assertDecisionValid(
+            coldStartSynthetic.data.decision,
+            coldStartSynthetic.data.decision.id,
+            reqId,
           );
-          const decisionNode = await getDecisionNode(coldStartSynthetic.data.decision.id);
-          const debugMode =
-            (body as { settings?: { debug?: unknown } }).settings?.debug === true;
-          const enrichedColdStart = {
-            ...coldStartSynthetic.data,
-            source: "cold_start_synthetic",
-            decision_node: decisionNode,
-            ...(debugMode ? { debug: coldStartSynthetic.debugPayload } : {}),
-            ...(coldStartSynthetic.explanation_signals
-              ? { explanation_signals: coldStartSynthetic.explanation_signals }
-              : {}),
-          };
-          void writeCacheFromSynthetic(coldStartSynthetic.objects, body);
-          return withDegradedSignal(enrichedColdStart, {
-            status: 200,
-            headers: {
-              "Content-Type": "application/json",
-              "x-hade-source": "cold_start_synthetic",
-            },
+
+          if (decisionValid) {
+            const elapsed = Date.now() - startedAt;
+            console.log(
+              `[hade-decide ${reqId}] ✓ cold-start Places ok in ${elapsed}ms` +
+                ` — ${coldStartSynthetic.objects.length} object(s)`,
+            );
+            const decisionNode = await getDecisionNode(coldStartSynthetic.data.decision.id);
+            const debugMode =
+              (body as { settings?: { debug?: unknown } }).settings?.debug === true;
+            const enrichedColdStart = {
+              ...coldStartSynthetic.data,
+              source: "cold_start_synthetic",
+              decision_node: decisionNode,
+              decision_provenance: buildDecisionProvenance(coldStartSynthetic),
+              ...(debugMode ? { debug: coldStartSynthetic.debugPayload } : {}),
+              ...(coldStartSynthetic.explanation_signals
+                ? { explanation_signals: coldStartSynthetic.explanation_signals }
+                : {}),
+            };
+            void writeCacheFromSynthetic(coldStartSynthetic.objects, body);
+            return withDegradedSignal(enrichedColdStart, {
+              status: 200,
+              headers: {
+                "Content-Type": "application/json",
+                "x-hade-source": "cold_start_synthetic",
+              },
+            });
+          }
+
+          console.log("[HADE DECISION VALIDATION] fallback_used", {
+            reqId,
+            decision_id: coldStartSynthetic.data.decision.id,
+            tier: "cold_start",
           });
+          console.warn(
+            `[hade-decide ${reqId}] ✗ cold-start decision invalid, falling to cold_start_fallback`,
+          );
         }
       }
 
-      console.warn("[HADE] Falling back due to no places");
+      if (geoSource === "unknown") {
+        console.warn(`[hade-decide ${reqId}] cold start — geo_source=unknown; skipping Places to avoid fake-location results`);
+      } else {
+        console.warn("[HADE] Falling back due to no places");
+      }
       console.log(`[hade-decide ${reqId}] cold start — no places available, returning cold_start_fallback`);
-      const candidates = await buildFallbackCandidates(geoHint, reqId, body);
+      const candidates = await buildFallbackCandidates(geoHint, reqId, geoSource, body);
       return new Response(
         JSON.stringify({
           decision: { ...candidates[0], is_fallback: true },
@@ -349,88 +428,89 @@ async function generateDecision(
       );
     }
 
-    // ── Tier 1: Upstream LLM ─────────────────────────────────────────────────
-    let upstream: UpstreamResult;
-    try {
-      upstream = await callUpstream(body, reqId);
-    } catch (err) {
-      const detail = err instanceof Error ? err.message : String(err);
-      console.warn(`[hade-decide ${reqId}] ✗ callUpstream threw unexpectedly: ${detail}`);
-      console.log("[HADE FALLBACK TRIGGER]", { reason: "TIMEOUT", error: detail });
-      upstream = { ok: false, reason: "upstream_unreachable", detail };
-    }
-
-    if (upstream.ok) {
-      const elapsed = Date.now() - startedAt;
-      console.log(`[hade-decide ${reqId}] ✓ Tier 1 (llm) ok in ${elapsed}ms`);
-
-      // Upstream body is validated JSON (checked in callUpstream) — safe to parse.
-      const data = JSON.parse(upstream.text) as Record<string, unknown>;
-      const decisionId = (data as { decision?: { id?: unknown } }).decision?.id;
-      const decisionNode =
-        typeof decisionId === "string" ? await getDecisionNode(decisionId) : null;
-      const enriched = { ...data, source: "llm", fallback_places: [], decision_node: decisionNode };
-
-      return withDegradedSignal(enriched, {
-        status: 200,
-        headers: {
-          "Content-Type": "application/json",
-          "x-hade-source": "llm",
-        },
-      });
-    }
-
-    console.log("[HADE FALLBACK TRIGGER]", { reason: "LLM_ERROR", error: upstream.detail ?? null });
-    console.warn(
-      `[hade-decide ${reqId}] ↓ Tier 1 failed (${upstream.reason}), trying Tier 2 (synthetic)`,
-    );
-
-    // ── Tier 2: Synthetic (real Places API candidates) ────────────────────────
+    // ── Tier 1: Deterministic candidate selection (Places/UGC → ranking) ──────
+    // Skipped when geo_source is "unknown" — no real coordinates means Places
+    // would return venues near a fake default location (e.g. San Francisco).
     let synthetic: Awaited<ReturnType<typeof generateSyntheticDecision>>;
-    try {
-      synthetic = await generateSyntheticDecision(body, reqId, geoHint);
-    } catch (err) {
-      const detail = err instanceof Error ? err.message : String(err);
-      console.warn(`[hade-decide ${reqId}] ✗ generateSyntheticDecision threw: ${detail}`);
-      synthetic = { ok: false };
+    if (geoSource === "unknown") {
+      console.warn(`[hade-decide ${reqId}] ↓ Tier 1 skipped — geo_source=unknown (no real location)`);
+      synthetic = { ok: false, reason: "unknown_geo" };
+    } else {
+      try {
+        synthetic = await generateSyntheticDecision(body, reqId, geoHint);
+      } catch (err) {
+        const detail = err instanceof Error ? err.message : String(err);
+        console.warn(`[hade-decide ${reqId}] ✗ generateSyntheticDecision threw: ${detail}`);
+        synthetic = { ok: false };
+      }
     }
 
     if (synthetic.ok) {
-      const elapsed = Date.now() - startedAt;
-      console.log(
-        `[hade-decide ${reqId}] ✓ Tier 2 (synthetic) ok in ${elapsed}ms` +
-          ` — ${synthetic.objects.length} object(s)`,
+      const decisionValid = assertDecisionValid(
+        synthetic.data.decision,
+        synthetic.data.decision.id,
+        reqId,
       );
 
-      const decisionNode = await getDecisionNode(synthetic.data.decision.id);
-      const debugMode =
-        (body as { settings?: { debug?: unknown } }).settings?.debug === true;
-      const enrichedSyntheticData = {
-        ...synthetic.data,
-        decision_node: decisionNode,
-        ...(debugMode ? { debug: synthetic.debugPayload } : {}),
-        ...(synthetic.explanation_signals
-          ? { explanation_signals: synthetic.explanation_signals }
-          : {}),
-      };
+      if (decisionValid) {
+        const elapsed = Date.now() - startedAt;
+        console.log(
+          `[hade-decide ${reqId}] ✓ Tier 1 (synthetic) ok in ${elapsed}ms` +
+            ` — ${synthetic.objects.length} object(s)`,
+        );
 
-      // ── Tier 2.5: Write offline cache (fire-and-forget, non-blocking) ────────
-      void writeCacheFromSynthetic(synthetic.objects, body);
+        const decisionNode = await getDecisionNode(synthetic.data.decision.id);
+        const debugMode =
+          (body as { settings?: { debug?: unknown } }).settings?.debug === true;
 
-      return withDegradedSignal(enrichedSyntheticData, {
-        status: 200,
-        headers: {
-          "Content-Type": "application/json",
-          "x-hade-source": "synthetic",
-        },
+        // ── Copy enhancement (non-blocking, silent fallback) ─────────────────
+        const copyPatch = await enhanceCopyWithLLM(synthetic.data.decision, body, reqId);
+
+        const enrichedData = {
+          ...synthetic.data,
+          decision: copyPatch
+            ? { ...synthetic.data.decision, ...copyPatch }
+            : synthetic.data.decision,
+          decision_node: decisionNode,
+          decision_provenance: buildDecisionProvenance(synthetic),
+          ...(debugMode ? { debug: synthetic.debugPayload } : {}),
+          ...(synthetic.explanation_signals
+            ? { explanation_signals: synthetic.explanation_signals }
+            : {}),
+        };
+
+        void writeCacheFromSynthetic(synthetic.objects, body);
+
+        return withDegradedSignal(enrichedData, {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+            "x-hade-source": "synthetic",
+            ...(copyPatch ? { "x-hade-copy-enhanced": "1" } : {}),
+          },
+        });
+      }
+
+      // Engine produced a result but the decision failed validation — fall through
+      console.warn("[HADE] Falling back due to validation failure");
+      console.log("[HADE DECISION VALIDATION] fallback_used", {
+        reqId,
+        decision_id: synthetic.data.decision.id,
+        tier: "tier1",
       });
+      console.warn(
+        `[hade-decide ${reqId}] ↓ Tier 1 decision invalid, trying Tier 2 (offline cache)`,
+      );
+    } else {
+      // Engine itself failed to produce any candidate
+      console.warn("[HADE] Falling back due to no places");
+      console.log("[HADE FALLBACK TRIGGER]", { reason: "SYNTHETIC_FAILED", error: synthetic.reason ?? null });
+      console.warn(
+        `[hade-decide ${reqId}] ↓ Tier 1 (synthetic) failed, trying Tier 2 (offline cache)`,
+      );
     }
 
-    console.warn("[HADE] Falling back due to no places");
-    console.log("[HADE FALLBACK TRIGGER]", { reason: "EMPTY_DECISION", error: null });
-    console.warn(`[hade-decide ${reqId}] ↓ Tier 2 failed, trying Tier 2.5 (offline cache)`);
-
-    // ── Tier 2.5: Serve from offline cache ───────────────────────────────────
+    // ── Tier 2: Offline cache ─────────────────────────────────────────────────
     let cached: CacheEntry | null = null;
     try {
       cached = await getValidCache();
@@ -439,26 +519,34 @@ async function generateDecision(
       console.warn(`[hade-decide ${reqId}] ✗ getValidCache threw: ${detail}`);
     }
 
-    if (cached && cached.venues.length > 0 && geoHint) {
+    // Tier 2 requires real geo to find nearby cached venues — skip when unknown.
+    if (cached && cached.venues.length > 0 && geoHint && geoSource !== "unknown") {
       const offlineResponse = buildOfflineResponse(cached, geoHint, reqId, body);
       if (offlineResponse) {
         const elapsed = Date.now() - startedAt;
-        console.log(`[hade-decide ${reqId}] ✓ Tier 2.5 (offline_cache) ok in ${elapsed}ms`);
+        console.log(`[hade-decide ${reqId}] ✓ Tier 2 (offline_cache) ok in ${elapsed}ms`);
         return offlineResponse;
       }
     }
 
     console.warn("[HADE] Falling back due to no places");
     console.log("[HADE FALLBACK TRIGGER]", { reason: "EMPTY_DECISION", error: null });
-    console.warn(`[hade-decide ${reqId}] ↓ Tier 2.5 failed, falling to Tier 3 (static)`);
+    console.warn(`[hade-decide ${reqId}] ↓ Tier 2 (offline_cache) failed, falling to Tier 3 (static)`);
 
     // ── Tier 3: Static fallback — always 200, never null ─────────────────────
-    return await fallbackResponse(reqId, upstream.reason, upstream.detail, geoHint, body);
+    return await fallbackResponse(
+      reqId,
+      "synthetic_failed",
+      !synthetic.ok ? (synthetic.reason ?? "no_candidates") : "validation_failed",
+      geoHint,
+      geoSource,
+      body,
+    );
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
     console.error(`[hade-decide ${reqId}] ✗ generateDecision threw: ${detail}`);
     console.log("[HADE FALLBACK TRIGGER]", { reason: "LLM_ERROR", error: detail });
-    return await fallbackResponse(reqId, "decision_error", detail, geoHint, body);
+    return await fallbackResponse(reqId, "decision_error", detail, geoHint, geoSource, body);
   }
 }
 
@@ -613,7 +701,132 @@ function extractGeo(body: Record<string, unknown> | null | undefined): GeoLocati
   return { lat, lng };
 }
 
-// ─── Stage 3: Upstream call ──────────────────────────────────────────────────
+function extractGeoSource(body: Record<string, unknown> | null | undefined): GeoSource {
+  if (!body) return "unknown";
+  const raw = (body as { geo_source?: unknown }).geo_source;
+  if (raw === "browser" || raw === "ip" || raw === "stored" || raw === "scenario") return raw;
+  return "unknown";
+}
+
+// ─── Stage 3: Copy enhancement ───────────────────────────────────────────────
+
+/**
+ * Calls the OpenAI chat completions API with a constrained prompt that contains
+ * only copy-safe context (venue name, category, distance, mode, intent).
+ *
+ * The LLM may return ONLY: rationale, why_now, why_this, decision_frame.
+ * Any attempt to change venue identity is caught by extractSafeCopyPatch.
+ * Returns null on any failure so the caller uses deterministic copy unchanged.
+ */
+async function enhanceCopyWithLLM(
+  decision: import("@/types/hade").HadeDecision,
+  body: Record<string, unknown>,
+  reqId: string,
+): Promise<Pick<import("@/types/hade").HadeDecision, "rationale" | "why_now" | "why_this" | "decision_frame"> | null> {
+  if (!serverEnv.openAiApiKey) return null;
+
+  const mode    = (body as { mode?: unknown }).mode;
+  const intent  = (body as { situation?: { intent?: unknown } }).situation?.intent;
+
+  const systemPrompt =
+    "You are a terse, evocative copy writer for a spontaneous-decision app.\n" +
+    "Your only job: write contextually-grounded copy for an already-selected venue card.\n" +
+    "RULES — you MUST follow all of them:\n" +
+    "• Do NOT change the venue name, category, or invent facts not provided.\n" +
+    "• rationale: 1–2 sentences (≤280 chars) referencing a specific context factor.\n" +
+    "• why_now: ≤120 chars explaining what makes this right at this exact moment.\n" +
+    "• why_this: ≤60 chars, a scannable micro-reason (≤12 words).\n" +
+    "• decision_frame: 1 sentence (≤180 chars) framing this as a recommendation.\n" +
+    "Respond ONLY with valid JSON containing these four keys. No markdown, no extra keys.";
+
+  const userContent = JSON.stringify({
+    venue:          decision.venue_name,
+    category:       decision.category,
+    distance_meters: decision.distance_meters,
+    mode:           typeof mode   === "string" ? mode   : "dining",
+    intent:         typeof intent === "string" ? intent : null,
+    current_copy: {
+      rationale:      decision.rationale,
+      why_now:        decision.why_now,
+    },
+  });
+
+  let response: Response;
+  try {
+    response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method:  "POST",
+      headers: {
+        "Content-Type":  "application/json",
+        "Authorization": `Bearer ${serverEnv.openAiApiKey}`,
+      },
+      body: JSON.stringify({
+        model:           "gpt-4o-mini",
+        temperature:     0.7,
+        max_tokens:      260,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user",   content: userContent  },
+        ],
+        response_format: { type: "json_object" },
+      }),
+      cache:  "no-store",
+      signal: AbortSignal.timeout(COPY_ENHANCE_TIMEOUT_MS),
+    });
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    console.warn(`[hade-copy-enhance ${reqId}] ✗ request failed (${detail})`);
+    return null;
+  }
+
+  if (!response.ok) {
+    console.warn(`[hade-copy-enhance ${reqId}] ✗ OpenAI ${response.status}`);
+    return null;
+  }
+
+  let rawContent: string;
+  try {
+    const data = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
+    rawContent = data.choices?.[0]?.message?.content ?? "";
+  } catch {
+    console.warn(`[hade-copy-enhance ${reqId}] ✗ response body parse failed`);
+    return null;
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(rawContent);
+  } catch {
+    console.warn(`[hade-copy-enhance ${reqId}] ✗ content is not JSON`);
+    return null;
+  }
+
+  if (typeof parsed !== "object" || parsed === null) return null;
+
+  const patch = extractSafeCopyPatch(decision.id, parsed as Record<string, unknown>, reqId);
+  if (!patch) return null;
+
+  // Enforce character limits per field — drop any field that exceeds the cap
+  // rather than truncating (truncation can produce grammatically broken copy).
+  const validated: Partial<typeof patch> = {};
+  if (patch.rationale      && patch.rationale.length      <=  280) validated.rationale      = patch.rationale;
+  if (patch.why_now        && patch.why_now.length        <=  120) validated.why_now        = patch.why_now;
+  if (patch.why_this       && patch.why_this.length       <=   60) validated.why_this       = patch.why_this;
+  if (patch.decision_frame && patch.decision_frame.length <=  180) validated.decision_frame = patch.decision_frame;
+
+  const appliedFields = Object.keys(validated);
+  if (appliedFields.length === 0) {
+    console.warn(`[hade-copy-enhance ${reqId}] ✗ all fields exceeded length limits — keeping deterministic copy`);
+    return null;
+  }
+
+  console.log(`[hade-copy-enhance ${reqId}] ✓ copy patched`, { fields: appliedFields });
+  return validated as Pick<
+    import("@/types/hade").HadeDecision,
+    "rationale" | "why_now" | "why_this" | "decision_frame"
+  >;
+}
+
+// ─── Stage 4: Upstream call (reserved) ──────────────────────────────────────
 
 async function callUpstream(
   body: Record<string, unknown>,
@@ -696,9 +909,10 @@ async function fallbackResponse(
   reason: string,
   detail: string,
   geoHint: GeoLocation | null,
+  geoSource: GeoSource,
   bodyHint?: Record<string, unknown> | null,
 ): Promise<Response> {
-  const candidates = await buildFallbackCandidates(geoHint, reqId, bodyHint);
+  const candidates = await buildFallbackCandidates(geoHint, reqId, geoSource, bodyHint);
   // candidates.length >= 1 guaranteed by buildFallbackCandidates
   const body = {
     decision: { ...candidates[0], is_fallback: true },

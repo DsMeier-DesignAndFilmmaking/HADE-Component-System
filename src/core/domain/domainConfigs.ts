@@ -11,6 +11,12 @@ export type ScoringWeights = {
   trust:    number;
   /** UGC vibe weight: recency-decayed mean of weight_map entries (0.1–0.9). Defaults to 0.05. */
   vibe?:    number;
+  /**
+   * Overrides the domain's `explorationBias` when set by a rejectionSensitivity
+   * transformer. Each "Not This" rejection increments this, making successive
+   * rankings progressively less deterministic.
+   */
+  exploration_bias?: number;
 };
 
 export type WeightTransformer = (w: ScoringWeights) => ScoringWeights;
@@ -141,6 +147,15 @@ const DINING_CONFIG: ExtendedDomainConfig = {
       distance: Math.max(0.35, w.distance - 0.05),
       social:   Math.max(0.05, w.social   - 0.05),
     }),
+    // Generic "try something else" rejection — shift dominant weight slightly and
+    // increase exploration so successive calls diverge from the prior result.
+    "Not This": (w) => ({
+      ...w,
+      distance: Math.max(0.30, w.distance - 0.05),
+      trust:    Math.min(0.50, w.trust    + 0.03),
+      social:   Math.min(0.15, w.social   + 0.02),
+      exploration_bias: Math.min(0.25, (w.exploration_bias ?? 0.05) + 0.08),
+    }),
   },
 
   narrative(place, ctx) {
@@ -228,6 +243,13 @@ const SOCIAL_CONFIG: ExtendedDomainConfig = {
       trust:  Math.min(0.30, w.trust  + 0.10),
       social: Math.max(0.40, w.social - 0.10),
     }),
+    "Not This": (w) => ({
+      ...w,
+      social:   Math.max(0.40, w.social   - 0.10),
+      time:     Math.min(0.30, w.time     + 0.05),
+      vibe:     Math.min(0.20, (w.vibe ?? 0.05) + 0.05),
+      exploration_bias: Math.min(0.35, (w.exploration_bias ?? 0.15) + 0.08),
+    }),
   },
 
   narrative(place, ctx) {
@@ -309,6 +331,12 @@ const TRAVEL_CONFIG: ExtendedDomainConfig = {
       trust:    Math.min(0.80, w.trust    + 0.10),
       distance: Math.max(0.10, w.distance - 0.05),
       social:   Math.max(0.05, w.social   - 0.05),
+    }),
+    "Not This": (w) => ({
+      ...w,
+      trust:    Math.max(0.45, w.trust    - 0.05),
+      distance: Math.min(0.30, w.distance + 0.05),
+      exploration_bias: Math.min(0.30, (w.exploration_bias ?? 0.10) + 0.08),
     }),
   },
 

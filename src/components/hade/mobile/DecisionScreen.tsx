@@ -839,7 +839,7 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
   }
 
   return (
-    <div className="mx-auto flex min-h-[100dvh] w-full max-w-[430px] flex-col bg-background px-4 pb-[210px] pt-4 min-[390px]:px-5 min-[390px]:pt-5">
+    <div className="mx-auto flex min-h-[100dvh] w-full max-w-[430px] flex-col bg-background px-4 pb-[168px] pt-4 min-[390px]:px-5 min-[390px]:pt-5">
       {status === "error" && (
         <div className="flex flex-1 flex-col items-center justify-center gap-4">
           <p className="text-base text-ink/70">Something got in the way.</p>
@@ -961,9 +961,17 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
             </button>
           </div>
 
-          {/* Overflow panel — Compare Modes + Add Note */}
+          {/* Overflow panel — Refine + Compare Modes + Start Meetup */}
           {overflowOpen && (
-            <div className="grid grid-cols-2 gap-1.5">
+            <div className="flex flex-col gap-1.5">
+              <button
+                type="button"
+                onClick={() => { setRefineOpen(true); setOverflowOpen(false); }}
+                disabled={!displayDecision}
+                className="h-9 rounded-xl border border-line bg-white/60 px-3 text-[11px] font-medium text-ink/60 transition-colors active:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-line disabled:opacity-40"
+              >
+                Refine
+              </button>
               <button
                 type="button"
                 onClick={() => { setShowCompareModes(true); setOverflowOpen(false); }}
@@ -1006,26 +1014,6 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
           >
             Navigate
           </button>
-
-          {/* SECONDARY + TERTIARY */}
-          <div className="grid grid-cols-2 gap-1.5">
-            <button
-              type="button"
-              onClick={() => setRefineOpen(true)}
-              disabled={!displayDecision}
-              className="h-9 rounded-xl border border-line bg-white/60 text-[13px] font-semibold text-ink transition-colors active:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-line disabled:opacity-40"
-            >
-              Refine
-            </button>
-            <button
-              type="button"
-              onClick={handleSave}
-              disabled={!displayDecision}
-              className="h-9 rounded-xl border border-line bg-white/60 text-[13px] font-medium text-ink/50 transition-colors active:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-line disabled:opacity-40"
-            >
-              Save
-            </button>
-          </div>
 
           {/* REJECTION — text-only, lowest visual weight */}
           <button
