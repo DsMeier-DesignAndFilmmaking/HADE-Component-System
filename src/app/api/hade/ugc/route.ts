@@ -20,6 +20,7 @@ const LOCATION_SOURCES = new Set<NonNullable<UGCEntity["location_source"]>>([
   "browser_geolocation",
   "fallback_geo",
   "manual",
+  "map_pin",
   "place_picker",
   "unknown",
 ]);

@@ -891,8 +891,6 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
                     confirmationState={
                       createdDecisionOverride?.id === displayDecision.id ? "created" : undefined
                     }
-                    onJoin={handleJoin}
-                    onInterested={handleInterested}
                     onAddVibe={handleVibeText}
                   />
                 </ErrorBoundary>

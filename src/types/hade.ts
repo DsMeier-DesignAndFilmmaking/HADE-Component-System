@@ -136,6 +136,11 @@ export type GeoSource = "browser" | "ip" | "stored" | "scenario" | "unknown";
 
 // ─── Rejection History ────────────────────────────────────────────────────────
 
+export interface SurfacedEntry {
+  venue_id: string;
+  venue_name: string;
+}
+
 export interface RejectionEntry {
   venue_id: string;
   venue_name: string;
@@ -206,6 +211,7 @@ export interface DecideRequest {
   session_id?: string | null;
   signals?: Signal[];
   rejection_history?: RejectionEntry[];
+  surfaced_history?: SurfacedEntry[];
   /**
    * How the geo coordinate was obtained. "unknown" tells the server to skip
    * Google Places and UGC fetches — preventing fake SF recommendations when no
@@ -865,7 +871,7 @@ export interface UGCEntity {
   /** Optional short display label for the UGC location. */
   location_label?: string;
   /** How the UGC location was obtained. Never infer browser_geolocation from 0,0. */
-  location_source?: "browser_geolocation" | "fallback_geo" | "manual" | "place_picker" | "unknown";
+  location_source?: "browser_geolocation" | "fallback_geo" | "manual" | "map_pin" | "place_picker" | "unknown";
   /** Optional place provider id, e.g. Google Place ID. */
   place_id?: string;
 }
