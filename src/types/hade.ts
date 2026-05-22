@@ -93,6 +93,7 @@ export type TravelerStateLabel =
   | "open_to_surprise"
   | "recovering"
   | "socializing"
+  | "time_constrained"
   | "low_energy"
   | "high_energy"
   | "comfort_seeking"
