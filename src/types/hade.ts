@@ -84,6 +84,52 @@ export type GroupType = "solo" | "couple" | "friends" | "family" | "work";
  */
 export type Budget = "free" | "low" | "medium" | "high" | "unlimited";
 
+// ─── Additive Decision Engines ───────────────────────────────────────────────
+
+export type TravelerStateLabel =
+  | "waiting"
+  | "micro_adventure_ready"
+  | "decision_fatigue"
+  | "open_to_surprise"
+  | "recovering"
+  | "socializing"
+  | "low_energy"
+  | "high_energy"
+  | "comfort_seeking"
+  | "open_to_anything"
+  | "adventurous"
+  | "solo"
+  | "social"
+  | (string & {});
+
+export interface TravelerState {
+  primary_state: TravelerStateLabel;
+  secondary_states: TravelerStateLabel[];
+  confidence: number;
+  explanation: string;
+}
+
+export interface CommitmentAction {
+  action_title: string;
+  action_steps: string[];
+  time_box_minutes: number;
+  primary_cta_label: string;
+}
+
+export interface MicroAdventure {
+  title: string;
+  duration_minutes: number;
+  steps: string[];
+  why_it_fits: string;
+}
+
+export type TimeWindowBucket =
+  | "quick_15"
+  | "short_30"
+  | "medium_45"
+  | "full_60"
+  | "extended_90";
+
 // ─── Human State Groups ───────────────────────────────────────────────────────
 
 /**
