@@ -1,7 +1,16 @@
 import { NextRequest } from "next/server";
 import { serverEnv } from "@/lib/env/server";
 import { generateSyntheticDecision } from "@/core/engine/synthetic";
-import type { GeoLocation, GeoSource, LocationNode, ScoringWeights, SpontaneousObject, HadeDebugPayload, DecideResponse } from "@/types/hade";
+import type {
+  GeoLocation,
+  GeoSource,
+  HadeDecision,
+  HadeDebugPayload,
+  DecideResponse,
+  LocationNode,
+  ScoringWeights,
+  SpontaneousObject,
+} from "@/types/hade";
 import { getLocationWeights, locationNodeExists, createLocationNode } from "@/lib/hade/weights";
 import { setOfflineCache, getValidCache } from "@/lib/hade/cache";
 import type { CacheEntry, CachedVenue, CachedLocationNode } from "@/lib/hade/cache";
@@ -16,6 +25,7 @@ export const runtime = "nodejs";
 import { computeConfidence } from "@/lib/hade/confidence";
 import { buildExplanation } from "@/lib/hade/explanation";
 import { assertDecisionValid, extractSafeCopyPatch } from "./validateDecision";
+import { enrichDecisionWithCommitment } from "@/lib/hade/commitment";
 
 
 // ─── Configuration ───────────────────────────────────────────────────────────
@@ -266,6 +276,41 @@ async function buildFallbackCandidates(
   }));
 }
 
+/**
+ * Normalizes a fallback SpontaneousObject into a card-shaped decision before
+ * optional commitment attachment. Does not affect tier selection or ranking.
+ */
+function mapFallbackCandidateToDecision(candidate: SpontaneousObject): HadeDecision {
+  const distanceMeters = Math.max(0, Math.round(candidate.radius ?? 0));
+  const geo = {
+    lat: candidate.location.lat,
+    lng: candidate.location.lng,
+  };
+  const etaMinutes = Math.max(1, Math.ceil(distanceMeters / 80));
+
+  return {
+    ...candidate,
+    id: candidate.id,
+    venue_name: candidate.title,
+    category:
+      typeof candidate.vibe_tag === "string" && candidate.vibe_tag.trim()
+        ? candidate.vibe_tag
+        : "venue",
+    geo,
+    distance_meters: distanceMeters,
+    eta_minutes: etaMinutes,
+    rationale: "Nearby option while context is limited.",
+    why_now: "Fallback path — showing a workable nearby move.",
+    why_this: candidate.title,
+    decision_frame: candidate.title,
+    confidence: Math.max(0, Math.min(1, candidate.trust_score ?? 0.5)),
+    confidence_label: "Exploratory",
+    situation_summary: "Fallback decision",
+    is_fallback: true,
+    source: candidate.source ?? "static_fallback",
+  };
+}
+
 // ─── POST handler ────────────────────────────────────────────────────────────
 
 export async function POST(request: NextRequest) {
@@ -387,6 +432,10 @@ async function generateDecision(
               (body as { settings?: { debug?: unknown } }).settings?.debug === true;
             const enrichedColdStart = {
               ...coldStartSynthetic.data,
+              decision: enrichDecisionWithCommitment(
+                coldStartSynthetic.data.decision,
+                body,
+              ),
               source: "cold_start_synthetic",
               decision_node: decisionNode,
               decision_provenance: buildDecisionProvenance(coldStartSynthetic),
@@ -423,9 +472,13 @@ async function generateDecision(
       }
       console.log(`[hade-decide ${reqId}] cold start — no places available, returning cold_start_fallback`);
       const candidates = await buildFallbackCandidates(geoHint, reqId, geoSource, body);
+      const coldStartFallbackDecision = enrichDecisionWithCommitment(
+        mapFallbackCandidateToDecision(candidates[0]),
+        body,
+      );
       return new Response(
         JSON.stringify({
-          decision: { ...candidates[0], is_fallback: true },
+          decision: coldStartFallbackDecision,
           fallback_places: candidates,
           source: "cold_start_fallback",
           degraded: true,
@@ -479,11 +532,13 @@ async function generateDecision(
         // ── Copy enhancement (non-blocking, silent fallback) ─────────────────
         const copyPatch = await enhanceCopyWithLLM(synthetic.data.decision, body, reqId);
 
+        const mergedDecision: HadeDecision = copyPatch
+          ? { ...synthetic.data.decision, ...copyPatch }
+          : synthetic.data.decision;
+
         const enrichedData = {
           ...synthetic.data,
-          decision: copyPatch
-            ? { ...synthetic.data.decision, ...copyPatch }
-            : synthetic.data.decision,
+          decision: enrichDecisionWithCommitment(mergedDecision, body),
           decision_node: decisionNode,
           decision_provenance: buildDecisionProvenance(synthetic),
           ...(debugMode ? { debug: synthetic.debugPayload } : {}),
@@ -948,7 +1003,10 @@ async function fallbackResponse(
   const candidates = await buildFallbackCandidates(geoHint, reqId, geoSource, bodyHint);
   // candidates.length >= 1 guaranteed by buildFallbackCandidates
   const body = {
-    decision: { ...candidates[0], is_fallback: true },
+    decision: enrichDecisionWithCommitment(
+      mapFallbackCandidateToDecision(candidates[0]),
+      bodyHint ?? {},
+    ),
     decision_node: null,
     fallback_places: candidates,
     context_snapshot: {
@@ -1099,8 +1157,8 @@ function buildOfflineResponse(
     }));
     const bestObject = fallbackObjects.find((object) => object.id === best.venue.id);
 
-    const responseBody = {
-      decision: {
+    const offlineDecision = enrichDecisionWithCommitment(
+      {
         ...(bestObject ?? {}),
         id: best.venue.id,
         venue_name: best.venue.name,
@@ -1115,7 +1173,13 @@ function buildOfflineResponse(
         confidence: 0.55,
         confidence_label: "Exploratory" as const,
         situation_summary: "Offline cache decision",
-      },
+        source: "offline_cache",
+      } as HadeDecision,
+      body,
+    );
+
+    const responseBody = {
+      decision: offlineDecision,
       context_snapshot: {
         situation_summary: "Offline cache decision",
         interpreted_intent: "anything",
