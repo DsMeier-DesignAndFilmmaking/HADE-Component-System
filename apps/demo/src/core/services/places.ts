@@ -43,6 +43,113 @@ export type { PlaceOption, FetchNearbyOptions };
  */
 const INTENT_TYPES = placesTypeMapJson as Partial<Record<KnownIntent, string[]>>;
 
+const GOOGLE_PLACE_TYPE_ALIASES: Record<string, readonly string[]> = {
+  attraction: ["tourist_attraction"],
+  bookstore: ["book_store"],
+  event: ["event_venue"],
+  food: ["restaurant", "cafe"],
+  gallery: ["art_gallery"],
+  health: ["gym", "spa"],
+  landmark: ["tourist_attraction", "historical_landmark", "point_of_interest"],
+  market: ["supermarket", "grocery_store"],
+  nightclub: ["night_club"],
+  public_space: ["park", "point_of_interest"],
+  route: ["tourist_attraction", "point_of_interest"],
+  viewpoint: ["tourist_attraction", "point_of_interest"],
+  wellness: ["gym", "spa", "yoga_studio"],
+  yoga: ["yoga_studio"],
+};
+
+const SUPPORTED_GOOGLE_PLACE_TYPES = new Set([
+  "american_restaurant",
+  "amusement_park",
+  "aquarium",
+  "art_gallery",
+  "bakery",
+  "bar",
+  "book_store",
+  "cafe",
+  "campground",
+  "city_park",
+  "clothing_store",
+  "cocktail_bar",
+  "coffee_shop",
+  "comedy_club",
+  "community_center",
+  "cultural_center",
+  "event_venue",
+  "fast_food_restaurant",
+  "fitness_center",
+  "food_court",
+  "grocery_store",
+  "gym",
+  "historical_landmark",
+  "indian_restaurant",
+  "italian_restaurant",
+  "japanese_restaurant",
+  "juice_shop",
+  "library",
+  "live_music_venue",
+  "meal_takeaway",
+  "mexican_restaurant",
+  "movie_theater",
+  "museum",
+  "national_park",
+  "night_club",
+  "observation_deck",
+  "park",
+  "performing_arts_theater",
+  "pizza_restaurant",
+  "point_of_interest",
+  "pub",
+  "ramen_restaurant",
+  "restaurant",
+  "sandwich_shop",
+  "shopping_mall",
+  "spa",
+  "sports_bar",
+  "store",
+  "supermarket",
+  "sushi_restaurant",
+  "thai_restaurant",
+  "tourist_attraction",
+  "transit_station",
+  "wine_bar",
+  "yoga_studio",
+]);
+
+function normalizePlaceTypeToken(type: string): string {
+  return type.trim().toLowerCase().replace(/[\s-]+/g, "_");
+}
+
+export function sanitizeGoogleIncludedTypes(
+  types: readonly string[] | undefined,
+): string[] | undefined {
+  if (!types?.length) return undefined;
+
+  const sanitized: string[] = [];
+  const seen = new Set<string>();
+
+  for (const rawType of types) {
+    const normalized = normalizePlaceTypeToken(rawType);
+    if (!normalized) continue;
+
+    const expandedTypes = GOOGLE_PLACE_TYPE_ALIASES[normalized] ?? [normalized];
+    for (const expandedType of expandedTypes) {
+      const normalizedExpandedType = normalizePlaceTypeToken(expandedType);
+      if (
+        SUPPORTED_GOOGLE_PLACE_TYPES.has(normalizedExpandedType) &&
+        !seen.has(normalizedExpandedType)
+      ) {
+        seen.add(normalizedExpandedType);
+        sanitized.push(normalizedExpandedType);
+      }
+    }
+  }
+
+  return sanitized.length > 0 ? sanitized : undefined;
+}
+
 // ─── Category normalisation ───────────────────────────────────────────────────
 
 /**
@@ -289,7 +396,12 @@ export const DOMAIN_RADIUS_M: Record<string, number> = {
 export const DOMAIN_CATEGORY_BUCKETS: Record<string, string[][]> = {
   dining: [["restaurant"], ["cafe"], ["bar"], ["meal_takeaway"]],
   social: [["bar"], ["night_club"], ["park"], ["event_venue"]],
-  travel: [["tourist_attraction"], ["museum"], ["art_gallery"], ["landmark"]],
+  travel: [
+    ["tourist_attraction"],
+    ["museum"],
+    ["art_gallery"],
+    ["tourist_attraction", "historical_landmark", "point_of_interest"],
+  ],
 };
 
 // ─── Main export ──────────────────────────────────────────────────────────────
@@ -377,12 +489,13 @@ export async function fetchNearbyGrounded(
 
   // Only apply type filter when intent maps to a known type list.
   // "anything" has no entry → broadest possible search.
-  const includedTypes =
+  const requestedTypes =
     target_categories && target_categories.length > 0
       ? target_categories
       : intent
         ? INTENT_TYPES[intent as KnownIntent]
         : undefined;
+  const includedTypes = sanitizeGoogleIncludedTypes(requestedTypes);
   if (includedTypes?.length) {
     requestBody.includedTypes = includedTypes;
   }
