@@ -3,6 +3,7 @@ import withSerwist from "@serwist/next";
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  distDir: "apps/demo/.next",
 };
 
 export default withSerwist({
