@@ -1,0 +1,87 @@
+name: Release
+
+# Phase 8 (M3) — Changesets-driven release pipeline for the @hade/* family.
+#
+# How it works:
+#   1. Push to `main` triggers this workflow.
+#   2. `sdk:ci` + `test` run first as the publication gate. Failure aborts.
+#   3. The `changesets/action` step looks for un-applied changesets:
+#        - If any exist → opens (or updates) a "Release" PR that bumps every
+#          @hade/* package in lockstep (fixed-mode) and writes CHANGELOG.md.
+#        - If none exist AND the latest commit is the merged Release PR →
+#          runs `npm run release` → publishes every package to GitHub Packages.
+#
+# Until 1.0:
+#   - Registry: GitHub Packages (private to org).
+#   - access: "restricted" (set in .changeset/config.json).
+#   - No npm provenance.
+#
+# Flip to public npm at 1.0 readiness (see plan §3 "Migration to public npm").
+
+on:
+  push:
+    branches: [main]
+    # Phase 9 — defensive belt. Release is Changesets-driven (and demo is
+    # private, so changesets never bumps it), but explicitly ignoring
+    # demo/example commits prevents needless workflow spin-ups.
+    paths-ignore:
+      - "apps/**"
+      - "examples/**"
+      - "docs/**"
+
+permissions:
+  contents: write       # let changesets push the Version PR + tag
+  pull-requests: write  # open / update the Release PR
+  packages: write       # publish to GitHub Packages
+  id-token: write       # reserved for npm provenance post-1.0
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build, gate, publish
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Changesets needs full history to compute the changelog diff range.
+          fetch-depth: 0
+
+      - name: Setup Node 20 + GitHub Packages registry
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: "https://npm.pkg.github.com"
+          scope: "@hade"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: SDK CI gate (type-check + cycles + boundaries + build + budgets)
+        run: npm run sdk:ci
+
+      - name: Full vitest suite
+        run: npm test
+
+      - name: Verify pack contents are clean
+        run: npm run sdk:pack:dry-run
+
+      - name: Create release PR or publish
+        id: changesets
+        uses: changesets/action@v1
+        with:
+          # On a Release PR merge: build + publish. On a regular commit: open
+          # / update the Release PR with bumped versions and CHANGELOG.md.
+          publish: npm run release
+          version: npm run version
+          commit: "chore: release @hade packages"
+          title: "Release: @hade packages"
+        env:
+          # GitHub Packages auth uses the repo's GITHUB_TOKEN automatically
+          # (the setup-node step wrote it into ~/.npmrc).
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

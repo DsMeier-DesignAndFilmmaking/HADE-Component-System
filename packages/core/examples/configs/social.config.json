@@ -1,0 +1,23 @@
+{
+  "$schema_version": "1.0",
+  "product": { "id": "nightout", "name": "NightOut", "domain": "social" },
+  "active_domain": "social",
+  "domains": {
+    "social": {
+      "id": "social",
+      "display_name": "Social",
+      "default_intents": ["scene", "chill"],
+      "primary_signals": ["SOCIAL_RELAY", "EVENT"],
+      "default_radius_meters": 3500,
+      "category_buckets": [["bar"], ["night_club"], ["park"], ["event_venue"]],
+      "scoring_profile": "signal_heavy"
+    }
+  },
+  "scoring": {
+    "profiles": {
+      "signal_heavy": { "proximity": 0.25, "signal": 0.50, "intent": 0.25 }
+    }
+  },
+  "copy": { "locale": "en-US", "tone": "playful" },
+  "timeouts": { "adapter_ms": 10000 }
+}

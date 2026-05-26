@@ -103,7 +103,7 @@ async function sync() {
     };
 
     fs.writeFileSync(
-      path.join(process.cwd(), "src/config/agent_definitions.json"),
+      path.join(process.cwd(), "apps/demo/src/config/agent_definitions.json"),
       JSON.stringify(payload, null, 2)
     );
 

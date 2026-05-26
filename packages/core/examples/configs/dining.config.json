@@ -1,0 +1,24 @@
+{
+  "$schema_version": "1.0",
+  "product": { "id": "table-now", "name": "Table Now", "domain": "dining" },
+  "active_domain": "dining",
+  "domains": {
+    "dining": {
+      "id": "dining",
+      "display_name": "Dining",
+      "default_intents": ["eat", "drink"],
+      "primary_signals": ["UGC", "PRESENCE"],
+      "default_radius_meters": 2500,
+      "category_buckets": [["restaurant"], ["cafe"], ["bar"], ["meal_takeaway"]],
+      "scoring_profile": "balanced"
+    }
+  },
+  "scoring": {
+    "profiles": {
+      "balanced": { "proximity": 0.40, "signal": 0.35, "intent": 0.25 }
+    },
+    "surfaced_once_penalty": -0.08,
+    "surfaced_twice_penalty": -0.14
+  },
+  "copy": { "locale": "en-US", "tone": "casual" }
+}

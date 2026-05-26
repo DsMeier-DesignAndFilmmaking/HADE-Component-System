@@ -1,0 +1,216 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hade.dev/schema/config/v1.json",
+  "title": "HadeConfig",
+  "description": "Configuration for @hade/core's createHade() factory. Reference from a consumer's hade.config.json via `\"$schema\": \"./node_modules/@hade/core/schema/hade-config.schema.json\"` to get VS Code autocomplete + inline validation. Hand-maintained in lock-step with packages/core/src/config/schema.ts.",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "$schema_version": {
+      "type": "string",
+      "enum": ["1.0"],
+      "description": "Schema version. Configs without this field are silently auto-migrated by `migrateConfig` to v1.0."
+    },
+    "product": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "id":     { "type": "string", "minLength": 1 },
+        "name":   { "type": "string", "minLength": 1 },
+        "domain": { "type": "string", "minLength": 1, "description": "Default active vertical id. Must be a key in `domains`." }
+      },
+      "required": ["id", "name", "domain"]
+    },
+    "defaults": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "radius_meters": { "type": "number", "exclusiveMinimum": 0 },
+        "locale":        { "type": "string", "minLength": 1 },
+        "config_hash":   { "type": "string", "minLength": 1 }
+      }
+    },
+    "domains": {
+      "type": "object",
+      "description": "Open vertical map. Built-in defaults shipped for dining, social, travel, ecommerce. Add any custom vertical (real-estate, fitness, ticketing) as an additional key.",
+      "additionalProperties": { "$ref": "#/$defs/DomainConfig" }
+    },
+    "active_domain": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Active vertical id. Must reference a key in `domains` (or one of the built-ins: dining, social, travel, ecommerce). Defaults to dining."
+    },
+    "confidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "bands":     { "$ref": "#/$defs/ConfidenceBands" },
+        "labels":    { "$ref": "#/$defs/ConfidenceLabels" },
+        "node":      { "type": "object", "additionalProperties": true },
+        "synthetic": { "type": "object", "additionalProperties": true }
+      }
+    },
+    "timeouts": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "adapter_ms": { "type": "number", "exclusiveMinimum": 0 },
+        "geo_ms":     { "type": "number", "exclusiveMinimum": 0 }
+      }
+    },
+    "weights": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "opportunity": { "$ref": "#/$defs/ScoringProfile" },
+        "confidence":  {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "signal_strength": { "type": "number", "minimum": 0 },
+            "agreement":       { "type": "number", "minimum": 0 },
+            "trust":           { "type": "number", "minimum": 0 },
+            "recency":         { "type": "number", "minimum": 0 }
+          }
+        }
+      }
+    },
+    "scoring": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "surfaced_once_penalty":  { "type": "number", "maximum": 0 },
+        "surfaced_twice_penalty": { "type": "number", "maximum": 0 },
+        "profiles": {
+          "type": "object",
+          "description": "Named weight vectors. Each value must sum to 1.0 ± 0.01.",
+          "additionalProperties": { "$ref": "#/$defs/ScoringProfile" }
+        },
+        "offline_overlay": { "$ref": "#/$defs/ScoringProfile" }
+      }
+    },
+    "copy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "locale": { "type": "string", "minLength": 1 },
+        "tone": {
+          "type": "string",
+          "enum": ["casual", "professional", "playful", "luxury"]
+        },
+        "char_caps": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "rationale":      { "type": "integer", "exclusiveMinimum": 0 },
+            "why_now":        { "type": "integer", "exclusiveMinimum": 0 },
+            "why_this":       { "type": "integer", "exclusiveMinimum": 0 },
+            "decision_frame": { "type": "integer", "exclusiveMinimum": 0 }
+          }
+        },
+        "fallback_titles": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "overrides": {
+          "type": "object",
+          "description": "Inline copy overrides, applied globally. Merged on top of the built-in copy keys.",
+          "additionalProperties": { "type": "string" }
+        },
+        "overrides_ref": { "type": "string", "minLength": 1 }
+      }
+    },
+    "mobility": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Travel-pace parameters. Set both to 0 for digital verticals (ecommerce, etc.).",
+      "properties": {
+        "walking_meters_per_minute": { "type": "number", "minimum": 0 },
+        "driving_meters_per_minute": { "type": "number", "minimum": 0 }
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "offline": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "policy":         { "type": "string", "enum": ["static", "cache", "reject"] },
+            "default_intent": { "type": "string", "minLength": 1 },
+            "copy_id":        { "type": "string", "minLength": 1 }
+          }
+        },
+        "total_budget_ms": { "type": "number", "exclusiveMinimum": 0 }
+      }
+    },
+    "adapters": {
+      "type": "object",
+      "description": "Metadata only — surfaced into analytics + logs and used to compute config_hash. The engine NEVER uses these to resolve adapter instances; wiring is DI through createHade({ adapters: { ... } }).",
+      "additionalProperties": false,
+      "properties": {
+        "venue": { "$ref": "#/$defs/AdapterMetadata" },
+        "llm":   { "$ref": "#/$defs/AdapterMetadata" },
+        "cache": { "$ref": "#/$defs/AdapterMetadata" },
+        "geo":   { "$ref": "#/$defs/AdapterMetadata" }
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Free-form metadata. Surfaced into analytics + logs as-is.",
+      "additionalProperties": true
+    }
+  },
+  "$defs": {
+    "DomainConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id":                    { "type": "string", "minLength": 1 },
+        "display_name":          { "type": "string", "minLength": 1 },
+        "default_intents":       { "type": "array", "items": { "type": "string" } },
+        "primary_signals":       { "type": "array", "items": { "type": "string" } },
+        "default_radius_meters": { "type": "number", "minimum": 0, "description": "0 is valid for digital verticals." },
+        "category_buckets":      { "type": "array", "items": { "type": "array", "items": { "type": "string" } } },
+        "scoring_profile":       { "type": "string", "minLength": 1, "description": "References a key in scoring.profiles. Falls back to \"balanced\"." },
+        "copy_overrides":        { "type": "object", "additionalProperties": { "type": "string" }, "description": "Per-vertical copy keys; win over global cfg.copy.overrides." }
+      }
+    },
+    "ScoringProfile": {
+      "type": "object",
+      "description": "Named weight vector. Values must sum to 1.0 ± 0.01.",
+      "additionalProperties": false,
+      "required": ["proximity", "signal", "intent"],
+      "properties": {
+        "proximity": { "type": "number", "minimum": 0, "maximum": 1 },
+        "signal":    { "type": "number", "minimum": 0, "maximum": 1 },
+        "intent":    { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+    "ConfidenceBands": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "high":                        { "type": "number", "minimum": 0, "maximum": 1 },
+        "medium":                      { "type": "number", "minimum": 0, "maximum": 1 },
+        "threshold_high_multiplier":   { "type": "number", "minimum": 0 },
+        "threshold_medium_multiplier": { "type": "number", "minimum": 0 }
+      }
+    },
+    "ConfidenceLabels": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "strong_pick": { "type": "number", "minimum": 0, "maximum": 1 },
+        "good_fit":    { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+    "AdapterMetadata": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "id":    { "type": "string", "minLength": 1 },
+        "notes": { "type": "string" }
+      },
+      "required": ["id"]
+    }
+  }
+}

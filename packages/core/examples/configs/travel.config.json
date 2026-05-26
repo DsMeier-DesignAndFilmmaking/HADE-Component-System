@@ -1,0 +1,24 @@
+{
+  "$schema_version": "1.0",
+  "product": { "id": "wandr", "name": "Wandr", "domain": "travel" },
+  "active_domain": "travel",
+  "domains": {
+    "travel": {
+      "id": "travel",
+      "display_name": "Travel",
+      "default_intents": ["explore", "anything"],
+      "primary_signals": ["AMBIENT", "ENVIRONMENTAL"],
+      "default_radius_meters": 4000,
+      "category_buckets": [
+        ["tourist_attraction"], ["museum"], ["art_gallery"], ["landmark"]
+      ],
+      "scoring_profile": "intent_heavy"
+    }
+  },
+  "scoring": {
+    "profiles": {
+      "intent_heavy": { "proximity": 0.25, "signal": 0.25, "intent": 0.50 }
+    }
+  },
+  "copy": { "locale": "en-US", "tone": "playful" }
+}

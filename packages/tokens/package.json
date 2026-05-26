@@ -1,0 +1,45 @@
+{
+  "name": "@hade/tokens",
+  "version": "0.1.0-alpha.0",
+  "private": false,
+  "description": "HADE design tokens. W3C Design Tokens format. Framework-free data.",
+  "license": "UNLICENSED",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./tailwind": {
+      "types": "./dist/tailwind.d.ts",
+      "import": "./dist/tailwind.js",
+      "require": "./dist/tailwind.cjs"
+    },
+    "./css-vars": {
+      "types": "./dist/css-vars.d.ts",
+      "import": "./dist/css-vars.js",
+      "require": "./dist/css-vars.cjs"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup",
+    "type-check": "tsc --noEmit",
+    "clean": "rm -rf dist .tsbuildinfo"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "restricted"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.2"
+  }
+}

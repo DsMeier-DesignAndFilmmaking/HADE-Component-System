@@ -1,0 +1,52 @@
+{
+  "name": "@hade/testkit",
+  "version": "0.1.0-alpha.0",
+  "private": false,
+  "description": "Test fixtures, mock adapters, and deterministic clocks for HADE consumers.",
+  "license": "UNLICENSED",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./vitest": {
+      "types": "./dist/vitest.d.ts",
+      "import": "./dist/vitest.js",
+      "require": "./dist/vitest.cjs"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup",
+    "type-check": "tsc --noEmit",
+    "clean": "rm -rf dist .tsbuildinfo"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "restricted"
+  },
+  "peerDependencies": {
+    "@hade/core": "*",
+    "vitest": ">=1.0.0"
+  },
+  "peerDependenciesMeta": {
+    "vitest": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@hade/core": "workspace:*",
+    "@vitest/expect": "^4.1.4",
+    "typescript": "^5.8.2",
+    "vitest": "^4.1.4"
+  }
+}

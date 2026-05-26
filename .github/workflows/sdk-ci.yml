@@ -1,0 +1,61 @@
+name: SDK CI
+
+# Phase 9 — SDK-only gate. Strictly bounded: triggers ONLY on packages/**
+# and SDK-related tooling. Demo CI lives in demo-ci.yml. Publishing lives
+# in release.yml.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "packages/**"
+      - "scripts/check-bundle-budgets.mjs"
+      - "scripts/pack-dry-run.mjs"
+      - "scripts/audit-core-purity.mjs"
+      - "scripts/audit-package-purity.mjs"
+      - "eslint.sdk.config.mjs"
+      - "tsconfig.base.json"
+      - ".changeset/**"
+      - ".github/workflows/sdk-ci.yml"
+  pull_request:
+    paths:
+      - "packages/**"
+      - "scripts/check-bundle-budgets.mjs"
+      - "scripts/pack-dry-run.mjs"
+      - "scripts/audit-core-purity.mjs"
+      - "scripts/audit-package-purity.mjs"
+      - "eslint.sdk.config.mjs"
+      - "tsconfig.base.json"
+      - ".changeset/**"
+      - ".github/workflows/sdk-ci.yml"
+  workflow_dispatch:
+
+jobs:
+  sdk-ci:
+    name: SDK gates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "pnpm"
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: "10.18.3"
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Full SDK gate (type-check + audits + cycles + boundaries + build + budgets)
+        run: pnpm sdk:ci
+
+      - name: Run package tests
+        run: pnpm exec vitest run --project core --project react --project testkit --project copy --project adapters-google-places --project adapters-openai --project adapters-upstash --project adapters-memory
+
+      - name: Verify pack contents
+        run: pnpm pack:dry-run

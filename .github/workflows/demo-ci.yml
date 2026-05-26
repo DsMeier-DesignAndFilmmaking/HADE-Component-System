@@ -1,0 +1,55 @@
+name: Demo CI
+
+# Phase 9 — demo-only gate. Triggers on apps/demo/** changes AND on
+# packages/** (because the demo consumes @hade/core via workspace).
+# Independent of SDK CI and release.yml.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/demo/**"
+      - "packages/**"
+      - ".github/workflows/demo-ci.yml"
+  pull_request:
+    paths:
+      - "apps/demo/**"
+      - "packages/**"
+      - ".github/workflows/demo-ci.yml"
+  workflow_dispatch:
+
+jobs:
+  demo:
+    name: Demo gates (type-check, lint, build, test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "pnpm"
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: "10.18.3"
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Build SDK packages (demo depends on @hade/core)
+        run: pnpm sdk:build
+
+      - name: Type-check demo
+        run: pnpm --filter demo type-check
+
+      - name: Lint demo
+        run: pnpm --filter demo lint
+
+      - name: Build demo (Next.js)
+        run: pnpm --filter demo build
+
+      - name: Run demo tests
+        run: pnpm exec vitest --project demo run

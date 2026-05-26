@@ -1,0 +1,129 @@
+{
+  "name": "@hade/core",
+  "version": "0.1.0-alpha.0",
+  "private": false,
+  "description": "HADE — pure TypeScript decision engine. Zero framework dependencies. Edge-runtime safe.",
+  "license": "UNLICENSED",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./createHade": {
+      "types": "./dist/createHade.d.ts",
+      "import": "./dist/createHade.js",
+      "require": "./dist/createHade.cjs"
+    },
+    "./scoring/surfacedPenalty": {
+      "types": "./dist/scoring/surfacedPenalty.d.ts",
+      "import": "./dist/scoring/surfacedPenalty.js",
+      "require": "./dist/scoring/surfacedPenalty.cjs"
+    },
+    "./scoring/confidence": {
+      "types": "./dist/scoring/confidence.d.ts",
+      "import": "./dist/scoring/confidence.js",
+      "require": "./dist/scoring/confidence.cjs"
+    },
+    "./util/format": {
+      "types": "./dist/util/format.d.ts",
+      "import": "./dist/util/format.js",
+      "require": "./dist/util/format.cjs"
+    },
+    "./engine/fallbackSelection": {
+      "types": "./dist/engine/fallbackSelection.d.ts",
+      "import": "./dist/engine/fallbackSelection.js",
+      "require": "./dist/engine/fallbackSelection.cjs"
+    },
+    "./engine/buildOutput": {
+      "types": "./dist/engine/buildOutput.d.ts",
+      "import": "./dist/engine/buildOutput.js",
+      "require": "./dist/engine/buildOutput.cjs"
+    },
+    "./explanation/explanation": {
+      "types": "./dist/explanation/explanation.d.ts",
+      "import": "./dist/explanation/explanation.js",
+      "require": "./dist/explanation/explanation.cjs"
+    },
+    "./errors": {
+      "types": "./dist/errors/index.d.ts",
+      "import": "./dist/errors/index.js",
+      "require": "./dist/errors/index.cjs"
+    },
+    "./adapters/geo": {
+      "types": "./dist/adapters/geo/index.d.ts",
+      "import": "./dist/adapters/geo/index.js",
+      "require": "./dist/adapters/geo/index.cjs"
+    },
+    "./adapters/defaults": {
+      "types": "./dist/adapters/defaults/index.d.ts",
+      "import": "./dist/adapters/defaults/index.js",
+      "require": "./dist/adapters/defaults/index.cjs"
+    },
+    "./adapters/registry": {
+      "types": "./dist/adapters/registry.d.ts",
+      "import": "./dist/adapters/registry.js",
+      "require": "./dist/adapters/registry.cjs"
+    },
+    "./legacy": {
+      "types": "./dist/legacy/index.d.ts",
+      "import": "./dist/legacy/index.js",
+      "require": "./dist/legacy/index.cjs"
+    },
+    "./config": {
+      "types": "./dist/config/index.d.ts",
+      "import": "./dist/config/index.js",
+      "require": "./dist/config/index.cjs"
+    },
+    "./config/schema": {
+      "types": "./dist/config/schema.d.ts",
+      "import": "./dist/config/schema.js",
+      "require": "./dist/config/schema.cjs"
+    },
+    "./config/defaults": {
+      "types": "./dist/config/defaults.d.ts",
+      "import": "./dist/config/defaults.js",
+      "require": "./dist/config/defaults.cjs"
+    },
+    "./config/migrations": {
+      "types": "./dist/config/migrations.d.ts",
+      "import": "./dist/config/migrations.js",
+      "require": "./dist/config/migrations.cjs"
+    },
+    "./config/hash": {
+      "types": "./dist/config/hash.d.ts",
+      "import": "./dist/config/hash.js",
+      "require": "./dist/config/hash.cjs"
+    },
+    "./config/validateConfig": {
+      "types": "./dist/config/validateConfig.d.ts",
+      "import": "./dist/config/validateConfig.js",
+      "require": "./dist/config/validateConfig.cjs"
+    },
+    "./schema/hade-config.schema.json": "./schema/hade-config.schema.json"
+  },
+  "files": [
+    "dist",
+    "schema",
+    "examples",
+    "README.md"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup",
+    "type-check": "tsc --noEmit",
+    "clean": "rm -rf dist .tsbuildinfo"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "restricted"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.8.2"
+  }
+}

@@ -1,41 +1,15 @@
 {
-  "compilerOptions": {
-    "target": "ES2022",
-    "lib": [
-      "dom",
-      "dom.iterable",
-      "esnext"
-    ],
-    "allowJs": true,
-    "skipLibCheck": true,
-    "strict": true,
-    "noEmit": true,
-    "esModuleInterop": true,
-    "module": "esnext",
-    "moduleResolution": "bundler",
-    "resolveJsonModule": true,
-    "isolatedModules": true,
-    "jsx": "preserve",
-    "incremental": true,
-    "plugins": [
-      {
-        "name": "next"
-      }
-    ],
-    "paths": {
-      "@/*": [
-        "./src/*"
-      ]
-    }
-  },
-  "include": [
-    "**/*.ts",
-    "**/*.tsx",
-    "next-env.d.ts",
-    "types/**/*.d.ts",
-    ".next/types/**/*.ts"
-  ],
-  "exclude": [
-    "node_modules"
+  "files": [],
+  "references": [
+    { "path": "./apps/demo" },
+    { "path": "./packages/core" },
+    { "path": "./packages/react" },
+    { "path": "./packages/testkit" },
+    { "path": "./packages/tokens" },
+    { "path": "./packages/copy" },
+    { "path": "./packages/adapters-google-places" },
+    { "path": "./packages/adapters-memory" },
+    { "path": "./packages/adapters-openai" },
+    { "path": "./packages/adapters-upstash" }
   ]
 }

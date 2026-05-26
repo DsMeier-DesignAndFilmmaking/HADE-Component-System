@@ -1,0 +1,26 @@
+{
+  "name": "hade-example-with-next",
+  "version": "0.0.0",
+  "private": true,
+  "description": "External-consumer reference: Next.js 15 App Router + @hade/core + @hade/react",
+  "type": "module",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@hade/core": "0.1.0-alpha.0",
+    "@hade/react": "0.1.0-alpha.0",
+    "next": "^15.5.13",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "typescript": "^5.8.2"
+  }
+}

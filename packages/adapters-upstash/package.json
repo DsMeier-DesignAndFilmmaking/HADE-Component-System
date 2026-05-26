@@ -1,0 +1,42 @@
+{
+  "name": "@hade/adapters-upstash",
+  "version": "0.1.0-alpha.0",
+  "private": false,
+  "description": "Upstash Redis CacheAdapter for HADE.",
+  "license": "UNLICENSED",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup",
+    "type-check": "tsc --noEmit",
+    "clean": "rm -rf dist .tsbuildinfo"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "restricted"
+  },
+  "peerDependencies": {
+    "@hade/core": "*",
+    "@upstash/redis": "^1.37.0"
+  },
+  "devDependencies": {
+    "@hade/core": "workspace:*",
+    "@types/node": "^22.0.0",
+    "@upstash/redis": "^1.37.0",
+    "typescript": "^5.8.2"
+  }
+}

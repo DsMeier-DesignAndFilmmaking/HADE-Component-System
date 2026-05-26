@@ -1,0 +1,40 @@
+{
+  "name": "@hade/copy",
+  "version": "0.1.0-alpha.0",
+  "private": false,
+  "description": "HADE locale string bundles. Pure JSON + lazy loaders. Framework-free.",
+  "license": "UNLICENSED",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./en-US": {
+      "types": "./dist/en-US.d.ts",
+      "import": "./dist/en-US.js",
+      "require": "./dist/en-US.cjs"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup",
+    "type-check": "tsc --noEmit",
+    "clean": "rm -rf dist .tsbuildinfo"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "restricted"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.2"
+  }
+}

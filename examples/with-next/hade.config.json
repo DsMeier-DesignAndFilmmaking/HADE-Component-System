@@ -1,0 +1,17 @@
+{
+  "$schema": "./node_modules/@hade/core/schema/hade-config.schema.json",
+  "$schema_version": "1.0",
+  "product": {
+    "id": "demo-next",
+    "name": "HADE Demo (Next.js)",
+    "domain": "dining"
+  },
+  "active_domain": "dining",
+  "copy": {
+    "locale": "en-US",
+    "tone": "casual"
+  },
+  "timeouts": {
+    "adapter_ms": 5000
+  }
+}

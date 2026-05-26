@@ -1,0 +1,35 @@
+{
+  "$schema_version": "1.0",
+  "product": { "id": "shopr", "name": "Shopr", "domain": "ecommerce" },
+  "active_domain": "ecommerce",
+  "domains": {
+    "ecommerce": {
+      "id": "ecommerce",
+      "display_name": "Shopping",
+      "default_intents": ["browse", "buy", "compare"],
+      "primary_signals": ["BEHAVIORAL", "INTENT"],
+      "default_radius_meters": 0,
+      "category_buckets": [["electronics"], ["clothing"], ["home"], ["sale"]],
+      "scoring_profile": "rating_heavy",
+      "copy_overrides": {
+        "action.take_me_there": "Add to cart",
+        "action.refine": "Filter",
+        "label.strong_pick": "Top match"
+      }
+    }
+  },
+  "mobility": {
+    "walking_meters_per_minute": 0,
+    "driving_meters_per_minute": 0
+  },
+  "scoring": {
+    "profiles": {
+      "rating_heavy": { "proximity": 0.10, "signal": 0.45, "intent": 0.45 }
+    }
+  },
+  "copy": { "locale": "en-US", "tone": "professional" },
+  "adapters": {
+    "venue": { "id": "shopify_catalog", "notes": "Replaces google_places for ecommerce" }
+  },
+  "metadata": { "vertical_kind": "digital" }
+}
