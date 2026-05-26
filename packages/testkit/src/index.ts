@@ -6,7 +6,7 @@
 // `@hade/testkit/vitest` sub-path so consumers don't need vitest installed
 // to use the rest of the kit.
 
-export const HADE_TESTKIT_VERSION = "0.1.0-alpha.0" as const;
+export const HADE_TESTKIT_VERSION = "0.1.0" as const;
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 

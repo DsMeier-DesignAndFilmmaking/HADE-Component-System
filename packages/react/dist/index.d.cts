@@ -76,6 +76,6 @@ declare function useHade(input: DecideInput): UseHadeResult;
 
 declare function useHadeConfig(): ResolvedHadeConfig;
 
-declare const HADE_REACT_VERSION: "0.1.0-alpha.0";
+declare const HADE_REACT_VERSION: "0.1.0";
 
 export { HADE_REACT_VERSION, HadeProvider, type HadeProviderProps, type UseHadeResult, useHade, useHadeClient, useHadeConfig };

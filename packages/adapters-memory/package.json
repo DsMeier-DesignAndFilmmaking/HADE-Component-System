@@ -1,6 +1,6 @@
 {
   "name": "@hade/adapters-memory",
-  "version": "0.1.0-alpha.0",
+  "version": "0.0.1",
   "private": false,
   "description": "In-process LRU CacheAdapter for HADE (dev/CI/single-instance).",
   "license": "UNLICENSED",

@@ -1,6 +1,6 @@
 {
   "name": "@hade/react",
-  "version": "0.1.0-alpha.0",
+  "version": "0.0.1",
   "private": false,
   "description": "React hooks + provider for @hade/core. Headless. SSR + edge safe.",
   "license": "UNLICENSED",

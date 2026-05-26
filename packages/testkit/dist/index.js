@@ -216,7 +216,7 @@ function fakeClock(options = {}) {
 }
 
 // src/index.ts
-var HADE_TESTKIT_VERSION = "0.1.0-alpha.0";
+var HADE_TESTKIT_VERSION = "0.1.0";
 
 export { HADE_TESTKIT_VERSION, fakeClock, makeConfig, makeDecision, makeDecisionEngineOutput, makeVenueCandidate, mockCacheAdapter, mockGeoAdapter, mockLLMAdapter, mockVenueAdapter, resetDecisionCounter, resetVenueCandidateCounter };
 //# sourceMappingURL=index.js.map

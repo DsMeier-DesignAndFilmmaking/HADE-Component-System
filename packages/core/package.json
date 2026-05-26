@@ -1,6 +1,6 @@
 {
   "name": "@hade/core",
-  "version": "0.1.0-alpha.0",
+  "version": "0.0.1",
   "private": false,
   "description": "HADE — pure TypeScript decision engine. Zero framework dependencies. Edge-runtime safe.",
   "license": "UNLICENSED",

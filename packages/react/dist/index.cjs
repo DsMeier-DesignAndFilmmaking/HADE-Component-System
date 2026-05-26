@@ -131,7 +131,7 @@ function useHadeConfig() {
 }
 
 // src/index.ts
-var HADE_REACT_VERSION = "0.1.0-alpha.0";
+var HADE_REACT_VERSION = "0.1.0";
 
 exports.HADE_REACT_VERSION = HADE_REACT_VERSION;
 exports.HadeProvider = HadeProvider;

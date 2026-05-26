@@ -35,9 +35,39 @@ describe("Google Places includedTypes sanitization", () => {
     expect(request.includedTypes).toEqual([
       "tourist_attraction",
       "historical_landmark",
-      "point_of_interest",
     ]);
     expect(request.includedTypes).not.toContain("landmark");
+    expect(request.includedTypes).not.toContain("point_of_interest");
+  });
+
+  it("maps point_of_interest to concrete Google includedTypes", async () => {
+    const fetchSpy = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ places: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const { fetchNearbyGrounded } = await import("@/core/services/places");
+
+    await fetchNearbyGrounded({
+      geo: { lat: 39.7392, lng: -104.9903 },
+      target_categories: ["point_of_interest"],
+      radius_meters: 1000,
+      open_now: true,
+    });
+
+    const request = JSON.parse(fetchSpy.mock.calls[0]?.[1]?.body as string) as {
+      includedTypes?: string[];
+    };
+
+    expect(request.includedTypes).toEqual([
+      "tourist_attraction",
+      "historical_landmark",
+      "park",
+    ]);
+    expect(request.includedTypes).not.toContain("point_of_interest");
   });
 
   it("does not send landmark from travel multi-query buckets", async () => {
@@ -70,7 +100,7 @@ describe("Google Places includedTypes sanitization", () => {
     expect(fetchSpy).toHaveBeenCalledTimes(DOMAIN_CATEGORY_BUCKETS.travel.length);
     expect(allIncludedTypes).toContain("tourist_attraction");
     expect(allIncludedTypes).toContain("historical_landmark");
-    expect(allIncludedTypes).toContain("point_of_interest");
     expect(allIncludedTypes).not.toContain("landmark");
+    expect(allIncludedTypes).not.toContain("point_of_interest");
   });
 });

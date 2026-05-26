@@ -129,7 +129,7 @@ function useHadeConfig() {
 }
 
 // src/index.ts
-var HADE_REACT_VERSION = "0.1.0-alpha.0";
+var HADE_REACT_VERSION = "0.1.0";
 
 export { HADE_REACT_VERSION, HadeProvider, useHade, useHadeClient, useHadeConfig };
 //# sourceMappingURL=index.js.map

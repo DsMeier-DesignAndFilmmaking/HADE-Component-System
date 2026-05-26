@@ -203,6 +203,6 @@ interface FakeClock {
 }
 declare function fakeClock(options?: FakeClockOptions): FakeClock;
 
-declare const HADE_TESTKIT_VERSION: "0.1.0-alpha.0";
+declare const HADE_TESTKIT_VERSION: "0.1.0";
 
 export { type CacheCall, type FakeClock, type FakeClockOptions, HADE_TESTKIT_VERSION, type LLMEnhanceResult, type MockCacheAdapter, type MockCacheAdapterOptions, type MockGeoAdapter, type MockGeoAdapterOptions, type MockLLMAdapter, type MockLLMAdapterCall, type MockLLMAdapterOptions, type MockVenueAdapter, type MockVenueAdapterOptions, type VenueAdapterCall, fakeClock, makeConfig, makeDecision, makeDecisionEngineOutput, makeVenueCandidate, mockCacheAdapter, mockGeoAdapter, mockLLMAdapter, mockVenueAdapter, resetDecisionCounter, resetVenueCandidateCounter };

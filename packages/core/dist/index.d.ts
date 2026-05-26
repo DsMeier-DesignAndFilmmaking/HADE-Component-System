@@ -28,7 +28,7 @@ export { H as HadeClient, R as RefineInput, c as RefineToneShorthand, d as creat
  */
 declare const VIBE_TAG_SENTIMENT: Record<string, "positive" | "negative">;
 
-declare const HADE_CORE_VERSION: "0.1.0-alpha.0";
+declare const HADE_CORE_VERSION: "0.1.0";
 
 declare function decide(input: DecideInput, options?: DecideOptions & {
     config?: HadeClientConfig;

@@ -1,6 +1,6 @@
 {
   "name": "@hade/testkit",
-  "version": "0.1.0-alpha.0",
+  "version": "0.0.1",
   "private": false,
   "description": "Test fixtures, mock adapters, and deterministic clocks for HADE consumers.",
   "license": "UNLICENSED",

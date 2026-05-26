@@ -10,7 +10,7 @@
 //
 // See plan: /Users/danielmeier/.claude/plans/you-are-a-senior-keen-sonnet.md
 
-export const HADE_CORE_VERSION = "0.1.0-alpha.0" as const;
+export const HADE_CORE_VERSION = "0.1.0" as const;
 
 // ─── Headless output contract (Phase 4) ───────────────────────────────────────
 

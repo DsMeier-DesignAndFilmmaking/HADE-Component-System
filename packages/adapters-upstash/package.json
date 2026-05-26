@@ -1,6 +1,6 @@
 {
   "name": "@hade/adapters-upstash",
-  "version": "0.1.0-alpha.0",
+  "version": "0.0.1",
   "private": false,
   "description": "Upstash Redis CacheAdapter for HADE.",
   "license": "UNLICENSED",

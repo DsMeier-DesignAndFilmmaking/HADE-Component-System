@@ -1892,7 +1892,7 @@ function inheritFromPrior(prior, patch) {
 }
 
 // src/index.ts
-var HADE_CORE_VERSION = "0.1.0-alpha.0";
+var HADE_CORE_VERSION = "0.1.0";
 async function decide(input, options) {
   const { config, ...callOptions } = options ?? {};
   const client = createHade(config);

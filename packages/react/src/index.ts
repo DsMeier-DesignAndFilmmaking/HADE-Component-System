@@ -10,7 +10,7 @@
 // intentionally kept out of the published package until consumer feedback
 // validates which ones are universal vs. demo-specific.
 
-export const HADE_REACT_VERSION = "0.1.0-alpha.0" as const;
+export const HADE_REACT_VERSION = "0.1.0" as const;
 
 export { HadeProvider, useHadeClient } from "./HadeProvider.js";
 export type { HadeProviderProps } from "./HadeProvider.js";

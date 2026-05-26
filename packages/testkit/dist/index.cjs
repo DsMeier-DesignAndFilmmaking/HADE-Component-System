@@ -218,7 +218,7 @@ function fakeClock(options = {}) {
 }
 
 // src/index.ts
-var HADE_TESTKIT_VERSION = "0.1.0-alpha.0";
+var HADE_TESTKIT_VERSION = "0.1.0";
 
 exports.HADE_TESTKIT_VERSION = HADE_TESTKIT_VERSION;
 exports.fakeClock = fakeClock;

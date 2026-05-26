@@ -50,25 +50,30 @@ jobs:
           # Changesets needs full history to compute the changelog diff range.
           fetch-depth: 0
 
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: "10.18.3"
+
       - name: Setup Node 20 + GitHub Packages registry
         uses: actions/setup-node@v4
         with:
           node-version: 20
           registry-url: "https://npm.pkg.github.com"
           scope: "@hade"
-          cache: "npm"
+          cache: "pnpm"
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: SDK CI gate (type-check + cycles + boundaries + build + budgets)
-        run: npm run sdk:ci
+        run: pnpm run sdk:ci
 
       - name: Full vitest suite
-        run: npm test
+        run: pnpm test
 
       - name: Verify pack contents are clean
-        run: npm run sdk:pack:dry-run
+        run: pnpm run sdk:pack:dry-run
 
       - name: Create release PR or publish
         id: changesets
@@ -76,8 +81,8 @@ jobs:
         with:
           # On a Release PR merge: build + publish. On a regular commit: open
           # / update the Release PR with bumped versions and CHANGELOG.md.
-          publish: npm run release
-          version: npm run version
+          publish: pnpm run release
+          version: pnpm run version
           commit: "chore: release @hade packages"
           title: "Release: @hade packages"
         env:
