@@ -94,19 +94,35 @@ function isGroupContext(context?: HadeContext | null): boolean {
 }
 
 function fallbackSupport(source: string | undefined, context?: HadeContext | null): DecisionSupportText {
-  if (source === "degraded_location" || !isKnownLocation(context)) {
-    return { label: "Location is a little fuzzy, so this is the safest useful pick." };
+  const geoSource = context?.geo_source;
+
+  if (source === "decision_request_timeout") {
+    return {
+      label: "Live results took too long, so this is a dependable backup.",
+    };
   }
 
-  if (source === "offline_cache") {
-    return { label: "Using a recent good option while live updates catch up." };
+  if (source === "degraded_location" || geoSource === "unknown" || !isKnownLocation(context)) {
+    return {
+      label: "Location is unavailable, so this avoids pretending to be precise.",
+    };
+  }
+
+  if (geoSource === "ip" || geoSource === "stored") {
+    return {
+      label: "Location is approximate, so this keeps the next move conservative.",
+    };
+  }
+
+  if (source === "offline_cache" || source === "cache_recovery") {
+    return { label: "Using a recent local option while live updates catch up." };
   }
 
   return {
     label:
       context?.situation.urgency === "high"
         ? "Live context is thin, so this keeps the next move simple."
-        : "Live context is thin, so this is a dependable nearby pick.",
+        : "Live context is thin, so this is a dependable backup pick.",
   };
 }
 

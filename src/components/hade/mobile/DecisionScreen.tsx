@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import type { DomainMode } from "@/lib/hade/useHade";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import type { Intent, SpontaneousObject, VibeTag } from "@/types/hade";
+import type { GeoSource, Intent, SpontaneousObject, VibeTag } from "@/types/hade";
 import { createDecisionViewModelFromUGC, type DecisionViewModel } from "@/lib/hade/viewModel";
 import { useHadeAdaptiveContext } from "@/lib/hade/hooks";
 import { useHade } from "@/lib/hade/useHade";
@@ -51,6 +51,107 @@ function getPlatformLabel(): string {
   if (/iPad|iPhone|iPod/i.test(ua)) return "ios";
   if (/Android/i.test(ua)) return "android";
   return "desktop";
+}
+
+type RecoveryNotice = {
+  label: string;
+  detail: string;
+};
+
+function getDecisionRecoveryNotice(
+  decision: DecisionViewModel | null,
+  geoSource?: GeoSource,
+): RecoveryNotice | undefined {
+  if (!decision?.is_fallback) return undefined;
+
+  const sourceText = [
+    decision.engine_source,
+    decision.object.source,
+    decision.situation_summary,
+  ].filter(Boolean).join(" ").toLowerCase();
+
+  if (sourceText.includes("timeout")) {
+    return {
+      label: "Live results took too long",
+      detail: "HADE is showing a dependable backup instead of leaving you waiting.",
+    };
+  }
+
+  if (geoSource === "unknown") {
+    return {
+      label: "Location is unavailable",
+      detail: "This avoids pretending HADE knows the exact nearby scene.",
+    };
+  }
+
+  if (geoSource === "ip" || geoSource === "stored") {
+    return {
+      label: "Location is approximate",
+      detail: "This pick stays conservative because the local signal is less precise.",
+    };
+  }
+
+  if (sourceText.includes("offline") || sourceText.includes("cache")) {
+    return {
+      label: "Using a recent local option",
+      detail: "Live updates are thin, so HADE is leaning on a previously useful nearby pick.",
+    };
+  }
+
+  if (sourceText.includes("cold") || sourceText.includes("fresh start")) {
+    return {
+      label: "Fresh-start pick",
+      detail: "There is not much history yet, so HADE is starting with the safest useful option.",
+    };
+  }
+
+  return {
+    label: "Limited live context",
+    detail: "HADE has enough to suggest a next move, but not enough to overstate certainty.",
+  };
+}
+
+function getErrorStateCopy(error: string | null, geoSource?: GeoSource): {
+  title: string;
+  detail: string;
+  action: string;
+} {
+  const normalized = (error ?? "").toLowerCase();
+
+  if (normalized.includes("location") || geoSource === "unknown") {
+    return {
+      title: "Location is not available",
+      detail: "HADE needs at least an approximate area to make a grounded local call. You can allow location and try again.",
+      action: "Check again",
+    };
+  }
+
+  if (
+    normalized.includes("timeout") ||
+    normalized.includes("timed out") ||
+    normalized.includes("failed to fetch") ||
+    normalized.includes("network")
+  ) {
+    return {
+      title: "Live results did not come back",
+      detail: "The request took too long or the connection dropped. Your preferences are still here.",
+      action: "Try again",
+    };
+  }
+
+  if (normalized.includes("invalid hade response") || normalized.includes("no decision")) {
+    return {
+      title: "No clear pick came back",
+      detail: "HADE did not get a usable recommendation from the live layer. Trying again usually resolves it.",
+      action: "Run it again",
+    };
+  }
+
+  return {
+    title: "Something got in the way",
+    detail: "The decision layer did not finish cleanly. Nothing was changed; you can ask HADE to try again.",
+    action: "Try again",
+  };
 }
 
 type LensId = "food" | "retail" | "mobility" | "entertainment" | "social" | "wellness";
@@ -200,7 +301,7 @@ function IndustryLensSheet({
               <button
                 type="button"
                 onClick={onClose}
-                className="min-h-8 shrink-0 rounded-full border border-line/60 bg-white/70 px-3 text-[11px] font-semibold text-ink/55 transition-colors active:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
+                className="min-h-8 shrink-0 rounded-full border border-line/60 bg-surface/80 px-3 text-[11px] font-semibold text-ink/55 transition-colors hover:bg-background active:bg-background focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
               >
                 Close
               </button>
@@ -218,13 +319,13 @@ function IndustryLensSheet({
                     aria-pressed={isActive}
                     className={`flex min-h-[56px] items-center gap-2.5 rounded-2xl border px-3 py-2 text-left transition-all active:scale-[0.985] focus:outline-none focus-visible:ring-2 focus-visible:ring-line ${
                       isActive
-                        ? "border-ink/15 bg-white text-ink shadow-soft"
-                        : "border-line/50 bg-white/45 text-ink/64"
+                        ? "border-ink/15 bg-surface text-ink shadow-soft"
+                        : "border-line/50 bg-background/55 text-ink/64 hover:bg-surface/70"
                     }`}
                   >
                     <span
                       className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[15px] transition-colors ${
-                        isActive ? "bg-ink text-white" : "bg-ink/[0.045]"
+                        isActive ? "bg-ink text-background" : "bg-ink/[0.045]"
                       }`}
                       aria-hidden="true"
                     >
@@ -326,7 +427,7 @@ function DebugOverlay({ decision }: { decision: DecisionViewModel }) {
       </button>
 
       {expanded && (
-        <div className="w-44 rounded-xl border border-white/10 bg-ink/90 px-3 py-2.5 text-[10px] leading-relaxed text-white/90 shadow-xl backdrop-blur-sm">
+        <div className="w-44 rounded-xl border border-white/10 bg-obsidian/90 px-3 py-2.5 text-[10px] leading-relaxed text-white/90 shadow-xl backdrop-blur-sm">
           <div className="flex justify-between">
             <span className="text-white/50">source</span>
             <span className="text-emerald-400 text-right max-w-[100px] truncate">{sourceLabel}</span>
@@ -911,6 +1012,8 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
   const displayDecision = previousOverride ?? createdDecisionOverride ?? decision;
   const activeLens = LENS_OPTIONS.find((lens) => lens.id === activeLensId) ?? LENS_OPTIONS[0];
   const isWellnessLens = activeLensId === "wellness";
+  const recoveryNotice = getDecisionRecoveryNotice(displayDecision, adaptiveContext.geo_source);
+  const errorStateCopy = getErrorStateCopy(error, adaptiveContext.geo_source);
 
   // Derived pivot reasons list — UGC-specific when applicable
   const pivotReasons: string[] = displayDecision?.is_ugc && displayDecision.ugc_meta
@@ -924,16 +1027,33 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
   return (
     <div className="mx-auto flex min-h-[100dvh] w-full max-w-[430px] flex-col bg-background px-4 pb-[168px] pt-4 min-[390px]:px-5 min-[390px]:pt-5">
       {status === "error" && (
-        <div className="flex flex-1 flex-col items-center justify-center gap-4">
-          <p className="text-base text-ink/70">Something got in the way.</p>
-          <p className="max-w-xs text-center text-sm text-ink/50">{error}</p>
-          <button
-            type="button"
-            onClick={regenerate}
-            className="mt-2 h-11 rounded-xl border border-line px-5 text-sm font-medium text-ink/70"
-          >
-            Try again
-          </button>
+        <div
+          role="alert"
+          className="flex flex-1 flex-col items-center justify-center px-2 py-12 text-center"
+        >
+          <div className="w-full max-w-[340px] rounded-[24px] border border-line/60 bg-surface px-5 py-6 shadow-soft">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-ink/34">
+              Decision paused
+            </p>
+            <h1 className="mt-2 text-[21px] font-semibold leading-tight text-ink/76">
+              {errorStateCopy.title}
+            </h1>
+            <p className="mt-2 text-[13px] leading-snug text-ink/52">
+              {errorStateCopy.detail}
+            </p>
+            {error && process.env.NODE_ENV !== "production" && (
+              <p className="mt-3 rounded-xl bg-background/70 px-3 py-2 text-[11px] leading-snug text-ink/38">
+                {error}
+              </p>
+            )}
+            <button
+              type="button"
+              onClick={regenerate}
+              className="mt-4 min-h-11 w-full rounded-2xl bg-accent px-5 text-sm font-semibold text-white shadow-glowBlue transition-colors hover:bg-accent/90 active:bg-accent/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
+            >
+              {errorStateCopy.action}
+            </button>
+          </div>
         </div>
       )}
 
@@ -948,14 +1068,14 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
             lensIcon={activeLens.icon}
             lensLabel={activeLens.label}
           />
-          <div className="mt-2.5 flex items-center justify-between gap-2 rounded-xl border border-line/45 bg-white/38 px-3 py-2">
+          <div className="mt-2.5 flex items-center justify-between gap-2 rounded-2xl border border-line/45 bg-surface/55 px-3 py-2 shadow-soft">
             <p className="min-w-0 truncate text-[10px] leading-tight text-ink/45">
               Switch to a different direction at any time.
             </p>
             <button
               type="button"
               onClick={() => setShowLensSheet(true)}
-              className="shrink-0 rounded-full border border-line/55 bg-surface/70 px-3 py-1.5 text-[11px] font-semibold text-ink/52 transition-all active:scale-[0.97] active:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
+              className="shrink-0 rounded-full border border-line/55 bg-background/70 px-3 py-1.5 text-[11px] font-semibold text-ink/52 transition-all hover:bg-surface active:scale-[0.97] active:bg-surface focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
             >
               View Other directions
             </button>
@@ -963,7 +1083,12 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
         </>
       )}
 
-      {!isWellnessLens && !displayDecision && status !== "error" && <LoadingState />}
+      {!isWellnessLens && !displayDecision && status !== "error" && (
+        <LoadingState
+          geoSource={adaptiveContext.geo_source}
+          lensLabel={activeLens.label}
+        />
+      )}
 
       {!isWellnessLens && status !== "error" && displayDecision && (
         <>
@@ -983,7 +1108,7 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
                 }}
                 exit={{ x: previousOverride ? 32 : -32, opacity: 0 }}
                 transition={{ duration: 0.24, ease: "easeOut" }}
-                className="scroll-mt-3 rounded-[22px]"
+                className="scroll-mt-3 rounded-[24px]"
               >
                 <ErrorBoundary name="HeroDecisionCard">
                   <HeroDecisionCard
@@ -1001,6 +1126,7 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
                     lensLabel={activeLens.label}
                     lensFrame={activeLens.frame}
                     isFallback={displayDecision.is_fallback}
+                    fallbackNotice={recoveryNotice}
                     isReframing={isReframing || lensTransitioning}
                     pivotLabel={lensTransitioning ? activeLens.transitionCopy : pivotLabel}
                     temporalState={displayDecision.temporal_state}
@@ -1014,7 +1140,7 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
             </AnimatePresence>
           </div>
 
-          <div className="mt-2.5 flex items-center justify-between gap-2 rounded-xl border border-line/45 bg-white/38 px-3 py-2">
+          <div className="mt-2.5 flex items-center justify-between gap-2 rounded-2xl border border-line/45 bg-surface/55 px-3 py-2 shadow-soft">
             <div className="min-w-0">
               <p className="flex items-center gap-1.5 text-[11px] font-semibold leading-tight text-ink/68">
                 <span aria-hidden="true">{activeLens.icon}</span>
@@ -1027,7 +1153,7 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
             <button
               type="button"
               onClick={() => setShowLensSheet(true)}
-              className="shrink-0 rounded-full border border-line/55 bg-surface/70 px-3 py-1.5 text-[11px] font-semibold text-ink/52 transition-all active:scale-[0.97] active:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
+              className="shrink-0 rounded-full border border-line/55 bg-background/70 px-3 py-1.5 text-[11px] font-semibold text-ink/52 transition-all hover:bg-surface active:scale-[0.97] active:bg-surface focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
             >
               View Other directions
             </button>
@@ -1037,19 +1163,19 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
           <button
             type="button"
             onClick={() => setShowCreationFlow(true)}
-            className="mt-3 flex w-full flex-col items-center gap-0.5 rounded-xl bg-white py-2.5 transition-opacity active:opacity-80 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            className="mt-3 flex w-full flex-col items-center gap-0.5 rounded-2xl border border-line/45 bg-surface/70 py-2.5 shadow-soft transition-all hover:bg-surface active:scale-[0.99] focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
           >
             <span className="text-[13px] font-bold text-blue">
               + Add something
             </span>
-            <span className="text-[10px] text-black/55">Create a hangout nearby</span>
+            <span className="text-[10px] text-ink/45">Create a hangout nearby</span>
           </button>
 
           {/* ── Voice refinement CTA ─────────────────────────────────────── */}
           <button
             type="button"
             onClick={() => setVoiceSheetOpen(true)}
-            className="mt-2 flex min-h-[52px] w-full items-center gap-3 rounded-2xl border border-line/55 bg-white/55 px-4 py-3 text-left transition-all active:scale-[0.99] active:bg-white/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
+            className="mt-2 flex min-h-[52px] w-full items-center gap-3 rounded-2xl border border-line/55 bg-surface/70 px-4 py-3 text-left shadow-soft transition-all hover:bg-surface active:scale-[0.99] active:bg-surface focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
             aria-label="Say what would help — voice input"
           >
             <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-ink/6">
@@ -1073,7 +1199,7 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
           the wellness engine doesn't produce. Wellness uses its own in-card
           place list as the actionable surface. */}
       {!isWellnessLens && (
-      <div className="fixed bottom-0 left-0 right-0 z-10 mx-auto w-full max-w-[430px] border-t border-line/10 bg-background/78 px-4 pb-[max(12px,env(safe-area-inset-bottom,12px))] pt-2.5 backdrop-blur-sm min-[390px]:px-5">
+      <div className="fixed bottom-0 left-0 right-0 z-10 mx-auto w-full max-w-[430px] border-t border-line/20 bg-background/88 px-4 pb-[max(12px,env(safe-area-inset-bottom,12px))] pt-2.5 shadow-[0_-12px_30px_rgba(11,13,18,0.05)] backdrop-blur-sm min-[390px]:px-5">
         <div className="flex flex-col gap-1.5">
 
           {/* Utility row: Previous (contextual) + overflow */}
@@ -1103,21 +1229,21 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
                 type="button"
                 onClick={() => { setRefineOpen(true); setOverflowOpen(false); }}
                 disabled={!displayDecision}
-                className="h-9 rounded-xl border border-line bg-white/60 px-3 text-[11px] font-medium text-ink/60 transition-colors active:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-line disabled:opacity-40"
+                className="h-9 rounded-xl border border-line bg-surface/70 px-3 text-[11px] font-medium text-ink/60 transition-colors hover:bg-surface active:bg-background focus:outline-none focus-visible:ring-2 focus-visible:ring-line disabled:opacity-40"
               >
                 Refine
               </button>
               <button
                 type="button"
                 onClick={() => { setShowCompareModes(true); setOverflowOpen(false); }}
-                className="h-9 rounded-xl border border-line bg-white/60 px-3 text-[11px] font-medium text-ink/60 transition-colors active:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
+                className="h-9 rounded-xl border border-line bg-surface/70 px-3 text-[11px] font-medium text-ink/60 transition-colors hover:bg-surface active:bg-background focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
               >
                 Compare Modes
               </button>
               <button
                 type="button"
                 onClick={() => { setShowCreationFlow(true); setOverflowOpen(false); }}
-                className="h-9 rounded-xl border border-line bg-white/60 px-3 text-[11px] font-medium text-ink/60 transition-colors active:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
+                className="h-9 rounded-xl border border-line bg-surface/70 px-3 text-[11px] font-medium text-ink/60 transition-colors hover:bg-surface active:bg-background focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
               >
                 Start Meetup
               </button>
@@ -1132,7 +1258,7 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
                   key={reason}
                   type="button"
                   onClick={() => handleReject(reason)}
-                  className="h-9 rounded-xl border border-line bg-white/60 px-3 text-[11px] font-medium text-ink/70 transition-colors active:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
+                  className="h-9 rounded-xl border border-line bg-surface/70 px-3 text-[11px] font-medium text-ink/70 transition-colors hover:bg-surface active:bg-background focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
                 >
                   {reason}
                 </button>
@@ -1145,7 +1271,7 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
             type="button"
             onClick={handleGo}
             disabled={!displayDecision}
-            className="flex min-h-[54px] w-full flex-col items-center justify-center rounded-2xl bg-blue-600 px-4 text-white shadow-[0_12px_24px_rgba(49,107,255,0.20)] transition-colors hover:bg-blue-700 active:bg-blue-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 disabled:opacity-40"
+            className="flex min-h-[54px] w-full flex-col items-center justify-center rounded-2xl bg-accent px-4 text-white shadow-glowBlue transition-colors hover:bg-accent/90 active:bg-accent/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 disabled:opacity-40"
           >
             <span className="text-[15px] font-bold leading-tight">
               {displayDecision?.cta_label ?? "Take me there"}
@@ -1204,7 +1330,7 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
       <AnimatePresence>
         {showCreationFlow && (
           <motion.div
-            className="fixed inset-0 z-30 flex h-[100dvh] w-full max-w-[100vw] items-end overflow-hidden bg-black/25 px-2 pb-[max(8px,env(safe-area-inset-bottom,8px))] backdrop-blur-[1px]"
+            className="fixed inset-0 z-30 flex h-[100dvh] w-full max-w-[100vw] items-end overflow-hidden bg-ink/25 px-2 pb-[max(8px,env(safe-area-inset-bottom,8px))] backdrop-blur-[1px]"
             onPointerDown={handleCreationBackdropPointerDown}
             onPointerUp={handleCreationBackdropPointerUp}
             onKeyDown={handleCreationOverlayKeyDown}
@@ -1273,7 +1399,7 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 16 }}
             transition={{ type: "spring", stiffness: 380, damping: 30 }}
-            className="pointer-events-none fixed bottom-[calc(env(safe-area-inset-bottom,0px)+152px)] inset-x-4 z-[60] mx-auto max-w-[390px] rounded-2xl bg-ink px-4 py-3 shadow-xl"
+            className="pointer-events-none fixed bottom-[calc(env(safe-area-inset-bottom,0px)+152px)] inset-x-4 z-[60] mx-auto max-w-[390px] rounded-2xl bg-obsidian px-4 py-3 shadow-xl"
           >
             <div className="flex items-center gap-3">
               <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-500/20">

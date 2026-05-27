@@ -47,10 +47,10 @@ export default function PinSpotSheet({ initialGeo, anchorLabel, onConfirm, onCan
     <div
       role="dialog"
       aria-label="Pin exact spot"
-      className="w-full overflow-hidden rounded-2xl border border-line/70 bg-white"
+      className="w-full overflow-hidden rounded-2xl border border-line/70 bg-surface"
     >
       {anchorLabel && (
-        <div className="border-b border-line/60 bg-white/85 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-ink/55">
+        <div className="border-b border-line/60 bg-surface/85 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-ink/55">
           {anchorLabel}
         </div>
       )}
@@ -102,7 +102,7 @@ export default function PinSpotSheet({ initialGeo, anchorLabel, onConfirm, onCan
         )}
       </div>
 
-      <div className="border-t border-line/60 bg-white px-3 py-2 text-[11px] leading-snug text-ink/50">
+      <div className="border-t border-line/60 bg-surface px-3 py-2 text-[11px] leading-snug text-ink/50">
         {pin
           ? "Drag the pin to your exact spot."
           : "No location anchor — cancel and pick a place or use current location first."}
@@ -112,7 +112,7 @@ export default function PinSpotSheet({ initialGeo, anchorLabel, onConfirm, onCan
         <button
           type="button"
           onClick={onCancel}
-          className="min-h-[44px] flex-1 rounded-xl border border-line/70 bg-white px-3 text-[13px] font-semibold text-ink/70 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent active:bg-ink/[0.04]"
+          className="min-h-[44px] flex-1 rounded-xl border border-line/70 bg-background/70 px-3 text-[13px] font-semibold text-ink/70 transition-colors hover:bg-surface focus:outline-none focus-visible:ring-2 focus-visible:ring-accent active:bg-surface"
         >
           Cancel
         </button>
@@ -120,7 +120,7 @@ export default function PinSpotSheet({ initialGeo, anchorLabel, onConfirm, onCan
           type="button"
           onClick={handleConfirm}
           disabled={!pin}
-          className="min-h-[44px] flex-1 rounded-xl bg-accent px-3 text-[13px] font-semibold text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 disabled:opacity-40"
+          className="min-h-[44px] flex-1 rounded-2xl bg-accent px-3 text-[13px] font-semibold text-white shadow-glowBlue transition-colors hover:bg-accent/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 disabled:opacity-40 active:bg-accent/80"
         >
           Use this spot
         </button>

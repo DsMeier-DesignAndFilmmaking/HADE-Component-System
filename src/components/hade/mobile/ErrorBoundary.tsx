@@ -45,13 +45,16 @@ export class ErrorBoundary extends Component<Props, State> {
           role="alert"
           className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-line bg-surface px-5 py-8"
         >
-          <p className="text-sm font-medium text-ink/70">Something went wrong</p>
+          <p className="text-sm font-medium text-ink/70">This part did not load cleanly</p>
+          <p className="max-w-[240px] text-center text-xs leading-snug text-ink/45">
+            Your decision is still safe. Try reopening this panel.
+          </p>
           <button
             type="button"
             onClick={this.handleReset}
             className="h-9 rounded-xl border border-line px-4 text-sm font-medium text-ink/60 transition-colors active:bg-line/20"
           >
-            Try again
+            Reopen
           </button>
         </div>
       );

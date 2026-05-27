@@ -1,5 +1,7 @@
 import type { Config } from "tailwindcss";
 
+const tokenColor = (variable: string) => `rgb(var(${variable}) / <alpha-value>)`;
+
 const config: Config = {
   content: [
     "./src/pages/**/*.{js,ts,jsx,tsx,mdx}",
@@ -10,19 +12,19 @@ const config: Config = {
     extend: {
       colors: {
         // Semantic light theme tokens
-        background: "#FAFAFA",
-        surface: "#FFFFFF",
-        textPrimary: "#1F2937",
-        textMuted: "#4B5563",
-        accentPrimary: "#316BFF",
-        accentSecondary: "#F59E0B",
-        border: "#E5E7EB",
+        background: tokenColor("--color-background-rgb"),
+        surface: tokenColor("--color-surface-rgb"),
+        textPrimary: tokenColor("--color-text-primary-rgb"),
+        textMuted: tokenColor("--color-text-muted-rgb"),
+        accentPrimary: tokenColor("--color-accent-primary-rgb"),
+        accentSecondary: tokenColor("--color-accent-secondary-rgb"),
+        border: tokenColor("--color-border-rgb"),
         // Core HADE palette
-        ink: "#0b0d12",
-        surfaceLegacy: "#f6f7f9",
-        line: "#d8dce3",
-        accent: "#316BFF",
-        accentSoft: "#E7EEFF",
+        ink: tokenColor("--color-ink-rgb"),
+        surfaceLegacy: tokenColor("--color-surface-legacy-rgb"),
+        line: tokenColor("--color-line-rgb"),
+        accent: tokenColor("--color-accent-primary-rgb"),
+        accentSoft: tokenColor("--color-accent-soft-rgb"),
         // Deep Field / dark palette
         obsidian: "#080b11",
         slateGlass: "#1c2236",

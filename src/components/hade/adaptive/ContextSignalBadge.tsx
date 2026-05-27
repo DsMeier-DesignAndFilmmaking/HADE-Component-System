@@ -40,7 +40,7 @@ export function ContextSignalBadge({
   return (
     <div
       className={[
-        "inline-flex items-center gap-2 rounded-full border border-line bg-white px-3 py-1.5 shadow-soft",
+        "inline-flex items-center gap-2 rounded-full border border-line bg-surface px-3 py-1.5 shadow-soft",
         className,
       ]
         .filter(Boolean)

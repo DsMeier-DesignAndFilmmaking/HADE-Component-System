@@ -164,7 +164,7 @@ export function VoiceSheet({ open, onClose, onApply }: VoiceSheetProps) {
             animate={{ y: 0 }}
             exit={{ y: "100%" }}
             transition={reduceMotion ? { duration: 0 } : { type: "spring", damping: 32, stiffness: 320 }}
-            className="fixed inset-x-0 bottom-0 z-50 flex max-h-[60dvh] flex-col rounded-t-[22px] border-t border-line bg-surface shadow-panel"
+            className="fixed inset-x-0 bottom-0 z-50 mx-auto flex max-h-[60dvh] w-full max-w-[430px] flex-col rounded-t-[24px] border border-b-0 border-line bg-surface shadow-panel"
           >
             {/* Drag handle */}
             <div className="flex justify-center pb-0.5 pt-2.5">
@@ -183,7 +183,7 @@ export function VoiceSheet({ open, onClose, onApply }: VoiceSheetProps) {
                     type="button"
                     onClick={startListening}
                     aria-label="Start speaking"
-                    className="flex h-16 w-16 items-center justify-center rounded-full border-2 border-accent/30 bg-accent/10 text-2xl transition-colors active:bg-accent/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                    className="flex h-16 w-16 items-center justify-center rounded-full border-2 border-accent/30 bg-accent/10 text-2xl transition-all hover:bg-accent/15 active:scale-[0.97] active:bg-accent/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                   >
                     🎤
                   </button>
@@ -196,13 +196,13 @@ export function VoiceSheet({ open, onClose, onApply }: VoiceSheetProps) {
                       onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleFallbackSubmit(); } }}
                       placeholder="e.g. I want something quiet nearby"
                       rows={2}
-                      className="w-full resize-none rounded-xl border border-line bg-white/70 px-3 py-2.5 text-sm text-ink placeholder:text-ink/40 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+                      className="w-full resize-none rounded-xl border border-line bg-background/70 px-3 py-2.5 text-sm text-ink placeholder:text-ink/40 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
                     />
                     <button
                       type="button"
                       onClick={handleFallbackSubmit}
                       disabled={!editText.trim()}
-                      className="h-11 w-full rounded-xl bg-accent text-sm font-semibold text-white shadow-soft transition-transform active:scale-[0.985] focus:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-40"
+                      className="h-11 w-full rounded-2xl bg-accent text-sm font-semibold text-white shadow-glowBlue transition-all hover:bg-accent/90 active:scale-[0.985] focus:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-40"
                     >
                       Parse intent
                     </button>
@@ -248,7 +248,7 @@ export function VoiceSheet({ open, onClose, onApply }: VoiceSheetProps) {
                     value={editText}
                     onChange={(e) => handleEditChange(e.target.value)}
                     rows={2}
-                    className="w-full resize-none rounded-xl border border-accent bg-white/70 px-3 py-2.5 text-sm text-ink focus:outline-none focus:ring-1 focus:ring-accent"
+                    className="w-full resize-none rounded-xl border border-accent bg-background/70 px-3 py-2.5 text-sm text-ink focus:outline-none focus:ring-1 focus:ring-accent"
                     autoFocus
                   />
                 ) : (
@@ -306,7 +306,7 @@ export function VoiceSheet({ open, onClose, onApply }: VoiceSheetProps) {
                   <button
                     type="button"
                     onClick={startListening}
-                    className="min-h-[40px] rounded-xl border border-line bg-white/60 px-4 text-sm font-medium text-ink/70 transition-colors active:bg-white focus:outline-none"
+                    className="min-h-[40px] rounded-xl border border-line bg-background/70 px-4 text-sm font-medium text-ink/70 transition-colors hover:bg-surface active:bg-surface focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
                   >
                     Try again
                   </button>
@@ -328,21 +328,21 @@ export function VoiceSheet({ open, onClose, onApply }: VoiceSheetProps) {
                   <button
                     type="button"
                     onClick={() => { setEditMode((v) => !v); }}
-                    className="min-h-11 flex-1 rounded-xl border border-line bg-white/60 text-sm font-medium text-ink/60 transition-colors active:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
+                    className="min-h-11 flex-1 rounded-xl border border-line bg-background/70 text-sm font-medium text-ink/60 transition-colors hover:bg-surface active:bg-surface focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
                   >
                     {editMode ? "Done" : "Edit"}
                   </button>
                   <button
                     type="button"
                     onClick={onClose}
-                    className="min-h-11 flex-1 rounded-xl border border-line bg-white/60 text-sm font-medium text-ink/60 transition-colors active:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
+                    className="min-h-11 flex-1 rounded-xl border border-line bg-background/70 text-sm font-medium text-ink/60 transition-colors hover:bg-surface active:bg-surface focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
                   >
                     Cancel
                   </button>
                   <button
                     type="button"
                     onClick={handleApply}
-                    className="min-h-11 flex-[2] rounded-xl bg-accent text-sm font-semibold text-white shadow-soft transition-transform active:scale-[0.985] focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                    className="min-h-11 flex-[2] rounded-2xl bg-accent text-sm font-semibold text-white shadow-glowBlue transition-all hover:bg-accent/90 active:scale-[0.985] focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                   >
                     Apply
                   </button>
@@ -356,7 +356,7 @@ export function VoiceSheet({ open, onClose, onApply }: VoiceSheetProps) {
                 <button
                   type="button"
                   onClick={onClose}
-                  className="h-11 w-full rounded-xl border border-line bg-white/60 text-sm font-medium text-ink/60 transition-colors active:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
+                  className="h-11 w-full rounded-xl border border-line bg-background/70 text-sm font-medium text-ink/60 transition-colors hover:bg-surface active:bg-surface focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
                 >
                   Cancel
                 </button>

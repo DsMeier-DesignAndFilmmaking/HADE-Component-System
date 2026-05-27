@@ -16,7 +16,7 @@ interface ModeToggleProps {
 
 export function ModeToggle({ mode, onChange, disabled = false }: ModeToggleProps) {
   return (
-    <div className="flex items-center gap-1 rounded-xl border border-line/40 bg-white/50 p-1 backdrop-blur-sm">
+    <div className="flex items-center gap-1 rounded-xl border border-line/40 bg-surface/60 p-1 backdrop-blur-sm">
       {MODES.map((m) => {
         const isActive = mode === m.id;
         return (
@@ -28,7 +28,7 @@ export function ModeToggle({ mode, onChange, disabled = false }: ModeToggleProps
             className={[
               "flex flex-1 items-center justify-center gap-1 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all",
               isActive
-                ? "bg-ink text-white shadow-sm"
+                ? "bg-ink text-background shadow-sm"
                 : "text-ink/50 hover:text-ink/80 active:text-ink/80",
               disabled ? "pointer-events-none opacity-40" : "",
             ]

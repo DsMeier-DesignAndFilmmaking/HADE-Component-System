@@ -86,7 +86,7 @@ export function RefineSheet({ open, onClose, onConfirm }: RefineSheetProps) {
               <button
                 type="button"
                 onClick={onClose}
-                className="min-h-8 shrink-0 rounded-full border border-line/60 bg-white/70 px-3 text-[11px] font-semibold text-ink/55 transition-colors active:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
+                className="min-h-8 shrink-0 rounded-full border border-line/60 bg-surface/80 px-3 text-[11px] font-semibold text-ink/55 transition-colors hover:bg-background active:bg-background focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
               >
                 Close
               </button>
@@ -108,7 +108,7 @@ export function RefineSheet({ open, onClose, onConfirm }: RefineSheetProps) {
                         className={`min-h-10 rounded-xl border px-3 text-sm font-medium transition-colors min-[390px]:rounded-full ${
                           selected
                             ? "border-accent bg-accent/10 text-accent"
-                            : "border-line bg-transparent text-ink/70"
+                            : "border-line bg-background/45 text-ink/70 hover:bg-surface"
                         }`}
                         aria-pressed={selected}
                       >
@@ -134,7 +134,7 @@ export function RefineSheet({ open, onClose, onConfirm }: RefineSheetProps) {
                         className={`min-h-10 flex-1 rounded-xl border text-sm font-medium transition-colors ${
                           selected
                             ? "border-accent bg-accent/10 text-accent"
-                            : "border-line bg-transparent text-ink/70"
+                            : "border-line bg-background/45 text-ink/70 hover:bg-surface"
                         }`}
                         aria-pressed={selected}
                       >
@@ -150,7 +150,7 @@ export function RefineSheet({ open, onClose, onConfirm }: RefineSheetProps) {
               <button
                 type="button"
                 onClick={handleConfirm}
-                className="min-h-12 w-full rounded-2xl bg-accent text-sm font-semibold text-white shadow-soft transition-transform active:scale-[0.985] focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2"
+                className="min-h-12 w-full rounded-2xl bg-accent text-sm font-semibold text-white shadow-glowBlue transition-all hover:bg-accent/90 active:scale-[0.985] focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background"
               >
                 Apply refinement
               </button>

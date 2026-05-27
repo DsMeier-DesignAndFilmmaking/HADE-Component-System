@@ -105,7 +105,7 @@ export function UgcVerificationSheet({
                 ? { duration: 0 }
                 : { type: "spring", damping: 32, stiffness: 320 }
             }
-            className="fixed inset-x-0 bottom-0 z-50 flex flex-col rounded-t-[22px] border-t border-line bg-surface shadow-panel"
+            className="fixed inset-x-0 bottom-0 z-50 mx-auto flex w-full max-w-[430px] flex-col rounded-t-[24px] border border-b-0 border-line bg-surface shadow-panel"
           >
             <div className="flex justify-center pb-0.5 pt-2.5">
               <span className="h-1 w-9 rounded-full bg-ink/15" aria-hidden="true" />
@@ -125,7 +125,7 @@ export function UgcVerificationSheet({
                     type="button"
                     onClick={handleYes}
                     disabled={busy}
-                    className="h-11 w-full rounded-xl bg-accent text-sm font-semibold text-white shadow-soft transition-transform active:scale-[0.985] focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 disabled:opacity-40"
+                    className="h-11 w-full rounded-2xl bg-accent text-sm font-semibold text-white shadow-glowBlue transition-all hover:bg-accent/90 active:scale-[0.985] focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:opacity-40"
                   >
                     {copy.yes}
                   </button>
@@ -133,7 +133,7 @@ export function UgcVerificationSheet({
                     type="button"
                     onClick={handleNo}
                     disabled={busy}
-                    className="h-11 w-full rounded-xl border border-line text-sm font-medium text-ink/70 transition-colors active:bg-line/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-40"
+                    className="h-11 w-full rounded-xl border border-line bg-background/70 text-sm font-medium text-ink/70 transition-colors hover:bg-surface active:bg-surface focus:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-40"
                   >
                     {copy.no}
                   </button>

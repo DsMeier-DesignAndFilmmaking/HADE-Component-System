@@ -15,7 +15,7 @@ import { resetMobileViewportAfterInput } from "@/lib/hade/mobileViewport";
 const PinSpotSheet = dynamic(() => import("./PinSpotSheet"), {
   ssr: false,
   loading: () => (
-    <div className="rounded-2xl border border-line/70 bg-white px-3 py-6 text-center text-[12px] text-ink/55">
+    <div className="rounded-2xl border border-line/70 bg-surface px-3 py-6 text-center text-[12px] text-ink/55">
       Loading map…
     </div>
   ),
@@ -1085,7 +1085,7 @@ export function ActivityCreationView({ onCreate, onClose }: ActivityCreationView
               type="button"
               onClick={handleHeaderBack}
               disabled={status === "submitting"}
-              className="min-h-8 shrink-0 rounded-full border border-line/60 bg-white/70 px-3 text-[11px] font-semibold text-ink/55 transition-colors active:bg-white disabled:opacity-45 focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
+              className="min-h-8 shrink-0 rounded-full border border-line/60 bg-surface/80 px-3 text-[11px] font-semibold text-ink/55 transition-colors hover:bg-background active:bg-background disabled:opacity-45 focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
             >
               {step === "what" ? "Close" : "Back"}
             </button>
@@ -1115,7 +1115,7 @@ export function ActivityCreationView({ onCreate, onClose }: ActivityCreationView
                   onChange={(e) => setTitle(e.target.value)}
                   onFocus={handleFieldFocus}
                   placeholder="What do you want to add?"
-                  className="w-full rounded-xl border border-line bg-white/70 px-3.5 py-3 pr-11 text-base text-ink placeholder:text-ink/30 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
+                  className="w-full rounded-xl border border-line bg-background/70 px-3.5 py-3 pr-11 text-base text-ink placeholder:text-ink/30 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
                 />
                 <button
                   type="button"
@@ -1155,7 +1155,7 @@ export function ActivityCreationView({ onCreate, onClose }: ActivityCreationView
                       className={`min-h-10 rounded-xl border px-3 py-2 text-sm font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
                         active
                           ? "border-accent bg-accent text-white"
-                          : "border-line bg-white/70 text-ink/70"
+                          : "border-line bg-background/70 text-ink/70 hover:bg-surface"
                       }`}
                     >
                       {v.label}
@@ -1190,7 +1190,7 @@ export function ActivityCreationView({ onCreate, onClose }: ActivityCreationView
                 <legend className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.16em] text-ink/38">
                   Starts around
                 </legend>
-                <div className="rounded-xl border border-line bg-white/75 px-3 py-2.5 transition-colors focus-within:border-accent focus-within:ring-2 focus-within:ring-accent/20">
+                <div className="rounded-xl border border-line bg-background/70 px-3 py-2.5 transition-colors focus-within:border-accent focus-within:ring-2 focus-within:ring-accent/20">
                   <div className="flex min-h-10 items-center gap-2">
                     <span
                       aria-hidden="true"
@@ -1206,7 +1206,7 @@ export function ActivityCreationView({ onCreate, onClose }: ActivityCreationView
                         onFocus={handleFieldFocus}
                         aria-label="Start hour"
                         aria-invalid={Boolean(timeValidationMessage)}
-                        className="h-10 w-full rounded-lg border border-line/70 bg-white px-2 text-base font-semibold text-ink outline-none focus:border-accent"
+                        className="h-10 w-full rounded-lg border border-line/70 bg-surface px-2 text-base font-semibold text-ink outline-none focus:border-accent"
                       >
                         {HOUR_OPTIONS.map((hour) => (
                           <option key={hour} value={hour}>{hour}</option>
@@ -1221,7 +1221,7 @@ export function ActivityCreationView({ onCreate, onClose }: ActivityCreationView
                         onFocus={handleFieldFocus}
                         aria-label="Start minute"
                         aria-invalid={Boolean(timeValidationMessage)}
-                        className="h-10 w-full rounded-lg border border-line/70 bg-white px-2 text-base font-semibold text-ink outline-none focus:border-accent"
+                        className="h-10 w-full rounded-lg border border-line/70 bg-surface px-2 text-base font-semibold text-ink outline-none focus:border-accent"
                       >
                         {MINUTE_OPTIONS.map((minute) => (
                           <option key={minute} value={minute}>{minute}</option>
@@ -1236,7 +1236,7 @@ export function ActivityCreationView({ onCreate, onClose }: ActivityCreationView
                         onFocus={handleFieldFocus}
                         aria-label="Start time period"
                         aria-invalid={Boolean(timeValidationMessage)}
-                        className="h-10 w-full rounded-lg border border-line/70 bg-white px-2 text-base font-semibold text-ink outline-none focus:border-accent"
+                        className="h-10 w-full rounded-lg border border-line/70 bg-surface px-2 text-base font-semibold text-ink outline-none focus:border-accent"
                       >
                         <option value="AM">AM</option>
                         <option value="PM">PM</option>
@@ -1249,7 +1249,7 @@ export function ActivityCreationView({ onCreate, onClose }: ActivityCreationView
                 </div>
               </fieldset>
 
-              <div className="mb-2.5 rounded-xl border border-line bg-white/70 px-3.5 py-3">
+              <div className="mb-2.5 rounded-xl border border-line bg-background/70 px-3.5 py-3">
                 <div>
                   <span className="block text-[10px] font-semibold uppercase tracking-[0.16em] text-ink/38">
                     Where is this?
@@ -1266,7 +1266,7 @@ export function ActivityCreationView({ onCreate, onClose }: ActivityCreationView
                     className={`min-h-10 rounded-xl border px-2.5 text-[12px] font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
                       locationMode === "current"
                         ? "border-accent bg-accent text-white"
-                        : "border-line/70 bg-white text-ink/65"
+                        : "border-line/70 bg-surface text-ink/65 hover:bg-background"
                     }`}
                   >
                     Use current location
@@ -1277,7 +1277,7 @@ export function ActivityCreationView({ onCreate, onClose }: ActivityCreationView
                     className={`min-h-10 rounded-xl border px-2.5 text-[12px] font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
                       locationMode === "place"
                         ? "border-accent bg-accent text-white"
-                        : "border-line/70 bg-white text-ink/65"
+                        : "border-line/70 bg-surface text-ink/65 hover:bg-background"
                     }`}
                   >
                     Search nearby place
@@ -1288,7 +1288,7 @@ export function ActivityCreationView({ onCreate, onClose }: ActivityCreationView
                     className={`min-h-10 rounded-xl border px-2.5 text-[12px] font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
                       locationMode === "manual"
                         ? "border-accent bg-accent text-white"
-                        : "border-line/70 bg-white text-ink/65"
+                        : "border-line/70 bg-surface text-ink/65 hover:bg-background"
                     }`}
                   >
                     Add location note
@@ -1300,7 +1300,7 @@ export function ActivityCreationView({ onCreate, onClose }: ActivityCreationView
                       className={`min-h-10 rounded-xl border px-2.5 text-[12px] font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
                         locationMode === "pin"
                           ? "border-accent bg-accent text-white"
-                          : "border-line/70 bg-white text-ink/65"
+                          : "border-line/70 bg-surface text-ink/65 hover:bg-background"
                       }`}
                     >
                       Pin exact spot
@@ -1311,8 +1311,8 @@ export function ActivityCreationView({ onCreate, onClose }: ActivityCreationView
                 <div
                   className={`mt-2.5 rounded-xl border px-3 py-2 text-[12px] font-medium leading-snug ${
                     locationStatus === "denied" && locationMode === "none"
-                      ? "border-amber-300/40 bg-amber-50 text-amber-800"
-                      : "border-line/60 bg-white/70 text-ink/56"
+                      ? "border-amber-400/40 bg-amber-400/10 text-amber-700"
+                      : "border-line/60 bg-surface/70 text-ink/56"
                   }`}
                   role={locationStatus === "denied" ? "status" : undefined}
                 >
@@ -1335,14 +1335,14 @@ export function ActivityCreationView({ onCreate, onClose }: ActivityCreationView
                     <button
                       type="button"
                       onClick={handleChangePin}
-                      className="min-h-[44px] flex-1 rounded-xl border border-line/70 bg-white px-3 text-[12px] font-semibold text-ink/70 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent active:bg-ink/[0.04]"
+                      className="min-h-[44px] flex-1 rounded-xl border border-line/70 bg-surface px-3 text-[12px] font-semibold text-ink/70 transition-colors hover:bg-background focus:outline-none focus-visible:ring-2 focus-visible:ring-accent active:bg-background"
                     >
                       Change pin
                     </button>
                     <button
                       type="button"
                       onClick={handleRemovePin}
-                      className="min-h-[44px] flex-1 rounded-xl border border-line/70 bg-white px-3 text-[12px] font-semibold text-ink/55 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent active:bg-ink/[0.04]"
+                      className="min-h-[44px] flex-1 rounded-xl border border-line/70 bg-surface px-3 text-[12px] font-semibold text-ink/55 transition-colors hover:bg-background focus:outline-none focus-visible:ring-2 focus-visible:ring-accent active:bg-background"
                     >
                       Remove pin
                     </button>
@@ -1357,7 +1357,7 @@ export function ActivityCreationView({ onCreate, onClose }: ActivityCreationView
                       onChange={(e) => handlePlaceQueryChange(e.target.value)}
                       onFocus={handleFieldFocus}
                       placeholder="Search nearby places"
-                      className="w-full rounded-xl border border-line/70 bg-white px-3 py-2.5 text-base text-ink placeholder:text-ink/30 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
+                      className="w-full rounded-xl border border-line/70 bg-surface px-3 py-2.5 text-base text-ink placeholder:text-ink/30 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
                     />
 
                     {placeSearchStatus === "idle" && (
@@ -1379,7 +1379,7 @@ export function ActivityCreationView({ onCreate, onClose }: ActivityCreationView
                     )}
 
                     {placeSearchStatus === "error" && (
-                      <p className="rounded-lg bg-amber-50 px-3 py-2 text-[11px] text-amber-800">
+                      <p className="rounded-lg bg-amber-400/10 px-3 py-2 text-[11px] text-amber-700">
                         Couldn’t load places. You can still add a location note.
                       </p>
                     )}
@@ -1396,7 +1396,7 @@ export function ActivityCreationView({ onCreate, onClose }: ActivityCreationView
                               className={`w-full rounded-xl border px-3 py-2 text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
                                 active
                                   ? "border-accent bg-accent/10"
-                                  : "border-line/65 bg-white"
+                                  : "border-line/65 bg-surface hover:bg-background"
                               }`}
                             >
                               <span className="block truncate text-[13px] font-semibold text-ink">
@@ -1427,7 +1427,7 @@ export function ActivityCreationView({ onCreate, onClose }: ActivityCreationView
                       onChange={(e) => setLocationLabel(e.target.value)}
                       onFocus={handleFieldFocus}
                       placeholder="e.g. Bluebird Cafe, Main Street, near the trailhead"
-                      className="w-full rounded-xl border border-line/70 bg-white px-3.5 py-2.5 text-base text-ink placeholder:text-ink/30 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
+                      className="w-full rounded-xl border border-line/70 bg-surface px-3.5 py-2.5 text-base text-ink placeholder:text-ink/30 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
                     />
                   </div>
                 )}
@@ -1443,7 +1443,7 @@ export function ActivityCreationView({ onCreate, onClose }: ActivityCreationView
                 onFocus={handleFieldFocus}
                 placeholder="Notes (optional)"
                 rows={2}
-                className="mb-4 w-full resize-none rounded-xl border border-line bg-white/70 px-3.5 py-2.5 text-base text-ink placeholder:text-ink/30 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
+                className="mb-4 w-full resize-none rounded-xl border border-line bg-background/70 px-3.5 py-2.5 text-base text-ink placeholder:text-ink/30 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
               />
 
               {(timeValidationMessage || errorMsg) && (
@@ -1451,7 +1451,7 @@ export function ActivityCreationView({ onCreate, onClose }: ActivityCreationView
                   className={`mb-3 rounded-lg px-3 py-2 text-xs ${
                     status === "local"
                       ? "bg-accent/10 text-accent"
-                      : "bg-red-50 text-red-600"
+                      : "bg-red-500/10 text-red-600"
                   }`}
                   role={status === "local" ? "status" : "alert"}
                 >
@@ -1483,7 +1483,7 @@ export function ActivityCreationView({ onCreate, onClose }: ActivityCreationView
                 type="button"
                 disabled={!title.trim()}
                 onClick={() => setStep("vibe")}
-                className="h-11 w-full rounded-xl bg-black text-sm font-semibold text-white transition-opacity disabled:opacity-35 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent active:opacity-80"
+                className="h-11 w-full rounded-2xl bg-accent text-sm font-semibold text-white shadow-glowBlue transition-all hover:bg-accent/90 disabled:opacity-35 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent active:scale-[0.985] active:bg-accent/80"
               >
                 Continue
               </button>
@@ -1502,14 +1502,14 @@ export function ActivityCreationView({ onCreate, onClose }: ActivityCreationView
               <button
                 type="button"
                 onClick={() => setStep("what")}
-                className="min-h-10 rounded-xl border border-line bg-white/70 px-4 text-sm font-semibold text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
+                className="min-h-10 rounded-xl border border-line bg-background/70 px-4 text-sm font-semibold text-ink transition-colors hover:bg-surface focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
               >
                 Back
               </button>
               <button
                 type="button"
                 onClick={() => setStep("details")}
-                className="min-h-10 flex-1 rounded-xl bg-black text-sm font-semibold text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-accent active:opacity-80"
+                className="min-h-10 flex-1 rounded-2xl bg-accent text-sm font-semibold text-white shadow-glowBlue transition-all hover:bg-accent/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent active:scale-[0.985] active:bg-accent/80"
               >
                 Continue
               </button>
@@ -1529,7 +1529,7 @@ export function ActivityCreationView({ onCreate, onClose }: ActivityCreationView
                 type="button"
                 onClick={() => setStep("vibe")}
                 disabled={status === "submitting"}
-                className="min-h-10 rounded-xl border border-line bg-white/70 px-4 text-sm font-semibold text-ink disabled:opacity-50 focus:outline-none"
+                className="min-h-10 rounded-xl border border-line bg-background/70 px-4 text-sm font-semibold text-ink transition-colors hover:bg-surface disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
               >
                 Back
               </button>
@@ -1538,7 +1538,7 @@ export function ActivityCreationView({ onCreate, onClose }: ActivityCreationView
                 onClick={handleCreate}
                 disabled={submitDisabled}
                 whileTap={!submitDisabled ? { scale: 0.97 } : undefined}
-                className="min-h-10 flex-1 rounded-xl bg-accent px-4 text-sm font-semibold text-white transition-opacity disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                className="min-h-10 flex-1 rounded-2xl bg-accent px-4 text-sm font-semibold text-white shadow-glowBlue transition-all hover:bg-accent/90 disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent active:bg-accent/80"
               >
                 {submitLabel}
               </motion.button>

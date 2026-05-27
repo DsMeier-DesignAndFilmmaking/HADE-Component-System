@@ -70,7 +70,7 @@ export function CompareModesSheet({
     <AnimatePresence>
       {open && (
         <motion.div
-          className="fixed inset-0 z-40 flex items-end justify-center bg-black/30 px-3 backdrop-blur-[2px]"
+          className="fixed inset-0 z-40 flex items-end justify-center bg-ink/30 px-3 backdrop-blur-[2px]"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
@@ -86,7 +86,7 @@ export function CompareModesSheet({
             onDragEnd={(_, info) => {
               if (info.offset.y > 100) onClose();
             }}
-            className="mx-auto flex max-h-[min(86dvh,560px)] w-full max-w-[430px] flex-col overflow-hidden rounded-t-[24px] border border-b-0 border-line/70 bg-background shadow-2xl"
+            className="mx-auto flex max-h-[min(86dvh,560px)] w-full max-w-[430px] flex-col overflow-hidden rounded-t-[24px] border border-b-0 border-line/70 bg-surface shadow-panel"
             initial={{ y: "100%" }}
             animate={{ y: 0 }}
             exit={{ y: "100%" }}
@@ -113,7 +113,7 @@ export function CompareModesSheet({
               <button
                 type="button"
                 onClick={onClose}
-                className="min-h-8 shrink-0 rounded-full border border-line/60 bg-white/70 px-3 text-[11px] font-semibold text-ink/55 transition-colors active:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
+                className="min-h-8 shrink-0 rounded-full border border-line/60 bg-surface/80 px-3 text-[11px] font-semibold text-ink/55 transition-colors hover:bg-background active:bg-background focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
               >
                 Close
               </button>
@@ -166,7 +166,7 @@ function CompareCard({ mode, loading, result }: CompareCardProps) {
   const meta = MODE_META[mode];
 
   return (
-    <div className="flex min-h-[136px] w-[132px] shrink-0 snap-start flex-col rounded-2xl border border-line/50 bg-surface p-3 min-[390px]:w-auto">
+    <div className="flex min-h-[136px] w-[132px] shrink-0 snap-start flex-col rounded-2xl border border-line/50 bg-background/70 p-3 shadow-soft min-[390px]:w-auto">
       <div className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-ink/45">
         <span aria-hidden="true">{meta.icon}</span>
         {meta.label}

@@ -132,6 +132,7 @@ export function DecisionCard({
   className = "",
 }: DecisionCardProps) {
   const [openingMaps, setOpeningMaps] = useState(false);
+  const [navigationIssue, setNavigationIssue] = useState<string | null>(null);
   const isUGC = object.type === "ugc_event";
 
   const timeLabel  = isUGC
@@ -148,6 +149,7 @@ export function DecisionCard({
     const url = getNavigationUrl(lat, lng, object.title);
     const platform = getPlatformLabel();
 
+    setNavigationIssue(null);
     setOpeningMaps(true);
     console.log("[HADE NAV]", {
       platform,
@@ -178,6 +180,7 @@ export function DecisionCard({
         execution: "blocked_invalid_coordinates",
       });
       setOpeningMaps(false);
+      setNavigationIssue("I cannot open maps yet because this pick does not have a usable location.");
       return;
     }
 
@@ -348,6 +351,11 @@ export function DecisionCard({
                 Not This
               </button>
             </div>
+            {navigationIssue && (
+              <p role="status" className="mt-2 text-[12px] leading-snug text-ink/45">
+                {navigationIssue}
+              </p>
+            )}
           </>
         )}
 

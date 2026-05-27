@@ -123,7 +123,7 @@ export function WellnessDecisionCard({
   return (
     <article
       aria-label="Wellness recommendation"
-      className="relative flex flex-col gap-4 rounded-[22px] bg-surface p-4 shadow-soft min-[390px]:p-5"
+      className="relative flex flex-col gap-4 rounded-[24px] border border-line/45 bg-surface p-4 shadow-soft min-[390px]:p-5"
     >
       {/* Header */}
       <header className="flex flex-col gap-2">

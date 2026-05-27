@@ -33,6 +33,10 @@ interface HeroDecisionCardProps {
   lensLabel?: string;
   lensFrame?: string;
   isFallback?: boolean;
+  fallbackNotice?: {
+    label: string;
+    detail: string;
+  };
   /** Shows the reframing microcopy instead of normal card content. */
   isReframing?: boolean;
   /** Specific adjustment label — e.g. "Adjusting for: Too far" */
@@ -157,6 +161,7 @@ export function HeroDecisionCard({
   lensLabel,
   lensFrame,
   isFallback = false,
+  fallbackNotice,
   isReframing = false,
   pivotLabel,
   temporalState,
@@ -184,6 +189,12 @@ export function HeroDecisionCard({
     () => getConfidenceCopy(confidence, uiState, isFallback, isUGC),
     [confidence, uiState, isFallback, isUGC],
   );
+  const activeFallbackNotice = isFallback
+    ? fallbackNotice ?? {
+        label: "Limited live context",
+        detail: "This is a dependable backup while HADE waits for stronger live signals.",
+      }
+    : null;
   const primarySupport = supportLabel ?? contextLabel ?? (mode ? MODE_CONTEXT[mode] : undefined);
   const secondarySupport = supportDetail ?? (!supportLabel ? lensFrame : undefined);
   const hasResolvedSupport = Boolean(supportLabel || supportDetail);
@@ -254,7 +265,7 @@ export function HeroDecisionCard({
                   className={`inline-flex min-w-0 items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-semibold leading-tight ${
                     isFallback
                       ? "border-amber-400/25 bg-amber-400/10 text-amber-700"
-                      : "border-line/60 bg-white/55 text-ink/48"
+                      : "border-line/60 bg-background/60 text-ink/48"
                   }`}
                 >
                   {lensIcon && <span aria-hidden="true">{lensIcon}</span>}
@@ -285,6 +296,22 @@ export function HeroDecisionCard({
             </p>
           )}
 
+          {activeFallbackNotice && (
+            <div className="mt-3 flex items-start gap-2.5 rounded-2xl border border-amber-400/20 bg-amber-400/[0.08] px-3 py-2.5">
+              <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-amber-500/12 text-amber-700">
+                <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" />
+              </span>
+              <div className="min-w-0">
+                <p className="text-[12px] font-semibold leading-tight text-amber-900/85">
+                  {activeFallbackNotice.label}
+                </p>
+                <p className="mt-1 text-[11.5px] leading-snug text-ink/52">
+                  {activeFallbackNotice.detail}
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* ── UGC rationale ───────────────────────────────────────────────── */}
           {isNewlyCreatedUGC ? (
             <div className="mt-1.5 rounded-xl border border-emerald-500/10 bg-emerald-500/[0.06] px-3 py-2">
@@ -292,7 +319,7 @@ export function HeroDecisionCard({
                 Saved. People nearby can now discover it.
               </p>
               {createdLocationDisplay && (
-                <div className="mt-2 inline-flex max-w-full items-center gap-1.5 rounded-full border border-emerald-500/15 bg-white/70 px-2.5 py-1 text-[11px] font-medium leading-tight text-ink/56">
+                <div className="mt-2 inline-flex max-w-full items-center gap-1.5 rounded-full border border-emerald-500/15 bg-surface/70 px-2.5 py-1 text-[11px] font-medium leading-tight text-ink/56">
                   <span aria-hidden="true">⌖</span>
                   <span className="min-w-0 truncate">
                     {createdLocationDisplay.primary}
@@ -314,7 +341,7 @@ export function HeroDecisionCard({
             {placeMeta.map(({ key, icon: Icon, label }) => (
               <div
                 key={key}
-                className="flex min-h-9 min-w-0 items-center gap-2 rounded-xl border border-line/55 bg-white/70 px-2.5 py-1.5"
+                className="flex min-h-9 min-w-0 items-center gap-2 rounded-xl border border-line/55 bg-background/70 px-2.5 py-1.5"
               >
                 <Icon className="h-3.5 w-3.5 shrink-0 text-ink/35" aria-hidden="true" />
                 <span className="min-w-0 truncate text-[11.5px] font-semibold leading-tight text-ink/68">
@@ -351,7 +378,7 @@ export function HeroDecisionCard({
           )}
 
           {/* ── Confidence ──────────────────────────────────────────────────── */}
-          <div className="mt-3 flex items-start gap-3 rounded-2xl border border-line/45 bg-white/60 px-3.5 py-3">
+          <div className="mt-3 flex items-start gap-3 rounded-2xl border border-line/45 bg-background/70 px-3.5 py-3">
             <div className="mt-0.5 h-2 w-2 shrink-0 rounded-full bg-emerald-500 shadow-[0_0_0_4px_rgba(16,185,129,0.10)]" />
             <div className="min-w-0">
               <p className="text-[12px] font-semibold leading-tight text-ink/72">
@@ -386,7 +413,7 @@ export function HeroDecisionCard({
                 }}
                 placeholder="What feels off or missing?"
                 autoFocus
-                className="min-h-10 flex-1 rounded-xl border border-line bg-white/70 px-3 py-2 text-sm text-ink placeholder:text-ink/30 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
+                className="min-h-10 flex-1 rounded-xl border border-line bg-background/70 px-3 py-2 text-sm text-ink placeholder:text-ink/30 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
               />
               <button
                 type="button"

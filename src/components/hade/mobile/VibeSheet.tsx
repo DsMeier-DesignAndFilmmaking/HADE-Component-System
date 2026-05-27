@@ -87,7 +87,7 @@ export function VibeSheet({ venueId: _venueId, venueName, isUGC = false, onDismi
       animate={{ y: 0 }}
       exit={{ y: "100%" }}
       transition={{ type: "spring", damping: 28, stiffness: 280 }}
-      className="fixed inset-x-0 bottom-0 z-50 rounded-t-[22px] border-t border-line bg-background px-4 pb-[max(12px,env(safe-area-inset-bottom,12px))] pt-3.5 min-[390px]:px-5"
+      className="fixed inset-x-0 bottom-0 z-50 mx-auto w-full max-w-[430px] rounded-t-[24px] border border-b-0 border-line bg-surface px-4 pb-[max(12px,env(safe-area-inset-bottom,12px))] pt-3.5 shadow-panel min-[390px]:px-5"
     >
       {/* Drag handle */}
       <div className="mx-auto mb-3 h-1 w-9 rounded-full bg-line" />
@@ -122,7 +122,7 @@ export function VibeSheet({ venueId: _venueId, venueName, isUGC = false, onDismi
               className={`rounded-full border px-3 py-1 text-[13px] font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
                 isSelected
                   ? "border-accent bg-accentSoft text-accent"
-                  : "border-line bg-surface text-ink/60"
+                  : "border-line bg-background/70 text-ink/60 hover:bg-surface"
               }`}
             >
               {TAG_LABELS[tag]}
@@ -136,7 +136,7 @@ export function VibeSheet({ venueId: _venueId, venueName, isUGC = false, onDismi
         <button
           type="button"
           onClick={onDismiss}
-          className="h-10 flex-1 rounded-xl border border-line text-sm font-medium text-ink/50 transition-colors active:bg-line/20"
+          className="h-10 flex-1 rounded-xl border border-line bg-background/70 text-sm font-medium text-ink/50 transition-colors hover:bg-surface active:bg-surface"
         >
           Skip
         </button>
@@ -144,7 +144,7 @@ export function VibeSheet({ venueId: _venueId, venueName, isUGC = false, onDismi
           type="button"
           onClick={handleSubmit}
           disabled={selected.size === 0 || submitting || submitted}
-          className="h-10 flex-1 rounded-xl bg-accent text-sm font-semibold text-white transition-opacity disabled:opacity-40 active:opacity-80"
+          className="h-10 flex-1 rounded-2xl bg-accent text-sm font-semibold text-white shadow-glowBlue transition-all hover:bg-accent/90 disabled:opacity-40 active:scale-[0.985] active:bg-accent/80"
         >
           {submitting ? "Sending…" : "Send"}
         </button>

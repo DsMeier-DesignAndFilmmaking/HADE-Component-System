@@ -128,7 +128,7 @@ function ChipRow<T extends string>({
               className={[
                 "rounded-full px-2.5 py-1 text-[11px] font-medium capitalize transition-colors",
                 active
-                  ? "bg-ink text-white"
+                  ? "bg-ink text-background"
                   : "border border-line bg-surface text-ink/70 hover:bg-accent/5 hover:text-ink",
               ].join(" ")}
             >
@@ -143,7 +143,7 @@ function ChipRow<T extends string>({
 
 export function AmbientToggles({ signals, onChange }: AmbientTogglesProps) {
   return (
-    <div className="flex flex-col gap-4 rounded-[22px] border border-line bg-surface p-4 shadow-soft">
+    <div className="flex flex-col gap-4 rounded-[24px] border border-line bg-surface p-4 shadow-soft">
       <div className="flex flex-col gap-2">
         <h3 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink/50">
           Preset Ambient Combos

@@ -10,7 +10,7 @@ import type {
 } from "@/types/hade";
 
 const urgencyClasses: Record<Urgency, string> = {
-  low: "border border-line bg-white text-ink hover:bg-surface",
+  low: "border border-line bg-surface text-ink hover:bg-background",
   medium:
     "border border-accent bg-accent text-white hover:bg-accent/90 shadow-glowBlue/25",
   high:

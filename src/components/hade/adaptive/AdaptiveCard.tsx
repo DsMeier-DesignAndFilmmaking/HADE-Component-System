@@ -13,10 +13,10 @@ const hoverScaleByMode: Record<UserSignalMode, number> = {
 
 const modeCardClasses: Record<UserSignalMode, string> = {
   explore:
-    "border border-accent/25 bg-gradient-to-b from-white to-accentSoft/25 shadow-soft",
-  compare: "border border-line bg-white shadow-soft",
+    "border border-accent/25 bg-gradient-to-b from-surface to-accentSoft/25 shadow-soft",
+  compare: "border border-line bg-surface shadow-soft",
   book:
-    "border border-cyberLime/40 bg-gradient-to-b from-white to-cyberLime/15 shadow-glow",
+    "border border-cyberLime/40 bg-gradient-to-b from-surface to-cyberLime/15 shadow-glow",
 };
 
 const modeEyebrow: Record<UserSignalMode, string> = {

@@ -89,7 +89,7 @@ export function WellnessLensView({
         className={["flex flex-col gap-3", showCTA ? "pb-[88px]" : ""].join(" ")}
       >
         {/* Slim lens header — matches HADE chrome convention */}
-        <div className="flex items-center justify-between gap-2 rounded-xl border border-line/45 bg-white/45 px-3 py-2">
+        <div className="flex items-center justify-between gap-2 rounded-2xl border border-line/45 bg-surface/55 px-3 py-2 shadow-soft">
           <div className="min-w-0">
             <p className="flex items-center gap-1.5 text-[11px] font-semibold leading-tight text-ink/70">
               <span aria-hidden="true">{lensIcon}</span>
@@ -120,14 +120,14 @@ export function WellnessLensView({
           visually identical to the user. Mounted only when the wellness lens
           is active (this component is only rendered in that condition). */}
       {showCTA && (
-        <div className="fixed bottom-0 left-0 right-0 z-10 mx-auto w-full max-w-[430px] border-t border-line/10 bg-background/78 px-4 pb-[max(12px,env(safe-area-inset-bottom,12px))] pt-2.5 backdrop-blur-sm min-[390px]:px-5">
+        <div className="fixed bottom-0 left-0 right-0 z-10 mx-auto w-full max-w-[430px] border-t border-line/20 bg-background/88 px-4 pb-[max(12px,env(safe-area-inset-bottom,12px))] pt-2.5 shadow-[0_-12px_30px_rgba(11,13,18,0.05)] backdrop-blur-sm min-[390px]:px-5">
           <div className="flex flex-col gap-1.5">
 
             {/* PRIMARY — open active place in Maps */}
             <button
               type="button"
               onClick={handleOpenInMaps}
-              className="flex min-h-[54px] w-full flex-col items-center justify-center rounded-2xl bg-blue-600 px-4 text-white shadow-[0_12px_24px_rgba(49,107,255,0.20)] transition-colors hover:bg-blue-700 active:bg-blue-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50"
+              className="flex min-h-[54px] w-full flex-col items-center justify-center rounded-2xl bg-accent px-4 text-white shadow-glowBlue transition-colors hover:bg-accent/90 active:bg-accent/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
             >
               <span className="text-[15px] font-bold leading-tight">
                 {activePlace.name}
