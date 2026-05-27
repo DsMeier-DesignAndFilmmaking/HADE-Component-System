@@ -79,14 +79,14 @@ export function RefineSheet({ open, onClose, onConfirm }: RefineSheetProps) {
                 <h2 id="refine-sheet-title" className="text-[15px] font-semibold leading-tight text-ink">
                   Refine this decision
                 </h2>
-                <p className="mt-1 text-[11px] leading-snug text-ink/45">
+                <p className="mt-1 text-[11px] leading-snug text-ink/65">
                   Adjust intent and urgency without leaving the current flow.
                 </p>
               </div>
               <button
                 type="button"
                 onClick={onClose}
-                className="min-h-8 shrink-0 rounded-full border border-line/60 bg-surface/80 px-3 text-[11px] font-semibold text-ink/55 transition-colors hover:bg-background active:bg-background focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
+                className="min-h-8 shrink-0 rounded-full border border-line/60 bg-surface/80 px-3 text-[11px] font-semibold text-ink/65 transition-colors hover:bg-background active:bg-background focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
               >
                 Close
               </button>
@@ -94,7 +94,7 @@ export function RefineSheet({ open, onClose, onConfirm }: RefineSheetProps) {
 
             <div className="flex flex-1 flex-col gap-4 overflow-y-auto overscroll-contain px-4 pb-5 pt-4 min-[390px]:px-5">
               <div>
-                <p className="text-[10px] font-medium uppercase tracking-widest text-ink/50">
+                <p className="text-[10px] font-medium uppercase tracking-widest text-ink/60">
                   What are you after?
                 </p>
                 <div className="mt-2 grid grid-cols-2 gap-1.5 min-[390px]:flex min-[390px]:flex-wrap">
@@ -120,7 +120,7 @@ export function RefineSheet({ open, onClose, onConfirm }: RefineSheetProps) {
               </div>
 
               <div>
-                <p className="text-[10px] font-medium uppercase tracking-widest text-ink/50">
+                <p className="text-[10px] font-medium uppercase tracking-widest text-ink/60">
                   How urgent?
                 </p>
                 <div className="mt-2 grid grid-cols-3 gap-1.5">

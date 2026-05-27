@@ -30,13 +30,13 @@ export function SignalFlow({ signals, maxVisible = 6, className = "" }: SignalFl
       </AnimatePresence>
 
       {signals.length === 0 && (
-        <p className="text-xs text-ink/40 text-center py-4">
+        <p className="text-xs text-ink/65 text-center py-4">
           No signals yet — emit one to begin.
         </p>
       )}
 
       {signals.length > maxVisible && (
-        <p className="text-xs text-ink/40 text-center">
+        <p className="text-xs text-ink/65 text-center">
           +{signals.length - maxVisible} more signals
         </p>
       )}
@@ -94,7 +94,7 @@ function SignalRow({ signal }: { signal: Signal }) {
             transition={{ duration: 0.4, ease: "easeOut" }}
           />
         </div>
-        <span className="text-[10px] font-mono text-ink/40">{strengthPct}%</span>
+        <span className="text-[10px] font-mono text-ink/65">{strengthPct}%</span>
       </div>
     </div>
   );

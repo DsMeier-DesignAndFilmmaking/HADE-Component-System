@@ -112,7 +112,7 @@ function ChipRow<T extends string>({
 }: ChipRowProps<T>) {
   return (
     <fieldset className="flex flex-col gap-1.5">
-      <legend className="text-[10px] font-semibold uppercase tracking-[0.14em] text-ink/50">
+      <legend className="text-[10px] font-semibold uppercase tracking-[0.14em] text-ink/65">
         {legend}
       </legend>
       <div role="radiogroup" className="flex flex-wrap gap-1.5">
@@ -145,7 +145,7 @@ export function AmbientToggles({ signals, onChange }: AmbientTogglesProps) {
   return (
     <div className="flex flex-col gap-4 rounded-[24px] border border-line bg-surface p-4 shadow-soft">
       <div className="flex flex-col gap-2">
-        <h3 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink/50">
+        <h3 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink/65">
           Preset Ambient Combos
         </h3>
         <div className="flex flex-wrap gap-2">

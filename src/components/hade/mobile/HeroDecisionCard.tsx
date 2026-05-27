@@ -216,10 +216,10 @@ export function HeroDecisionCard({
       {/* ── Reframing overlay ───────────────────────────────────────────────── */}
       {isReframing ? (
         <div className="flex min-h-[128px] flex-col justify-center gap-2.5 py-0.5" aria-live="polite">
-          <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-ink/30">
+          <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-ink/60">
             Reframing
           </span>
-          <h1 className="text-[21px] font-semibold leading-[1.12] text-ink/45">
+          <h1 className="text-[21px] font-semibold leading-[1.12] text-ink/70">
             {pivotLabel ?? "Finding a better fit"}
           </h1>
           <div className="h-0.5 w-16 overflow-hidden rounded-full bg-ink/5">
@@ -248,7 +248,7 @@ export function HeroDecisionCard({
                 </>
               ) : (
                 <>
-                  <span className="inline-flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-ink/40">
+                  <span className="inline-flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-ink/65">
                     <Sparkles className="h-3 w-3" aria-hidden="true" />
                     Your move
                   </span>
@@ -265,7 +265,7 @@ export function HeroDecisionCard({
                   className={`inline-flex min-w-0 items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-semibold leading-tight ${
                     isFallback
                       ? "border-amber-400/25 bg-amber-400/10 text-amber-700"
-                      : "border-line/60 bg-background/60 text-ink/48"
+                      : "border-line/60 bg-background/60 text-ink/65"
                   }`}
                 >
                   {lensIcon && <span aria-hidden="true">{lensIcon}</span>}
@@ -305,7 +305,7 @@ export function HeroDecisionCard({
                 <p className="text-[12px] font-semibold leading-tight text-amber-900/85">
                   {activeFallbackNotice.label}
                 </p>
-                <p className="mt-1 text-[11.5px] leading-snug text-ink/52">
+                <p className="mt-1 text-[11.5px] leading-snug text-ink/65">
                   {activeFallbackNotice.detail}
                 </p>
               </div>
@@ -324,14 +324,14 @@ export function HeroDecisionCard({
                   <span className="min-w-0 truncate">
                     {createdLocationDisplay.primary}
                     {createdLocationDisplay.secondary && (
-                      <span className="text-ink/36"> · {createdLocationDisplay.secondary}</span>
+                      <span className="text-ink/60"> · {createdLocationDisplay.secondary}</span>
                     )}
                   </span>
                 </div>
               )}
             </div>
           ) : isUGC && !hasResolvedSupport ? (
-            <p className="mt-1.5 text-[13px] leading-snug text-ink/55">
+            <p className="mt-1.5 text-[13px] leading-snug text-ink/65">
               Someone nearby recently started {object.title} here.
             </p>
           ) : null}
@@ -343,7 +343,7 @@ export function HeroDecisionCard({
                 key={key}
                 className="flex min-h-9 min-w-0 items-center gap-2 rounded-xl border border-line/55 bg-background/70 px-2.5 py-1.5"
               >
-                <Icon className="h-3.5 w-3.5 shrink-0 text-ink/35" aria-hidden="true" />
+                <Icon className="h-3.5 w-3.5 shrink-0 text-ink/60" aria-hidden="true" />
                 <span className="min-w-0 truncate text-[11.5px] font-semibold leading-tight text-ink/68">
                   {label}
                 </span>
@@ -356,7 +356,7 @@ export function HeroDecisionCard({
             <div className="mt-4 rounded-2xl border border-line/55 bg-background/70 p-3.5">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-ink/36">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-ink/60">
                     Why this?
                   </p>
                   {whyPrimary && (
@@ -384,7 +384,7 @@ export function HeroDecisionCard({
               <p className="text-[12px] font-semibold leading-tight text-ink/72">
                 {confidenceCopy.label}
               </p>
-              <p className="mt-1 text-[11.5px] leading-snug text-ink/45">
+              <p className="mt-1 text-[11.5px] leading-snug text-ink/65">
                 {confidenceCopy.detail}
               </p>
             </div>
@@ -413,7 +413,7 @@ export function HeroDecisionCard({
                 }}
                 placeholder="What feels off or missing?"
                 autoFocus
-                className="min-h-10 flex-1 rounded-xl border border-line bg-background/70 px-3 py-2 text-sm text-ink placeholder:text-ink/30 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
+                className="min-h-10 flex-1 rounded-xl border border-line bg-background/70 px-3 py-2 text-sm text-ink placeholder:text-ink/60 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
               />
               <button
                 type="button"
@@ -435,7 +435,7 @@ export function HeroDecisionCard({
             <button
               type="button"
               onClick={() => { setVibeOpen(true); setTimeout(() => inputRef.current?.focus(), 50); }}
-              className="flex min-h-10 w-full items-center justify-between gap-3 rounded-xl px-1 text-left text-[13px] font-medium text-ink/45 transition-colors hover:text-ink/65 focus:outline-none focus-visible:text-ink/65"
+              className="flex min-h-10 w-full items-center justify-between gap-3 rounded-xl px-1 text-left text-[13px] font-medium text-ink/65 transition-colors hover:text-ink/85 focus:outline-none focus-visible:text-ink/85"
             >
               <span>{vibeSent ? "Vibe added" : "Already here? Share the Vibe"}</span>
               <span className="text-sm" aria-hidden="true">{vibeSent ? "✓" : "+"}</span>

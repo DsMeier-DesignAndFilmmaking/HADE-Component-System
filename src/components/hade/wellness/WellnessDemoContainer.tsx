@@ -28,7 +28,7 @@ export function WellnessDemoContainer() {
   return (
     <div className="mx-auto flex w-full max-w-[420px] flex-col gap-5 px-4 py-6">
       <header className="flex flex-col gap-1">
-        <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-ink/50">
+        <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-ink/65">
           Wellness direction
         </span>
         <h1 className="text-[24px] font-semibold leading-tight text-ink">
@@ -45,7 +45,7 @@ export function WellnessDemoContainer() {
       />
 
       <p
-        className="text-[11px] uppercase tracking-[0.14em] text-ink/40"
+        className="text-[11px] uppercase tracking-[0.14em] text-ink/60"
         aria-label="Detected ambient context"
       >
         {contextLine}

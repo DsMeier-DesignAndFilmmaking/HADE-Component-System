@@ -106,7 +106,7 @@ export function OtherModesPanel({ geo, context, open }: OtherModesPanelProps) {
           transition={{ duration: 0.22, ease: "easeOut" }}
           className="mt-3 flex flex-col gap-2.5"
         >
-          <p className="text-center text-[10px] font-medium uppercase tracking-[0.18em] text-ink/30">
+          <p className="text-center text-[10px] font-medium uppercase tracking-[0.18em] text-ink/60">
             Same context · 3 different lenses
           </p>
 
@@ -189,7 +189,7 @@ function CardContent({
       <h3 className="mt-2 line-clamp-2 text-sm font-semibold leading-snug text-ink">
         {data.title}
       </h3>
-      <p className="mt-1 line-clamp-2 text-[11px] leading-snug text-ink/55">
+      <p className="mt-1 line-clamp-2 text-[11px] leading-snug text-ink/65">
         {displayLabel}
       </p>
       {displayCategory && (

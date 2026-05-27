@@ -95,11 +95,11 @@ export function WellnessLensView({
               <span aria-hidden="true">{lensIcon}</span>
               <span className="truncate">{lensLabel} Lens</span>
             </p>
-            <p className="mt-0.5 truncate text-[10px] leading-tight text-ink/40">
+            <p className="mt-0.5 truncate text-[10px] leading-tight text-ink/65">
               What kind of reset do you need?
             </p>
           </div>
-          <p className="shrink-0 text-[10px] font-medium uppercase tracking-[0.14em] text-ink/40">
+          <p className="shrink-0 text-[10px] font-medium uppercase tracking-[0.14em] text-ink/65">
             {cardModel.subtitle}
           </p>
         </div>
@@ -132,7 +132,7 @@ export function WellnessLensView({
               <span className="text-[15px] font-bold leading-tight">
                 {activePlace.name}
               </span>
-              <span className="mt-0.5 text-[10px] font-medium leading-tight text-white/70">
+              <span className="mt-0.5 text-[10px] font-medium leading-tight text-white">
                 Opens Maps · {activePlace.distance}
               </span>
             </button>
@@ -142,7 +142,7 @@ export function WellnessLensView({
               type="button"
               onClick={handleNotThis}
               disabled={engine.places.length < 2}
-              className="w-full py-0 text-[13px] text-ink/35 transition-colors active:text-ink/60 focus:outline-none focus-visible:text-ink/60 disabled:opacity-0"
+              className="w-full py-0 text-[13px] text-ink/65 transition-colors active:text-ink/80 focus:outline-none focus-visible:text-ink/80 disabled:opacity-0"
             >
               Not this
             </button>

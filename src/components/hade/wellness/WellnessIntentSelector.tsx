@@ -79,7 +79,7 @@ export function WellnessIntentSelector({
 
       {!compact && activeMeta ? (
         <p
-          className="text-[11px] italic leading-snug text-ink/55"
+          className="text-[11px] italic leading-snug text-ink/65"
           aria-live="polite"
         >
           {activeMeta.description}

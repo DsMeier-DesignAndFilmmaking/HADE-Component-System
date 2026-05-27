@@ -294,14 +294,14 @@ function IndustryLensSheet({
                 <h2 id="industry-lens-title" className="text-[15px] font-semibold leading-tight text-ink">
                   Other directions
                 </h2>
-                <p className="mt-1 text-[11px] leading-snug text-ink/42">
+                <p className="mt-1 text-[11px] leading-snug text-ink/65">
                   Choose how to look at this moment.
                 </p>
               </div>
               <button
                 type="button"
                 onClick={onClose}
-                className="min-h-8 shrink-0 rounded-full border border-line/60 bg-surface/80 px-3 text-[11px] font-semibold text-ink/55 transition-colors hover:bg-background active:bg-background focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
+                className="min-h-8 shrink-0 rounded-full border border-line/60 bg-surface/80 px-3 text-[11px] font-semibold text-ink/65 transition-colors hover:bg-background active:bg-background focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
               >
                 Close
               </button>
@@ -335,7 +335,7 @@ function IndustryLensSheet({
                       <span className="block text-[12px] font-semibold leading-tight">
                         {lens.label}
                       </span>
-                      <span className="mt-0.5 block text-[10.5px] leading-snug text-ink/42">
+                      <span className="mt-0.5 block text-[10.5px] leading-snug text-ink/65">
                         {lens.context}
                       </span>
                     </span>
@@ -427,21 +427,21 @@ function DebugOverlay({ decision }: { decision: DecisionViewModel }) {
       </button>
 
       {expanded && (
-        <div className="w-44 rounded-xl border border-white/10 bg-obsidian/90 px-3 py-2.5 text-[10px] leading-relaxed text-white/90 shadow-xl backdrop-blur-sm">
+        <div className="w-44 rounded-xl border border-white/15 bg-obsidian/90 px-3 py-2.5 text-[10px] leading-relaxed text-white/90 shadow-xl backdrop-blur-sm">
           <div className="flex justify-between">
-            <span className="text-white/50">source</span>
+            <span className="text-zinc-300">source</span>
             <span className="text-emerald-400 text-right max-w-[100px] truncate">{sourceLabel}</span>
           </div>
 
           <div className="mt-1 flex justify-between">
-            <span className="text-white/50">kind</span>
+            <span className="text-zinc-300">kind</span>
             <span className={decision.is_ugc ? "text-orange-400" : "text-blue-400"}>
               {decision.is_ugc ? "local" : "place"}
             </span>
           </div>
 
           <div className="mt-1 flex justify-between">
-            <span className="text-white/50">confidence</span>
+            <span className="text-zinc-300">confidence</span>
             <span>{pct}%</span>
           </div>
           <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-white/15">
@@ -452,19 +452,19 @@ function DebugOverlay({ decision }: { decision: DecisionViewModel }) {
           </div>
 
           <div className="mt-1.5 flex justify-between">
-            <span className="text-white/50">read</span>
+            <span className="text-zinc-300">read</span>
             <span>{readLabel}</span>
           </div>
 
           {decision.temporal_state ? (
             <div className="mt-1 flex justify-between">
-              <span className="text-white/50">freshness</span>
+              <span className="text-zinc-300">freshness</span>
               <span className="text-orange-300">{decision.temporal_state}</span>
             </div>
           ) : decision.is_ugc ? (
             <div className="mt-1 flex justify-between">
-              <span className="text-white/50">freshness</span>
-              <span className="text-white/30">—</span>
+              <span className="text-zinc-300">freshness</span>
+              <span className="text-zinc-400">—</span>
             </div>
           ) : null}
 
@@ -1032,7 +1032,7 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
           className="flex flex-1 flex-col items-center justify-center px-2 py-12 text-center"
         >
           <div className="w-full max-w-[340px] rounded-[24px] border border-line/60 bg-surface px-5 py-6 shadow-soft">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-ink/34">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-ink/60">
               Decision paused
             </p>
             <h1 className="mt-2 text-[21px] font-semibold leading-tight text-ink/76">
@@ -1042,7 +1042,7 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
               {errorStateCopy.detail}
             </p>
             {error && process.env.NODE_ENV !== "production" && (
-              <p className="mt-3 rounded-xl bg-background/70 px-3 py-2 text-[11px] leading-snug text-ink/38">
+              <p className="mt-3 rounded-xl bg-background/70 px-3 py-2 text-[11px] leading-snug text-ink/65">
                 {error}
               </p>
             )}
@@ -1069,7 +1069,7 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
             lensLabel={activeLens.label}
           />
           <div className="mt-2.5 flex items-center justify-between gap-2 rounded-2xl border border-line/45 bg-surface/55 px-3 py-2 shadow-soft">
-            <p className="min-w-0 truncate text-[10px] leading-tight text-ink/45">
+            <p className="min-w-0 truncate text-[10px] leading-tight text-ink/65">
               Switch to a different direction at any time.
             </p>
             <button
@@ -1146,7 +1146,7 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
                 <span aria-hidden="true">{activeLens.icon}</span>
                 <span className="truncate">{activeLens.label}</span>
               </p>
-              <p className="mt-0.5 truncate text-[10px] leading-tight text-ink/38">
+              <p className="mt-0.5 truncate text-[10px] leading-tight text-ink/65">
                 {activeLens.context}
               </p>
             </div>
@@ -1168,7 +1168,7 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
             <span className="text-[13px] font-bold text-blue">
               + Add something
             </span>
-            <span className="text-[10px] text-ink/45">Create a hangout nearby</span>
+            <span className="text-[10px] text-ink/65">Create a hangout nearby</span>
           </button>
 
           {/* ── Voice refinement CTA ─────────────────────────────────────── */}
@@ -1179,11 +1179,11 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
             aria-label="Say what would help — voice input"
           >
             <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-ink/6">
-              <Mic className="h-4 w-4 text-ink/50" aria-hidden="true" />
+              <Mic className="h-4 w-4 text-ink/65" aria-hidden="true" />
             </span>
             <div className="min-w-0">
               <p className="text-[13px] font-semibold leading-tight text-ink/70">Say what would help</p>
-              <p className="mt-0.5 text-[10px] leading-tight text-ink/38">Speak or type what you&apos;re in the mood for.</p>
+              <p className="mt-0.5 text-[10px] leading-tight text-ink/65">Speak or type what you&apos;re in the mood for.</p>
             </div>
           </button>
 
@@ -1208,14 +1208,14 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
               type="button"
               onClick={handlePrevious}
               disabled={decisionHistory.length <= 1}
-              className="flex items-center gap-1 text-[11px] text-ink/40 transition-colors active:text-ink/70 disabled:opacity-0 focus:outline-none focus-visible:text-ink/70"
+              className="flex items-center gap-1 text-[11px] text-ink/65 transition-colors active:text-ink/80 disabled:opacity-0 focus:outline-none focus-visible:text-ink/80"
             >
               ← Previous
             </button>
             <button
               type="button"
               onClick={() => setOverflowOpen((v) => !v)}
-              className="flex h-6 w-6 items-center justify-center rounded-full text-sm text-ink/35 transition-colors active:text-ink/60 focus:outline-none focus-visible:text-ink/60"
+              className="flex h-6 w-6 items-center justify-center rounded-full text-sm text-ink/65 transition-colors active:text-ink/80 focus:outline-none focus-visible:text-ink/80"
               aria-label="More options"
             >
               ···
@@ -1276,7 +1276,7 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
             <span className="text-[15px] font-bold leading-tight">
               {displayDecision?.cta_label ?? "Take me there"}
             </span>
-            <span className="mt-0.5 text-[10px] font-medium leading-tight text-white/70">
+            <span className="mt-0.5 text-[10px] font-medium leading-tight text-white">
               Opens Maps
             </span>
           </button>
@@ -1286,7 +1286,7 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
             type="button"
             onClick={handleNotThis}
             disabled={!displayDecision}
-            className="w-full py-0 text-[13px] text-ink/35 transition-colors active:text-ink/60 focus:outline-none focus-visible:text-ink/60 disabled:opacity-0"
+            className="w-full py-0 text-[13px] text-ink/65 transition-colors active:text-ink/80 focus:outline-none focus-visible:text-ink/80 disabled:opacity-0"
           >
             Not this
           </button>
@@ -1409,7 +1409,7 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
               </div>
               <div className="min-w-0">
                 <p className="text-sm font-semibold text-white">You&apos;re live</p>
-                <p className="text-xs text-white/55">Others nearby can now join</p>
+                <p className="text-xs text-zinc-300">Others nearby can now join</p>
               </div>
             </div>
           </motion.div>

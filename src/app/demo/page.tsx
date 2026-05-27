@@ -242,7 +242,7 @@ function DesktopDebugDemo() {
               "h-9 w-9 flex items-center justify-center rounded-xl border transition-all duration-200",
               showSettings
                 ? "border-accent/40 bg-accent/5 text-accent"
-                : "border-line bg-surface text-ink/40 hover:text-ink/80 hover:border-ink/20",
+                : "border-line bg-surface text-ink/65 hover:text-ink/85 hover:border-ink/30",
             ].join(" ")}
           >
             <svg
@@ -291,7 +291,7 @@ function DesktopDebugDemo() {
           header={
             <div className="flex items-center justify-between">
               <p className="text-sm font-semibold text-ink">Persona Registry</p>
-              <span className="text-[10px] text-ink/30 font-mono">L2 Sync</span>
+              <span className="text-[10px] text-ink/60 font-mono">L2 Sync</span>
             </div>
           }
         >
@@ -310,11 +310,11 @@ function DesktopDebugDemo() {
                   <span className={`font-mono text-xs font-bold ${activeAgent.id === agent.id ? "text-accent" : "text-ink"}`}>
                     {agent.id}
                   </span>
-                  <span className="text-[9px] px-1.5 py-0.5 rounded-sm bg-ink/5 text-ink/40 border border-line uppercase font-medium">
+                  <span className="text-[9px] px-1.5 py-0.5 rounded-sm bg-ink/5 text-ink/65 border border-line uppercase font-medium">
                     {agent.model_target?.split('-')[0] || 'cloud'}
                   </span>
                 </div>
-                <p className="text-[11px] leading-tight text-ink/50 line-clamp-2 italic mb-2">
+                <p className="text-[11px] leading-tight text-ink/65 line-clamp-2 italic mb-2">
                   "{agent.role}"
                 </p>
                 <div className="flex gap-1 flex-wrap">
@@ -329,8 +329,8 @@ function DesktopDebugDemo() {
           </div>
           
           <div className="mt-6 pt-4 border-t border-line">
-            <p className="text-[10px] uppercase tracking-widest text-ink/30 mb-1">Last Notion Sync</p>
-            <p className="text-[10px] font-mono text-ink/40">{lastSync}</p>
+            <p className="text-[10px] uppercase tracking-widest text-ink/60 mb-1">Last Notion Sync</p>
+            <p className="text-[10px] font-mono text-ink/65">{lastSync}</p>
           </div>
         </HadePanel>
 
@@ -341,7 +341,7 @@ function DesktopDebugDemo() {
               <p className="text-sm font-semibold text-ink">Emit Signal</p>
               <div className="flex items-center gap-2">
                 <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-                <span className="text-[10px] font-mono text-ink/40 uppercase tracking-tighter">Live</span>
+                <span className="text-[10px] font-mono text-ink/65 uppercase tracking-tighter">Live</span>
               </div>
             </div>
           }
@@ -391,7 +391,7 @@ function DesktopDebugDemo() {
           </HadeButton>
 
           <div className="mt-4 pt-4 border-t border-line">
-            <p className="text-[10px] uppercase tracking-widest text-ink/30 mb-3 text-center">Engine Activation</p>
+            <p className="text-[10px] uppercase tracking-widest text-ink/60 mb-3 text-center">Engine Activation</p>
             <HadeButton
               variant="secondary"
               size="sm"
@@ -415,7 +415,7 @@ function DesktopDebugDemo() {
           header={
             <div className="flex items-center justify-between">
               <p className="text-sm font-semibold text-ink">Active Signals</p>
-              <span className="font-mono text-xs text-ink/40">{signals.length} total</span>
+              <span className="font-mono text-xs text-ink/65">{signals.length} total</span>
             </div>
           }
         >
@@ -481,7 +481,7 @@ function DesktopDebugDemo() {
                       className={`px-3 py-1.5 rounded-full border text-xs font-medium transition-all ${
                         refineIntent === intent
                           ? "border-accent bg-accent/10 text-accent"
-                          : "border-line bg-transparent text-ink/50 hover:border-ink/20"
+                          : "border-line bg-transparent text-ink/65 hover:border-ink/30 hover:text-ink/85"
                       }`}
                     >
                       {intent.charAt(0).toUpperCase() + intent.slice(1)}
@@ -502,7 +502,7 @@ function DesktopDebugDemo() {
                       className={`flex-1 py-2 rounded-xl border text-xs font-medium transition-all ${
                         refineUrgency === u
                           ? "border-accent bg-accent/10 text-accent"
-                          : "border-line bg-transparent text-ink/50 hover:border-ink/20"
+                          : "border-line bg-transparent text-ink/65 hover:border-ink/30 hover:text-ink/85"
                       }`}
                     >
                       {u.charAt(0).toUpperCase() + u.slice(1)}
@@ -535,10 +535,10 @@ function DesktopDebugDemo() {
       {/* ── Empty/Loading States ──────────────────────────────────────────────── */}
       {!response && !isBusy && (
         <div className="mt-6 rounded-2xl border border-dashed border-line p-8 text-center">
-          <p className="text-sm text-ink/40">
+          <p className="text-sm text-ink/65">
             Emit signals, select a persona, then generate a decision.
           </p>
-          <p className="text-xs text-ink/30 mt-1 font-mono">
+          <p className="text-xs text-ink/60 mt-1 font-mono">
             Hardware Target: <span className="text-accent">{activeAgent.model_target || "Cloud (Default)"}</span>
           </p>
         </div>
@@ -546,7 +546,7 @@ function DesktopDebugDemo() {
 
       {isBusy && (
         <div className="mt-6 rounded-2xl border border-line p-8 text-center">
-          <p className="text-sm text-ink/40 font-mono animate-pulse uppercase tracking-widest">
+          <p className="text-sm text-ink/65 font-mono animate-pulse uppercase tracking-widest">
             {activeAgent.id} is interpreting situation…
           </p>
         </div>

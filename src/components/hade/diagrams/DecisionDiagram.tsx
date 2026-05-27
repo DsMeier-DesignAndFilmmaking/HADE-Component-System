@@ -129,7 +129,7 @@ function LayerRow({
               {layer.label}
             </p>
             {!compact && (
-              <p className="text-xs text-ink/50 mt-0.5">{layer.sublabel}</p>
+              <p className="text-xs text-ink/65 mt-0.5">{layer.sublabel}</p>
             )}
           </div>
         </div>

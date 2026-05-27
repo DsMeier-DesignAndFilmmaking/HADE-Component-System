@@ -15,7 +15,7 @@ import { resetMobileViewportAfterInput } from "@/lib/hade/mobileViewport";
 const PinSpotSheet = dynamic(() => import("./PinSpotSheet"), {
   ssr: false,
   loading: () => (
-    <div className="rounded-2xl border border-line/70 bg-surface px-3 py-6 text-center text-[12px] text-ink/55">
+    <div className="rounded-2xl border border-line/70 bg-surface px-3 py-6 text-center text-[12px] text-ink/65">
       Loading map…
     </div>
   ),
@@ -1076,7 +1076,7 @@ export function ActivityCreationView({ onCreate, onClose }: ActivityCreationView
               {step === "what"    ? "What's happening?" :
                step === "vibe"    ? "What's the vibe?"  : "Any details?"}
             </h2>
-            <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-ink/40">
+            <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-ink/60">
               Step {stepNumber} of 3
             </p>
           </div>
@@ -1085,7 +1085,7 @@ export function ActivityCreationView({ onCreate, onClose }: ActivityCreationView
               type="button"
               onClick={handleHeaderBack}
               disabled={status === "submitting"}
-              className="min-h-8 shrink-0 rounded-full border border-line/60 bg-surface/80 px-3 text-[11px] font-semibold text-ink/55 transition-colors hover:bg-background active:bg-background disabled:opacity-45 focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
+              className="min-h-8 shrink-0 rounded-full border border-line/60 bg-surface/80 px-3 text-[11px] font-semibold text-ink/65 transition-colors hover:bg-background active:bg-background disabled:opacity-45 focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
             >
               {step === "what" ? "Close" : "Back"}
             </button>
@@ -1115,7 +1115,7 @@ export function ActivityCreationView({ onCreate, onClose }: ActivityCreationView
                   onChange={(e) => setTitle(e.target.value)}
                   onFocus={handleFieldFocus}
                   placeholder="What do you want to add?"
-                  className="w-full rounded-xl border border-line bg-background/70 px-3.5 py-3 pr-11 text-base text-ink placeholder:text-ink/30 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
+                  className="w-full rounded-xl border border-line bg-background/70 px-3.5 py-3 pr-11 text-base text-ink placeholder:text-ink/60 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
                 />
                 <button
                   type="button"
@@ -1124,7 +1124,7 @@ export function ActivityCreationView({ onCreate, onClose }: ActivityCreationView
                   className={`absolute right-2.5 flex h-8 w-8 items-center justify-center rounded-full text-base transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
                     listening
                       ? "animate-pulse bg-accent/20 ring-1 ring-accent/40"
-                      : "text-ink/35 hover:text-ink/60"
+                      : "text-ink/65 hover:text-ink/85"
                   }`}
                 >
                   🎤
@@ -1187,7 +1187,7 @@ export function ActivityCreationView({ onCreate, onClose }: ActivityCreationView
               </div>
 
               <fieldset className="mb-2.5">
-                <legend className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.16em] text-ink/38">
+                <legend className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.16em] text-ink/60">
                   Starts around
                 </legend>
                 <div className="rounded-xl border border-line bg-background/70 px-3 py-2.5 transition-colors focus-within:border-accent focus-within:ring-2 focus-within:ring-accent/20">
@@ -1243,7 +1243,7 @@ export function ActivityCreationView({ onCreate, onClose }: ActivityCreationView
                       </select>
                     </label>
                   </div>
-                  <p className="mt-1.5 text-[11px] font-medium text-ink/45">
+                  <p className="mt-1.5 text-[11px] font-medium text-ink/65">
                     {formatTimeLabel(timeText)}
                   </p>
                 </div>
@@ -1251,10 +1251,10 @@ export function ActivityCreationView({ onCreate, onClose }: ActivityCreationView
 
               <div className="mb-2.5 rounded-xl border border-line bg-background/70 px-3.5 py-3">
                 <div>
-                  <span className="block text-[10px] font-semibold uppercase tracking-[0.16em] text-ink/38">
+                  <span className="block text-[10px] font-semibold uppercase tracking-[0.16em] text-ink/60">
                     Where is this?
                   </span>
-                  <span className="mt-1 block text-[12px] leading-snug text-ink/45">
+                  <span className="mt-1 block text-[12px] leading-snug text-ink/65">
                     Add a location so people nearby can actually find it.
                   </span>
                 </div>
@@ -1342,7 +1342,7 @@ export function ActivityCreationView({ onCreate, onClose }: ActivityCreationView
                     <button
                       type="button"
                       onClick={handleRemovePin}
-                      className="min-h-[44px] flex-1 rounded-xl border border-line/70 bg-surface px-3 text-[12px] font-semibold text-ink/55 transition-colors hover:bg-background focus:outline-none focus-visible:ring-2 focus-visible:ring-accent active:bg-background"
+                      className="min-h-[44px] flex-1 rounded-xl border border-line/70 bg-surface px-3 text-[12px] font-semibold text-ink/65 transition-colors hover:bg-background focus:outline-none focus-visible:ring-2 focus-visible:ring-accent active:bg-background"
                     >
                       Remove pin
                     </button>
@@ -1357,23 +1357,23 @@ export function ActivityCreationView({ onCreate, onClose }: ActivityCreationView
                       onChange={(e) => handlePlaceQueryChange(e.target.value)}
                       onFocus={handleFieldFocus}
                       placeholder="Search nearby places"
-                      className="w-full rounded-xl border border-line/70 bg-surface px-3 py-2.5 text-base text-ink placeholder:text-ink/30 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
+                      className="w-full rounded-xl border border-line/70 bg-surface px-3 py-2.5 text-base text-ink placeholder:text-ink/60 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
                     />
 
                     {placeSearchStatus === "idle" && (
-                      <p className="rounded-lg bg-ink/[0.04] px-3 py-2 text-[11px] text-ink/45">
+                      <p className="rounded-lg bg-ink/[0.04] px-3 py-2 text-[11px] text-ink/65">
                         Type at least 2 characters to search nearby places.
                       </p>
                     )}
 
                     {placeSearchStatus === "loading" && (
-                      <p className="rounded-lg bg-ink/[0.04] px-3 py-2 text-[11px] text-ink/45">
+                      <p className="rounded-lg bg-ink/[0.04] px-3 py-2 text-[11px] text-ink/65">
                         Finding nearby places...
                       </p>
                     )}
 
                     {placeSearchStatus === "empty" && (
-                      <p className="rounded-lg bg-ink/[0.04] px-3 py-2 text-[11px] text-ink/45">
+                      <p className="rounded-lg bg-ink/[0.04] px-3 py-2 text-[11px] text-ink/65">
                         No nearby places found yet. You can add a note instead.
                       </p>
                     )}
@@ -1403,7 +1403,7 @@ export function ActivityCreationView({ onCreate, onClose }: ActivityCreationView
                                 {place.name}
                               </span>
                               {place.address && (
-                                <span className="mt-0.5 block truncate text-[11px] text-ink/42">
+                                <span className="mt-0.5 block truncate text-[11px] text-ink/65">
                                   {place.address}
                                 </span>
                               )}
@@ -1427,12 +1427,12 @@ export function ActivityCreationView({ onCreate, onClose }: ActivityCreationView
                       onChange={(e) => setLocationLabel(e.target.value)}
                       onFocus={handleFieldFocus}
                       placeholder="e.g. Bluebird Cafe, Main Street, near the trailhead"
-                      className="w-full rounded-xl border border-line/70 bg-surface px-3.5 py-2.5 text-base text-ink placeholder:text-ink/30 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
+                      className="w-full rounded-xl border border-line/70 bg-surface px-3.5 py-2.5 text-base text-ink placeholder:text-ink/60 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
                     />
                   </div>
                 )}
 
-                <p className="mt-1.5 text-[11px] leading-snug text-ink/38">
+                <p className="mt-1.5 text-[11px] leading-snug text-ink/60">
                   Only add a location if it helps people find it.
                 </p>
               </div>
@@ -1443,7 +1443,7 @@ export function ActivityCreationView({ onCreate, onClose }: ActivityCreationView
                 onFocus={handleFieldFocus}
                 placeholder="Notes (optional)"
                 rows={2}
-                className="mb-4 w-full resize-none rounded-xl border border-line bg-background/70 px-3.5 py-2.5 text-base text-ink placeholder:text-ink/30 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
+                className="mb-4 w-full resize-none rounded-xl border border-line bg-background/70 px-3.5 py-2.5 text-base text-ink placeholder:text-ink/60 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
               />
 
               {(timeValidationMessage || errorMsg) && (

@@ -138,7 +138,7 @@ export function LocationHUD({ geo, geoStatus, className = "" }: LocationHUDProps
       </span>
 
       {/* MapPin icon */}
-      <MapPin size={10} className="text-ink/40 shrink-0" strokeWidth={2.5} />
+      <MapPin size={10} className="text-ink/65 shrink-0" strokeWidth={2.5} />
 
       {/* Location label */}
       <span className="font-mono text-[10px] uppercase tracking-widest text-ink/60 whitespace-nowrap">

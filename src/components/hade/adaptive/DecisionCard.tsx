@@ -215,10 +215,10 @@ export function DecisionCard({
         {/* ── Reframing overlay ─────────────────────────────────────────────── */}
         {isReframing ? (
           <div className="flex min-h-[132px] flex-col justify-center gap-2.5 py-1" aria-live="polite" aria-busy="true">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-ink/32">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-ink/60">
               Reframing
             </p>
-            <HadeHeading level={3} className="text-[22px] leading-tight text-ink/48">
+            <HadeHeading level={3} className="text-[22px] leading-tight text-ink/65">
               Finding a better fit...
             </HadeHeading>
             {pivotLabel && (
@@ -241,7 +241,7 @@ export function DecisionCard({
                       Community Meetup
                     </span>
                   ) : (
-                    <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-ink/42">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-ink/60">
                       Your move
                     </p>
                   )}
@@ -289,7 +289,7 @@ export function DecisionCard({
                     className="inline-block h-1.5 w-1.5 rounded-full bg-accent animate-pulse"
                     aria-hidden="true"
                   />
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-ink/38">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-ink/60">
                     Local context
                   </p>
                 </div>
@@ -318,7 +318,7 @@ export function DecisionCard({
                     {locationNode && locationNode.signal_count > 0 && (
                       <motion.p
                         variants={chipItemVariants}
-                        className="font-mono text-[10px] text-ink/30 shrink-0"
+                        className="font-mono text-[10px] text-ink/60 shrink-0"
                       >
                         {locationNode.signal_count} signals
                       </motion.p>
@@ -346,13 +346,13 @@ export function DecisionCard({
               <button
                 type="button"
                 onClick={onNotThis}
-                className="ml-auto min-h-11 rounded-2xl border border-line/70 bg-surface px-3 py-1.5 text-xs font-semibold text-ink/55 transition-colors hover:text-ink"
+                className="ml-auto min-h-11 rounded-2xl border border-line/70 bg-surface px-3 py-1.5 text-xs font-semibold text-ink/65 transition-colors hover:text-ink"
               >
                 Not This
               </button>
             </div>
             {navigationIssue && (
-              <p role="status" className="mt-2 text-[12px] leading-snug text-ink/45">
+              <p role="status" className="mt-2 text-[12px] leading-snug text-ink/65">
                 {navigationIssue}
               </p>
             )}

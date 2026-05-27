@@ -136,7 +136,7 @@ export function VibeSheet({ venueId: _venueId, venueName, isUGC = false, onDismi
         <button
           type="button"
           onClick={onDismiss}
-          className="h-10 flex-1 rounded-xl border border-line bg-background/70 text-sm font-medium text-ink/50 transition-colors hover:bg-surface active:bg-surface"
+          className="h-10 flex-1 rounded-xl border border-line bg-background/70 text-sm font-medium text-ink/65 transition-colors hover:bg-surface active:bg-surface"
         >
           Skip
         </button>

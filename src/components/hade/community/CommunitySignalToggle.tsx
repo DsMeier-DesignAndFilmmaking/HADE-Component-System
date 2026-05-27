@@ -159,7 +159,7 @@ export function CommunitySignalToggle({
           >
             Community Signals
           </span>
-          <span className="text-[11px] text-ink/40 leading-tight">
+          <span className="text-[11px] text-ink/65 leading-tight">
             {enabled
               ? "Sharing moments · Discovering from others"
               : "Share moments · Discover from others"}
@@ -170,7 +170,7 @@ export function CommunitySignalToggle({
         {enabled && (
           <div className="ml-auto flex items-center gap-1.5 shrink-0">
             {isDegraded ? (
-              <span className="text-[10px] font-mono text-ink/40 uppercase tracking-wider">
+              <span className="text-[10px] font-mono text-ink/65 uppercase tracking-wider">
                 Paused
               </span>
             ) : (
@@ -191,7 +191,7 @@ export function CommunitySignalToggle({
       {/* ── Degraded notice (only when enabled + degraded) ─────────────────── */}
       {isDegraded && enabled && (
         <div className="rounded-lg border border-line bg-surface/60 px-3 py-2">
-          <p className="text-[11px] text-ink/50 leading-tight">
+          <p className="text-[11px] text-ink/65 leading-tight">
             Signals temporarily paused — your feedback will resume when the service recovers.
           </p>
         </div>
@@ -211,7 +211,7 @@ export function CommunitySignalToggle({
             <div className="rounded-xl border border-line bg-surface/60 p-3 flex flex-col gap-2.5">
               {/* Header */}
               <div className="flex items-center justify-between">
-                <span className="text-[11px] font-mono text-ink/40 uppercase tracking-wider">
+                <span className="text-[11px] font-mono text-ink/65 uppercase tracking-wider">
                   Rate this spot
                 </span>
                 {venueName && (
@@ -240,7 +240,7 @@ export function CommunitySignalToggle({
                           ? isPositive
                             ? "border-emerald-400/40 bg-emerald-400/10 text-emerald-400"
                             : "border-rose-400/40 bg-rose-400/10 text-rose-400"
-                          : "border-line bg-surface text-ink/50 hover:text-ink/80 hover:border-ink/20",
+                          : "border-line bg-surface text-ink/65 hover:text-ink/85 hover:border-ink/20",
                       ].join(" ")}
                     >
                       <span>{emoji}</span>
@@ -274,7 +274,7 @@ export function CommunitySignalToggle({
                       "w-full py-1.5 rounded-lg text-[12px] font-medium transition-all duration-150",
                       selectedTags.size > 0
                         ? "bg-accent text-obsidian hover:bg-accent/90"
-                        : "bg-surface border border-line text-ink/30 cursor-not-allowed",
+                        : "bg-surface border border-line text-ink/55 cursor-not-allowed",
                     ].join(" ")}
                   >
                     {selectedTags.size === 0

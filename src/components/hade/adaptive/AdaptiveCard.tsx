@@ -78,7 +78,7 @@ export function AdaptiveCard({
     >
       <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-[14rem] flex-1">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-ink/55">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-ink/65">
             {modeEyebrow[signal.mode]}
           </p>
           <h3 className="mt-1 text-xl font-semibold tracking-tight text-ink">{title}</h3>
@@ -132,7 +132,7 @@ export function AdaptiveCard({
                 key={`${metric.label}-${index}`}
                 className="rounded-xl border border-line bg-surface/70 px-3 py-2"
               >
-                <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-ink/55">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-ink/65">
                   {metric.label}
                 </p>
                 <p className="mt-1 text-sm font-semibold text-ink">{metric.value}</p>
@@ -151,7 +151,7 @@ export function AdaptiveCard({
             transition={{ duration: 0.22, ease: "easeOut" }}
             className="mb-4 rounded-2xl border border-cyberLime/40 bg-cyberLime/20 px-4 py-4"
           >
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-ink/55">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-ink/65">
               Action Ready
             </p>
             <p className="mt-1 text-lg font-bold text-ink">

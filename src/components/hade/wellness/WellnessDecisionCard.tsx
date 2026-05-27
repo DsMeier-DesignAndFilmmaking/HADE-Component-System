@@ -135,7 +135,7 @@ export function WellnessDecisionCard({
             Wellness
           </span>
           <span
-            className="text-[11px] font-medium text-ink/50"
+            className="text-[11px] font-medium text-ink/65"
           >
             {resolved.source === "intent" ? "You asked for" : "Why now"} ·{" "}
             {resolved.matchedRuleLabel}
@@ -177,7 +177,7 @@ export function WellnessDecisionCard({
       {/* Passive context-suggestion line (only if ambient resolver disagrees) */}
       {contextDiffers && intentMeta ? (
         <p
-          className="text-[11px] italic leading-snug text-ink/50"
+          className="text-[11px] italic leading-snug text-ink/65"
           aria-label="Other useful context"
         >
           The moment also points toward {contextHint.pillar.toLowerCase()}, but your choice leads.

@@ -114,7 +114,7 @@ export function UgcVerificationSheet({
             {phase === "prompt" ? (
               <div className="flex flex-col gap-4 px-4 pb-[max(12px,env(safe-area-inset-bottom,12px))] pt-3 min-[390px]:px-5">
                 <div>
-                  <p className="text-[10px] font-medium uppercase tracking-widest text-ink/50">
+                  <p className="text-[10px] font-medium uppercase tracking-widest text-ink/60">
                     {copy.label}
                   </p>
                   <p className="mt-1 text-sm font-semibold leading-snug text-ink">{venueName}</p>
@@ -141,7 +141,7 @@ export function UgcVerificationSheet({
                     type="button"
                     onClick={onClose}
                     disabled={busy}
-                    className="py-1.5 text-[13px] font-medium text-ink/40 transition-opacity active:opacity-60 disabled:opacity-20"
+                    className="py-1.5 text-[13px] font-medium text-ink/65 transition-opacity active:opacity-80 disabled:opacity-30"
                   >
                     Skip
                   </button>
@@ -150,7 +150,7 @@ export function UgcVerificationSheet({
             ) : (
               <div className="flex flex-col items-center gap-2 px-4 pb-[max(12px,env(safe-area-inset-bottom,12px))] pt-5">
                 <p className="text-sm font-semibold text-ink">{copy.confirmed}</p>
-                <p className="text-[13px] text-ink/50">{copy.detail}</p>
+                <p className="text-[13px] text-ink/65">{copy.detail}</p>
               </div>
             )}
           </motion.div>

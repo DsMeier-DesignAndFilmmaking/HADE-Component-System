@@ -58,7 +58,7 @@ export default function HomePage() {
 
   {/* Hero Header: Blue-Green Gradient remains for visual "spark" */}
   <motion.h1 
-  className="mx-auto max-w-5xl text-5xl font-extralight tracking-tighter md:text-8xl leading-[1.2] md:leading-[1.05] text-slate-950"
+  className="mx-auto max-w-5xl text-5xl font-extralight tracking-tighter md:text-8xl leading-[1.2] md:leading-[1.05] text-slate-150"
 >
   Infrastructure for <br />
   <span className="inline-block py-1 pr-2 bg-gradient-to-r from-blue-700 via-cyan-500 to-emerald-500 bg-[length:200%_auto] bg-clip-text text-transparent animate-text-gradient italic font-serif">
@@ -78,7 +78,7 @@ export default function HomePage() {
         transition: { staggerChildren: 0.012 } // Slightly faster for a "breezier" feel
       }
     }}
-    className="mt-10 mx-auto max-w-2xl text-lg md:text-xl font-light leading-relaxed text-slate-600 text-balance"
+    className="mt-10 mx-auto max-w-2xl text-lg md:text-xl font-light leading-relaxed text-slate-300 text-balance"
   >
     {"HADE is an AI-powered spontaneity engine for real-world exploration, ".split("").map((char, i) => (
       <motion.span key={i} variants={{ hidden: { opacity: 0 }, visible: { opacity: 1 } }}>
@@ -86,7 +86,7 @@ export default function HomePage() {
       </motion.span>
     ))}
     
-    <span className="whitespace-nowrap text-slate-900 font-medium italic">
+    <span className="whitespace-nowrap text-slate-200 font-medium italic">
       {"one perfect choice for right now.".split("").map((char, i) => (
         <motion.span key={i} variants={{ hidden: { opacity: 0 }, visible: { opacity: 1 } }}>
           {char}

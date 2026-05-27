@@ -22,7 +22,7 @@ export interface SettingsPanelProps {
 
 function SectionLabel({ children }: { children: ReactNode }) {
   return (
-    <p className="text-[10px] font-mono uppercase tracking-widest text-ink/40 mb-2.5">
+    <p className="text-[10px] font-mono uppercase tracking-widest text-ink/65 mb-2.5">
       {children}
     </p>
   );
@@ -53,7 +53,7 @@ function SettingRow({ label, description, children }: RowProps) {
       <div className="flex flex-col min-w-0">
         <span className="text-sm font-medium text-ink/80 leading-snug">{label}</span>
         {description && (
-          <span className="text-[11px] text-ink/40 leading-tight mt-0.5">{description}</span>
+          <span className="text-[11px] text-ink/65 leading-tight mt-0.5">{description}</span>
         )}
       </div>
       <div className="shrink-0">{children}</div>
@@ -340,7 +340,7 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
                   onClick={() => {
                     resetSettings();
                   }}
-                  className="text-[11px] font-medium text-ink/40 hover:text-ink/70 transition-colors px-2.5 py-1 rounded-lg hover:bg-ink/5"
+                  className="text-[11px] font-medium text-ink/65 hover:text-ink/85 transition-colors px-2.5 py-1 rounded-lg hover:bg-ink/5"
                 >
                   Reset all
                 </button>
@@ -348,7 +348,7 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
                   type="button"
                   onClick={onClose}
                   aria-label="Close settings"
-                  className="h-7 w-7 flex items-center justify-center rounded-lg text-ink/40 hover:text-ink/80 hover:bg-ink/5 transition-colors"
+                  className="h-7 w-7 flex items-center justify-center rounded-lg text-ink/65 hover:text-ink/85 hover:bg-ink/5 transition-colors"
                 >
                   <svg
                     width="13"
@@ -373,7 +373,7 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
 
               {/* ── Presets ── */}
               <div className="px-5 pt-4 pb-3">
-                <p className="text-[10px] font-mono uppercase tracking-widest text-ink/40 mb-3">
+                <p className="text-[10px] font-mono uppercase tracking-widest text-ink/65 mb-3">
                   Presets
                 </p>
                 <div className="grid grid-cols-3 gap-1.5">
@@ -390,7 +390,7 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
                           "border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50",
                           isActive
                             ? "bg-accent/10 border-accent/40 text-accent"
-                            : "bg-ink/[0.02] border-line/50 text-ink/50 hover:bg-ink/[0.05] hover:border-line",
+                            : "bg-ink/[0.02] border-line/50 text-ink/65 hover:bg-ink/[0.05] hover:border-line",
                         ].join(" ")}
                       >
                         <span className="text-base leading-none">{preset.emoji}</span>
@@ -402,7 +402,7 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
                   {activePreset === "custom" && (
                     <div className="flex flex-col items-center gap-1 rounded-xl px-2 py-2.5 text-center border bg-ink/[0.02] border-line/50">
                       <span className="text-base leading-none">✦</span>
-                      <span className="text-[10px] font-medium text-ink/40 leading-tight">Custom</span>
+                      <span className="text-[10px] font-medium text-ink/65 leading-tight">Custom</span>
                     </div>
                   )}
                 </div>
@@ -514,14 +514,14 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
                   );
                   return persona ? (
                     <div className="mt-2 rounded-lg border border-line/60 bg-ink/[0.02] px-3 py-2.5">
-                      <p className="text-[11px] italic text-ink/50 leading-snug line-clamp-2">
+                      <p className="text-[11px] italic text-ink/65 leading-snug line-clamp-2">
                         "{persona.role}"
                       </p>
                       <div className="flex gap-1 flex-wrap mt-1.5">
                         {persona.tone.map((t) => (
                           <span
                             key={t}
-                            className="text-[9px] bg-ink/5 px-1.5 py-0.5 rounded text-ink/50 border border-line/50"
+                            className="text-[9px] bg-ink/5 px-1.5 py-0.5 rounded text-ink/65 border border-line/50"
                           >
                             {t}
                           </span>
@@ -567,7 +567,7 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
 
             {/* Footer */}
             <div className="px-5 py-3 border-t border-line shrink-0">
-              <p className="text-[10px] font-mono text-ink/25 text-center tracking-wide">
+              <p className="text-[10px] font-mono text-ink/60 text-center tracking-wide">
                 Persisted via localStorage · HADE v0
               </p>
             </div>

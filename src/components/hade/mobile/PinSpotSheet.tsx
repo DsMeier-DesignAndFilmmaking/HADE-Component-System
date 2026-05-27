@@ -50,7 +50,7 @@ export default function PinSpotSheet({ initialGeo, anchorLabel, onConfirm, onCan
       className="w-full overflow-hidden rounded-2xl border border-line/70 bg-surface"
     >
       {anchorLabel && (
-        <div className="border-b border-line/60 bg-surface/85 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-ink/55">
+        <div className="border-b border-line/60 bg-surface/85 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-ink/65">
           {anchorLabel}
         </div>
       )}
@@ -94,7 +94,7 @@ export default function PinSpotSheet({ initialGeo, anchorLabel, onConfirm, onCan
             )}
           </Map>
         ) : (
-          <div className="flex h-full items-center justify-center px-4 text-center text-[12px] leading-snug text-ink/55">
+          <div className="flex h-full items-center justify-center px-4 text-center text-[12px] leading-snug text-ink/65">
             {token === null
               ? "Pin spot unavailable on this build."
               : "Pick a place or use current location first, then refine the exact spot."}
@@ -102,7 +102,7 @@ export default function PinSpotSheet({ initialGeo, anchorLabel, onConfirm, onCan
         )}
       </div>
 
-      <div className="border-t border-line/60 bg-surface px-3 py-2 text-[11px] leading-snug text-ink/50">
+      <div className="border-t border-line/60 bg-surface px-3 py-2 text-[11px] leading-snug text-ink/65">
         {pin
           ? "Drag the pin to your exact spot."
           : "No location anchor — cancel and pick a place or use current location first."}

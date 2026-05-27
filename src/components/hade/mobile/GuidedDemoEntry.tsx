@@ -82,13 +82,13 @@ export function GuidedDemoEntry({ onSelect }: GuidedDemoEntryProps) {
         transition={{ duration: 0.32, ease: "easeOut" }}
         className="mb-7"
       >
-        <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.22em] text-ink/30">
+        <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.22em] text-ink/60">
           HADE
         </p>
         <h1 className="text-[24px] font-semibold leading-tight text-ink">
           You have 2 hours and nothing planned.
         </h1>
-        <p className="mt-2 text-sm text-ink/45">
+        <p className="mt-2 text-sm text-ink/65">
           What sounds right?
         </p>
       </motion.div>
@@ -146,7 +146,7 @@ export function GuidedDemoEntry({ onSelect }: GuidedDemoEntryProps) {
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ duration: 0.4, delay: 0.5 }}
-        className="mt-7 text-center text-[11px] text-ink/25"
+        className="mt-7 text-center text-[11px] text-ink/60"
       >
         One tap. No setup.
       </motion.p>

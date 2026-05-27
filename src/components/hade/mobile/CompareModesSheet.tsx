@@ -106,14 +106,14 @@ export function CompareModesSheet({
                 <h2 id="compare-modes-title" className="text-[15px] font-semibold leading-tight text-ink">
                   Compare modes
                 </h2>
-                <p className="mt-1 text-[11px] leading-snug text-ink/45">
+                <p className="mt-1 text-[11px] leading-snug text-ink/65">
                   The same situation, viewed three different ways.
                 </p>
               </div>
               <button
                 type="button"
                 onClick={onClose}
-                className="min-h-8 shrink-0 rounded-full border border-line/60 bg-surface/80 px-3 text-[11px] font-semibold text-ink/55 transition-colors hover:bg-background active:bg-background focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
+                className="min-h-8 shrink-0 rounded-full border border-line/60 bg-surface/80 px-3 text-[11px] font-semibold text-ink/65 transition-colors hover:bg-background active:bg-background focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
               >
                 Close
               </button>
@@ -123,7 +123,7 @@ export function CompareModesSheet({
               {!geo ? (
                 <div className="rounded-2xl border border-line/60 bg-surface px-4 py-6 text-center">
                   <p className="text-sm font-semibold text-ink/70">Location needed</p>
-                  <p className="mt-1 text-[12px] leading-snug text-ink/45">
+                  <p className="mt-1 text-[12px] leading-snug text-ink/65">
                     Turn on location to compare the same situation across modes.
                   </p>
                 </div>
@@ -143,7 +143,7 @@ export function CompareModesSheet({
                 </div>
               )}
 
-              <p className="mt-3 text-center text-[9px] uppercase tracking-[0.14em] text-ink/30">
+              <p className="mt-3 text-center text-[9px] uppercase tracking-[0.14em] text-ink/60">
                 Same input · 3 lenses
               </p>
             </div>
@@ -167,7 +167,7 @@ function CompareCard({ mode, loading, result }: CompareCardProps) {
 
   return (
     <div className="flex min-h-[136px] w-[132px] shrink-0 snap-start flex-col rounded-2xl border border-line/50 bg-background/70 p-3 shadow-soft min-[390px]:w-auto">
-      <div className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-ink/45">
+    <div className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-ink/65">
         <span aria-hidden="true">{meta.icon}</span>
         {meta.label}
       </div>
@@ -179,11 +179,11 @@ function CompareCard({ mode, loading, result }: CompareCardProps) {
           <h3 className="mt-1.5 line-clamp-2 text-[12px] font-semibold leading-tight text-ink">
             {result.data.title}
           </h3>
-          <span className="mt-1 inline-block w-fit rounded-full bg-ink/5 px-1.5 py-0.5 text-[9px] font-medium text-ink/55">
+          <span className="mt-1 inline-block w-fit rounded-full bg-ink/5 px-1.5 py-0.5 text-[9px] font-medium text-ink/65">
             {result.data.category}
           </span>
           {result.data.label && (
-            <p className="mt-1.5 line-clamp-3 text-[10px] leading-snug text-ink/55">
+            <p className="mt-1.5 line-clamp-3 text-[10px] leading-snug text-ink/65">
               {result.data.label}
             </p>
           )}
@@ -191,7 +191,7 @@ function CompareCard({ mode, loading, result }: CompareCardProps) {
       )}
 
       {!loading && (!result?.data) && (
-        <p className="mt-2 text-[10px] text-ink/40">No result.</p>
+        <p className="mt-2 text-[10px] text-ink/65">No result.</p>
       )}
     </div>
   );

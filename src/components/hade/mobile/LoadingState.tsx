@@ -76,7 +76,7 @@ export function LoadingState({ geoSource, lensLabel }: LoadingStateProps) {
         <span className="h-1.5 w-1.5 rounded-full bg-accent/40" />
       </motion.div>
       <p className="mt-4 text-sm font-semibold text-ink/68">{copy.title}</p>
-      <p className="mt-2 max-w-[300px] text-[12.5px] leading-snug text-ink/45">
+      <p className="mt-2 max-w-[300px] text-[12.5px] leading-snug text-ink/65">
         {copy.detail}
       </p>
     </div>

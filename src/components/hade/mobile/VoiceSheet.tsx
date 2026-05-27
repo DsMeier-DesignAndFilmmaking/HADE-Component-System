@@ -174,7 +174,7 @@ export function VoiceSheet({ open, onClose, onApply }: VoiceSheetProps) {
             {/* ── idle ─────────────────────────────────────────────────────── */}
             {voiceState === "idle" && (
               <div className="flex flex-1 flex-col items-center gap-4 overflow-y-auto px-4 pb-4 pt-4 min-[390px]:px-5">
-                <p className="text-[10px] font-medium uppercase tracking-widest text-ink/50">
+                <p className="text-[10px] font-medium uppercase tracking-widest text-ink/65">
                   Say what would help right now
                 </p>
 
@@ -196,7 +196,7 @@ export function VoiceSheet({ open, onClose, onApply }: VoiceSheetProps) {
                       onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleFallbackSubmit(); } }}
                       placeholder="e.g. I want something quiet nearby"
                       rows={2}
-                      className="w-full resize-none rounded-xl border border-line bg-background/70 px-3 py-2.5 text-sm text-ink placeholder:text-ink/40 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+                      className="w-full resize-none rounded-xl border border-line bg-background/70 px-3 py-2.5 text-sm text-ink placeholder:text-ink/60 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
                     />
                     <button
                       type="button"
@@ -210,7 +210,7 @@ export function VoiceSheet({ open, onClose, onApply }: VoiceSheetProps) {
                 )}
 
                 {hasSpeechAPI && (
-                  <p className="text-xs text-ink/40">Tap the mic to start</p>
+                  <p className="text-xs text-ink/65">Tap the mic to start</p>
                 )}
               </div>
             )}
@@ -233,7 +233,7 @@ export function VoiceSheet({ open, onClose, onApply }: VoiceSheetProps) {
                 <button
                   type="button"
                   onClick={stopListening}
-                  className="text-xs text-ink/40 underline underline-offset-2"
+                  className="text-xs text-ink/65 underline underline-offset-2"
                 >
                   Cancel
                 </button>
@@ -271,7 +271,7 @@ export function VoiceSheet({ open, onClose, onApply }: VoiceSheetProps) {
                 )}
 
                 {chips.length === 0 && (
-                  <p className="text-xs text-ink/40">I couldn&apos;t read a clear preference yet — try one more detail.</p>
+                  <p className="text-xs text-ink/65">I couldn&apos;t read a clear preference yet — try one more detail.</p>
                 )}
               </div>
             )}
@@ -280,7 +280,7 @@ export function VoiceSheet({ open, onClose, onApply }: VoiceSheetProps) {
             {voiceState === "processing" && (
               <div className="flex flex-1 flex-col items-center justify-center gap-3 pb-6">
                 <div className="h-6 w-6 animate-spin rounded-full border-2 border-accent/30 border-t-accent" aria-hidden="true" />
-                <p className="text-sm text-ink/50">Updating decision…</p>
+                <p className="text-sm text-ink/65">Updating decision…</p>
               </div>
             )}
 
@@ -299,7 +299,7 @@ export function VoiceSheet({ open, onClose, onApply }: VoiceSheetProps) {
                   {permissionDenied ? "Microphone access denied" : "Couldn't hear that"}
                 </p>
                 {permissionDenied ? (
-                  <p className="text-center text-xs text-ink/40">
+                  <p className="text-center text-xs text-ink/65">
                     Allow microphone access in your browser settings, then try again.
                   </p>
                 ) : (
@@ -314,7 +314,7 @@ export function VoiceSheet({ open, onClose, onApply }: VoiceSheetProps) {
                 <button
                   type="button"
                   onClick={() => { setVoiceState("idle"); setErrorType(""); }}
-                  className="text-xs text-ink/40 underline underline-offset-2"
+                  className="text-xs text-ink/65 underline underline-offset-2"
                 >
                   {permissionDenied ? "Dismiss" : "Type instead"}
                 </button>

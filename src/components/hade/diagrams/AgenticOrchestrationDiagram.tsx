@@ -63,7 +63,7 @@ export default function AgenticOrchestrationDiagram({ className }: { className?:
               />
               <div className="text-center">
                 <span className="block text-[10px] font-mono font-bold tracking-widest text-blue-500 uppercase">HADE</span>
-                <span className="block text-[7px] font-mono text-white/30 uppercase">Orchestrator</span>
+                <span className="block text-[7px] font-mono text-zinc-300 uppercase">Orchestrator</span>
               </div>
             </div>
             <div className="absolute top-full left-1/2 h-20 w-px bg-gradient-to-b from-blue-500/40 to-transparent -translate-x-1/2" />
@@ -101,12 +101,12 @@ export default function AgenticOrchestrationDiagram({ className }: { className?:
             >
                 <div className="mb-6 flex items-center justify-between">
                 <div className={`h-1 w-1 rounded-full ${agent.active ? 'bg-blue-400 shadow-[0_0_12px_rgba(59,130,246,1)]' : 'bg-white/20'}`} />
-                <span className="font-mono text-[8px] uppercase tracking-widest text-white/40 italic">Workforce Module</span>
+                <span className="font-mono text-[8px] uppercase tracking-widest text-zinc-300 italic">Workforce Module</span>
                 </div>
                 <h4 className="text-[11px] font-bold tracking-[0.2em] uppercase mb-2 text-white">{agent.role}</h4>
                 <p className="font-mono text-[9px] text-blue-400/80 mb-4 uppercase font-semibold">{agent.task}</p>
                 
-                {/* ACCESSIBILITY FIX: Changed from text-white/40 to text-zinc-400 */}
+                {/* Accessibility: keep rationale copy legible on the dark diagram surface. */}
                 <p className="text-sm text-zinc-400 font-light leading-relaxed">
                 {agent.desc}
                 </p>
@@ -116,7 +116,7 @@ export default function AgenticOrchestrationDiagram({ className }: { className?:
         </div>
 
         {/* Re-restored Tight Left-Aligned Footer */}
-        <div className="mt-32 max-w-5xl mx-auto grid grid-cols-2 gap-y-12 gap-x-8 border-t border-white/10 pt-12 md:grid-cols-4">
+        <div className="mt-32 max-w-5xl mx-auto grid grid-cols-2 gap-y-12 gap-x-8 border-t border-white/15 pt-12 md:grid-cols-4">
           {[
             { label: "Execution Throughput", value: "140ms" },
             { label: "Optimization Path", value: "Recursive" },
@@ -130,7 +130,7 @@ export default function AgenticOrchestrationDiagram({ className }: { className?:
               transition={{ delay: 0.5 + (i * 0.1) }}
               className="flex flex-col items-start gap-1"
             >
-              <span className="font-mono text-[9px] uppercase tracking-[0.2em] text-white/30 leading-none">
+              <span className="font-mono text-[9px] uppercase tracking-[0.2em] text-zinc-300 leading-none">
                 {stat.label}
               </span>
               <span className={`text-3xl md:text-4xl font-extralight tracking-tighter text-white leading-none ${stat.highlight ? 'text-blue-500' : ''}`}>

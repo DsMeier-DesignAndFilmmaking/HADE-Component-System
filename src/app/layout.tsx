@@ -2,8 +2,6 @@ import type { Metadata, Viewport } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { PwaServiceWorker } from "@/components/hade/PwaServiceWorker";
-import Script from "next/script";
-
 
 const inter = Inter({
   subsets: ["latin"],
@@ -41,9 +39,8 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${inter.variable} ${jetbrainsMono.variable}`}>
       <body className="min-h-screen antialiased">
-        <Script
+        <script
           id="hade-script-error-guard"
-          strategy="beforeInteractive"
           dangerouslySetInnerHTML={{
             __html: `
               window.__NEXT_DATA__ && console.log("[HADE] build id:", window.__NEXT_DATA__.buildId);

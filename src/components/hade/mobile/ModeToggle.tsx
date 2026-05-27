@@ -29,7 +29,7 @@ export function ModeToggle({ mode, onChange, disabled = false }: ModeToggleProps
               "flex flex-1 items-center justify-center gap-1 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all",
               isActive
                 ? "bg-ink text-background shadow-sm"
-                : "text-ink/50 hover:text-ink/80 active:text-ink/80",
+                : "text-ink/65 hover:text-ink/85 active:text-ink/85",
               disabled ? "pointer-events-none opacity-40" : "",
             ]
               .filter(Boolean)
