@@ -31,9 +31,9 @@ export type DecisionSupportText = {
 };
 
 const UGC_LINES = [
-  "Recently added through the HADE community.",
-  "Community-added nearby.",
-  "Added nearby by another user.",
+  "Someone nearby just put this on the map.",
+  "A fresh local note makes this worth a look.",
+  "Recently added by someone in the area.",
 ] as const;
 
 const STATIC_LENS_PATTERNS = [
@@ -95,18 +95,18 @@ function isGroupContext(context?: HadeContext | null): boolean {
 
 function fallbackSupport(source: string | undefined, context?: HadeContext | null): DecisionSupportText {
   if (source === "degraded_location" || !isKnownLocation(context)) {
-    return { label: "Closest useful match with limited location context." };
+    return { label: "Location is a little fuzzy, so this is the safest useful pick." };
   }
 
   if (source === "offline_cache") {
-    return { label: "Best recent match while live context is limited." };
+    return { label: "Using a recent good option while live updates catch up." };
   }
 
   return {
     label:
       context?.situation.urgency === "high"
-        ? "Closest useful match while live context is limited."
-        : "Best nearby match while live context is limited.",
+        ? "Live context is thin, so this keeps the next move simple."
+        : "Live context is thin, so this is a dependable nearby pick.",
   };
 }
 
@@ -119,46 +119,46 @@ function venueSupport(input: DecisionSupportInput): DecisionSupportText {
   const knownLocation = isKnownLocation(context);
 
   if (lens.id === "food" || lens.id === "food_dining") {
-    if (urgency === "high") return { label: "Closest useful food option right now." };
-    if (group) return { label: "Nearby food option that should be easy for the group." };
-    if (energy === "low") return { label: "Low-friction nearby food option for your current energy." };
-    if (openness === "adventurous") return { label: "Nearby food pick with a little discovery built in." };
-    return { label: "Low-friction nearby food option for your current window." };
+    if (urgency === "high") return { label: "Quick food that should not turn into another search." };
+    if (group) return { label: "An easy food call for more than one person." };
+    if (energy === "low") return { label: "Simple food nearby, without a lot of effort." };
+    if (openness === "adventurous") return { label: "A food pick with just enough discovery in it." };
+    return { label: "A practical food call for the window you have." };
   }
 
   if (lens.id === "wellness" || lens.id === "wellness_reset") {
-    if (urgency === "high") return { label: "Closest useful reset for your current energy." };
-    if (group) return { label: "Nearby reset that can work for the group." };
+    if (urgency === "high") return { label: "A quick reset that should be easy to act on." };
+    if (group) return { label: "A calmer option that can work for the group." };
     return {
       label: knownLocation
-        ? "Nearby reset that fits your current energy."
-        : "Quiet reset that fits your current energy.",
+        ? "A nearby reset that matches the pace you seem to need."
+        : "A quiet reset that matches the pace you seem to need.",
     };
   }
 
   if (urgency === "high") {
     return {
-      label: knownLocation ? "Closest useful match right now." : "Useful match for the moment right now.",
+      label: knownLocation ? "The easiest useful move from here." : "A useful move for this moment.",
     };
   }
 
   if (group) {
-    return { label: "Nearby option that should be easy for the group." };
+    return { label: "A low-drama option for the group." };
   }
 
   if (energy === "low") {
     return {
       label: knownLocation
-        ? "Low-friction nearby option for your current energy."
-        : "Low-friction option for your current energy.",
+        ? "Close enough to say yes without overthinking it."
+        : "Low-effort enough to say yes without overthinking it.",
     };
   }
 
   if (openness === "adventurous") {
     return {
       label: knownLocation
-        ? "Nearby pick with a little discovery built in."
-        : "Exploratory pick for your current mood.",
+        ? "A small detour that still feels manageable."
+        : "A small detour for an open-ended mood.",
     };
   }
 
@@ -166,35 +166,35 @@ function venueSupport(input: DecisionSupportInput): DecisionSupportText {
     case "retail":
       return {
         label: knownLocation
-          ? "Nearby browse that fits an open-ended moment."
-          : "Useful browse for an open-ended moment.",
+          ? "A browse-worthy stop without a big commitment."
+          : "A browse-worthy stop for an open-ended moment.",
       };
     case "mobility":
     case "urban_mobility":
       return {
         label: knownLocation
-          ? "Good nearby option based on your current direction."
-          : "Practical next move for your current direction.",
+          ? "A practical next move from where you are."
+          : "A practical next move for the direction you are in.",
       };
     case "entertainment":
       return {
         label: knownLocation
-          ? "Nearby activity with low planning friction."
-          : "Low-planning activity for right now.",
+          ? "Something to do without planning the whole night."
+          : "Something to do without planning the whole night.",
       };
     case "social":
     case "social_interaction":
       return {
         label: knownLocation
-          ? "Nearby place with optional social energy."
-          : "Low-pressure place for optional social energy.",
+          ? "A social option that does not force the night."
+          : "A low-pressure place for optional social energy.",
       };
     default:
       return {
         label:
           confidence >= 0.7
-            ? "Popular nearby stop with low planning friction."
-            : "Nearby place matching your current lens.",
+            ? "A solid stop that should be easy to commit to."
+            : "A reasonable fit for what you asked for.",
       };
   }
 }

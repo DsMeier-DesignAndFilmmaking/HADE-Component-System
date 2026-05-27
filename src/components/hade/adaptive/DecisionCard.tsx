@@ -207,19 +207,19 @@ export function DecisionCard({
       transition={{ duration: 0.28, ease: "easeOut" }}
       className={className}
     >
-      <HadeCard glow={false}>
+      <HadeCard glow={false} className="rounded-[24px] border-line/70 p-4 shadow-panel min-[390px]:p-5">
 
         {/* ── Reframing overlay ─────────────────────────────────────────────── */}
         {isReframing ? (
-          <div className="flex flex-col gap-2 py-2" aria-live="polite" aria-busy="true">
-            <p className="font-mono text-xs uppercase tracking-widest text-accent/60">
-              Reframing...
+          <div className="flex min-h-[132px] flex-col justify-center gap-2.5 py-1" aria-live="polite" aria-busy="true">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-ink/32">
+              Reframing
             </p>
-            <HadeHeading level={3} className="text-ink/40">
-              Reframing based on your feedback...
+            <HadeHeading level={3} className="text-[22px] leading-tight text-ink/48">
+              Finding a better fit...
             </HadeHeading>
             {pivotLabel && (
-              <span className="inline-flex w-fit items-center rounded-full border border-accent/20 bg-accent/5 px-3 py-1 font-mono text-[11px] text-accent">
+              <span className="inline-flex w-fit items-center rounded-full border border-accent/20 bg-accent/5 px-3 py-1 text-[11px] font-semibold text-accent">
                 {pivotLabel}
               </span>
             )}
@@ -227,23 +227,23 @@ export function DecisionCard({
         ) : (
           <>
             {/* ── Header ───────────────────────────────────────────────────── */}
-            <div className="flex items-start justify-between gap-4 mb-4">
+            <div className="mb-5 flex items-start justify-between gap-4">
               <div className="min-w-0">
 
                 {/* Label row */}
-                <div className="flex items-center gap-2 mb-1">
+                <div className="mb-2 flex flex-wrap items-center gap-1.5">
                   {isUGC ? (
-                    <span className="inline-flex items-center gap-1.5 font-mono text-xs uppercase tracking-widest text-accent">
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-accent/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-accent">
                       <span aria-hidden="true">👥</span>
                       Community Meetup
                     </span>
                   ) : (
-                    <p className="font-mono text-xs uppercase tracking-widest text-accent">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-ink/42">
                       Your move
                     </p>
                   )}
                   {!isUGC && live && (
-                    <span className="inline-flex items-center gap-1 rounded bg-green-500/10 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider font-semibold text-green-400">
+                    <span className="inline-flex items-center gap-1 rounded-full bg-green-500/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-green-600">
                       <span
                         className="inline-block h-1.5 w-1.5 rounded-full bg-green-400 animate-pulse"
                         aria-hidden="true"
@@ -254,17 +254,19 @@ export function DecisionCard({
                 </div>
 
                 {/* Title */}
-                <HadeHeading level={3}>{object.title}</HadeHeading>
+                <HadeHeading level={3} className="text-[26px] leading-[1.05] text-balance">
+                  {object.title}
+                </HadeHeading>
 
                 {/* UGC rationale */}
                 {isUGC && (
-                  <p className="mt-1 text-xs text-ink/50">
-                    A HADE user recently started a {object.title} here.
+                  <p className="mt-2 text-[13px] leading-snug text-ink/56">
+                    Someone nearby recently started {object.title} here.
                   </p>
                 )}
 
                 {/* Time + participation */}
-                <HadeText variant="caption" color="muted" className="mt-1">
+                <HadeText variant="caption" color="muted" className="mt-2 text-[12px] font-medium">
                   {timeLabel}
                   {" · "}
                   {goingLabel}
@@ -276,7 +278,7 @@ export function DecisionCard({
 
             {/* ── Community Signal & UGC Vibe Chips ──────────────────────── */}
             {showCommunityBadge && (
-              <div className="mb-4 flex flex-col gap-2">
+              <div className="mb-5 rounded-2xl border border-line/55 bg-background/70 p-3.5">
 
                 {/* Pulsing community validation badge */}
                 <div className="flex items-center gap-1.5">
@@ -284,10 +286,13 @@ export function DecisionCard({
                     className="inline-block h-1.5 w-1.5 rounded-full bg-accent animate-pulse"
                     aria-hidden="true"
                   />
-                  <p className="font-mono text-[10px] uppercase tracking-widest text-ink/40">
-                    Validated by community &#39;Vibe&#39; signals.
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-ink/38">
+                    Local context
                   </p>
                 </div>
+                <p className="mt-1.5 text-[12.5px] leading-snug text-ink/56">
+                  Recent local feedback makes this feel more promising than a static listing.
+                </p>
 
                 {/* Stagger-in chip row — only rendered when chips exist */}
                 {vibeChips.length > 0 && (
@@ -295,13 +300,13 @@ export function DecisionCard({
                     variants={chipContainerVariants}
                     initial="hidden"
                     animate="visible"
-                    className="flex flex-nowrap items-center gap-2 overflow-hidden"
+                    className="mt-3 flex flex-nowrap items-center gap-2 overflow-hidden"
                   >
                     {vibeChips.map((chip) => (
                       <motion.span
                         key={chip.key}
                         variants={chipItemVariants}
-                        className="inline-flex shrink-0 items-center gap-1 rounded-full border border-line bg-surface px-2.5 py-1 text-[11px] font-medium text-ink/70"
+                        className="inline-flex shrink-0 items-center gap-1 rounded-full border border-line/70 bg-surface px-2.5 py-1 text-[11px] font-semibold text-ink/70"
                       >
                         <span aria-hidden="true">{chip.icon}</span>
                         <span>{chip.label}</span>
@@ -322,22 +327,23 @@ export function DecisionCard({
             )}
 
             {/* ── CTAs ─────────────────────────────────────────────────────── */}
-            <div className="flex items-center gap-2 pt-3 border-t border-line">
+            <div className="flex items-center gap-2 border-t border-line/55 pt-4">
               <HadeButton
                 variant="primary"
                 size="sm"
                 onClick={launchNavigation}
                 loading={openingMaps}
+                className="min-h-11 flex-1 rounded-2xl"
               >
-                {openingMaps ? "Opening Maps..." : "Let's Go"}
+                {openingMaps ? "Opening Maps..." : "Open in Maps"}
               </HadeButton>
-              <HadeButton variant="secondary" size="sm" onClick={onMaybe}>
+              <HadeButton variant="secondary" size="sm" onClick={onMaybe} className="min-h-11 rounded-2xl">
                 Maybe
               </HadeButton>
               <button
                 type="button"
                 onClick={onNotThis}
-                className="ml-auto rounded-lg border border-line bg-surface px-3 py-1.5 text-xs font-semibold text-ink/60 transition-colors hover:text-ink"
+                className="ml-auto min-h-11 rounded-2xl border border-line/70 bg-surface px-3 py-1.5 text-xs font-semibold text-ink/55 transition-colors hover:text-ink"
               >
                 Not This
               </button>

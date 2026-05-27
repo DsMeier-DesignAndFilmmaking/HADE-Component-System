@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import type { DomainMode } from "@/lib/hade/useHade";
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import type { Intent, SpontaneousObject, VibeTag } from "@/types/hade";
 import { createDecisionViewModelFromUGC, type DecisionViewModel } from "@/lib/hade/viewModel";
 import { useHadeAdaptiveContext } from "@/lib/hade/hooks";
@@ -21,8 +21,11 @@ import { ErrorBoundary } from "./ErrorBoundary";
 import { ActivityCreationView } from "./ActivityCreationView";
 import { CompareModesSheet } from "./CompareModesSheet";
 import { VoiceSheet } from "./VoiceSheet";
+import { WellnessLensView } from "./WellnessLensView";
 import type { VoiceIntent } from "@/lib/hade/voiceIntentParser";
 import { Mic } from "lucide-react";
+import { DEFAULT_INTENT } from "@/lib/hade/wellness/intents";
+import type { WellnessIntent } from "@/lib/hade/wellness/types";
 
 type Urgency = "low" | "medium" | "high";
 type PivotReason = "Too crowded" | "Wrong vibe" | "Too far" | "Overpriced";
@@ -66,54 +69,54 @@ const LENS_OPTIONS: Array<{
     mode: "dining",
     icon: "🍽",
     label: "Food & Dining",
-    context: "Reduce decision fatigue nearby",
-    frame: "Low-friction nearby food decision.",
-    transitionCopy: "Optimizing for simplicity nearby",
+    context: "Food without the scroll",
+    frame: "A quick, realistic food call.",
+    transitionCopy: "Looking for the easiest good option",
   },
   {
     id: "retail",
     mode: "dining",
     icon: "🛍",
     label: "Retail & Shopping",
-    context: "Inspiration over endless searching",
-    frame: "A spontaneous browse worth stepping into.",
-    transitionCopy: "Looking for something worth discovering",
+    context: "A browse that feels worth stepping into",
+    frame: "Something interesting without turning it into a project.",
+    transitionCopy: "Looking for a browse that feels worth it",
   },
   {
     id: "mobility",
     mode: "travel",
     icon: "🚇",
     label: "Urban Mobility",
-    context: "What makes sense right here, right now",
-    frame: "The easiest useful move from where you are.",
-    transitionCopy: "Reading movement and density nearby",
+    context: "The next move that makes sense",
+    frame: "A practical option from where you are.",
+    transitionCopy: "Finding the cleanest next move",
   },
   {
     id: "entertainment",
     mode: "social",
     icon: "🎭",
     label: "Entertainment",
-    context: "Something worth doing tonight",
-    frame: "Something nearby worth doing tonight.",
-    transitionCopy: "Looking for something happening now",
+    context: "Something that can carry the night",
+    frame: "A plan-light thing to do.",
+    transitionCopy: "Looking for a plan that feels alive",
   },
   {
     id: "social",
     mode: "social",
     icon: "👥",
     label: "Social Interaction",
-    context: "Low-friction spontaneous connection",
-    frame: "A low-pressure place where interaction is possible.",
-    transitionCopy: "Finding socially compatible energy",
+    context: "Low-pressure connection",
+    frame: "A place where talking to people feels possible.",
+    transitionCopy: "Looking for an easy social opening",
   },
   {
     id: "wellness",
     mode: "travel",
     icon: "🌿",
     label: "Wellness",
-    context: "Context-aware nudges and resets",
-    frame: "A reset that fits your current energy and location.",
-    transitionCopy: "Optimizing for a healthier next move",
+    context: "A reset you might actually take",
+    frame: "Something restorative and close enough to do.",
+    transitionCopy: "Looking for a reset that feels doable",
   },
 ];
 
@@ -136,11 +139,24 @@ function IndustryLensSheet({
   onClose: () => void;
   onSelect: (lens: LensOption) => void;
 }) {
+  const reduceMotion = useReducedMotion();
+
+  useEffect(() => {
+    if (!open) return;
+
+    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [open, onClose]);
+
   return (
     <AnimatePresence>
       {open && (
         <motion.div
-          className="fixed inset-0 z-40 flex items-end justify-center bg-ink/24 px-3 backdrop-blur-[1px]"
+          className="fixed inset-0 z-40 flex items-end justify-center bg-ink/24 px-2 pb-[max(8px,env(safe-area-inset-bottom,8px))] backdrop-blur-[1px]"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
@@ -150,37 +166,47 @@ function IndustryLensSheet({
           <motion.div
             role="dialog"
             aria-modal="true"
-            aria-label="Choose industry direction"
-            className="mb-[max(8px,env(safe-area-inset-bottom,8px))] w-full max-w-[430px] rounded-[22px] border border-line/70 bg-surface px-3 pb-3 pt-2.5 shadow-panel"
-            initial={{ y: 36, opacity: 0.96 }}
+            aria-labelledby="industry-lens-title"
+            drag={reduceMotion ? false : "y"}
+            dragConstraints={{ top: 0, bottom: 0 }}
+            dragElastic={0.16}
+            onDragEnd={(_, info) => {
+              if (info.offset.y > 90) onClose();
+            }}
+            className="flex max-h-[min(88dvh,620px)] w-full max-w-[430px] flex-col overflow-hidden rounded-t-[24px] border border-line/70 bg-surface shadow-panel"
+            initial={{ y: "100%", opacity: 0.96 }}
             animate={{ y: 0, opacity: 1 }}
-            exit={{ y: 36, opacity: 0 }}
-            transition={{ type: "spring", damping: 34, stiffness: 360 }}
+            exit={{ y: "100%", opacity: 0 }}
+            transition={
+              reduceMotion
+                ? { duration: 0 }
+                : { type: "spring", damping: 34, stiffness: 360 }
+            }
             onClick={(event) => event.stopPropagation()}
           >
-            <div className="flex justify-center pb-2">
+            <div className="flex justify-center pb-1 pt-2.5">
               <span className="h-1 w-8 rounded-full bg-ink/14" aria-hidden="true" />
             </div>
 
-            <div className="mb-2.5 flex items-center justify-between px-1">
-              <div>
-                <h2 className="text-[13px] font-semibold leading-tight text-ink">
+            <div className="flex items-start justify-between gap-3 border-b border-line/50 px-4 pb-3 pt-2">
+              <div className="min-w-0">
+                <h2 id="industry-lens-title" className="text-[15px] font-semibold leading-tight text-ink">
                   Other directions
                 </h2>
-                <p className="mt-0.5 text-[10px] leading-tight text-ink/38">
-                  Choose the lens HADE should read from.
+                <p className="mt-1 text-[11px] leading-snug text-ink/42">
+                  Choose how to look at this moment.
                 </p>
               </div>
               <button
                 type="button"
                 onClick={onClose}
-                className="h-7 rounded-full px-2.5 text-[11px] font-medium text-ink/42 transition-colors active:text-ink/70 focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
+                className="min-h-8 shrink-0 rounded-full border border-line/60 bg-white/70 px-3 text-[11px] font-semibold text-ink/55 transition-colors active:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
               >
                 Close
               </button>
             </div>
 
-            <div className="grid gap-1.5">
+            <div className="grid min-h-0 gap-1.5 overflow-y-auto overscroll-contain px-3 pb-3 pt-3">
               {LENS_OPTIONS.map((lens) => {
                 const isActive = activeLensId === lens.id;
 
@@ -190,7 +216,7 @@ function IndustryLensSheet({
                     type="button"
                     onClick={() => onSelect(lens)}
                     aria-pressed={isActive}
-                    className={`flex min-h-[54px] items-center gap-2.5 rounded-xl border px-3 py-2 text-left transition-all active:scale-[0.985] focus:outline-none focus-visible:ring-2 focus-visible:ring-line ${
+                    className={`flex min-h-[56px] items-center gap-2.5 rounded-2xl border px-3 py-2 text-left transition-all active:scale-[0.985] focus:outline-none focus-visible:ring-2 focus-visible:ring-line ${
                       isActive
                         ? "border-ink/15 bg-white text-ink shadow-soft"
                         : "border-line/50 bg-white/45 text-ink/64"
@@ -213,9 +239,9 @@ function IndustryLensSheet({
                       </span>
                     </span>
                     {isActive && (
-                     <span className="rounded-full bg-green-500/10 px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.12em] text-green-600">
-                     Active
-                   </span>
+                      <span className="rounded-full bg-green-500/10 px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.12em] text-green-600">
+                        Active
+                      </span>
                     )}
                   </button>
                 );
@@ -278,31 +304,38 @@ function DebugOverlay({ decision }: { decision: DecisionViewModel }) {
     ? "bg-orange-500/90 text-white"
     : "bg-blue-500/90 text-white";
 
-  const sourceShort = decision.engine_source
-    ? decision.engine_source.replace("cold_start_", "cs/").replace("_fallback", "/fb")
+  const sourceLabel = decision.engine_source
+    ? decision.engine_source
+        .replace(/_/g, " ")
+        .replace(/\bcold start\b/i, "fresh start")
+        .replace(/\bfallback\b/i, "backup")
     : "—";
+  const readLabel =
+    decision.ui_state === "high" ? "strong" :
+    decision.ui_state === "medium" ? "good" :
+    "light";
 
   return (
     <div className="fixed right-3 top-14 z-50 flex flex-col items-end gap-1.5">
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}
-        className={`rounded-full px-2.5 py-1 text-[10px] font-mono font-semibold leading-none shadow-lg ${pillClass}`}
+        className={`rounded-full px-2.5 py-1 text-[10px] font-semibold leading-none shadow-lg ${pillClass}`}
       >
-        {decision.is_ugc ? "◎ UGC" : "⊕ G"} · {pct}%
+        {decision.is_ugc ? "Local note" : "Place"} · {pct}%
       </button>
 
       {expanded && (
-        <div className="w-44 rounded-xl border border-white/10 bg-ink/90 px-3 py-2.5 font-mono text-[10px] leading-relaxed text-white/90 shadow-xl backdrop-blur-sm">
+        <div className="w-44 rounded-xl border border-white/10 bg-ink/90 px-3 py-2.5 text-[10px] leading-relaxed text-white/90 shadow-xl backdrop-blur-sm">
           <div className="flex justify-between">
-            <span className="text-white/50">engine</span>
-            <span className="text-emerald-400 text-right max-w-[100px] truncate">{sourceShort}</span>
+            <span className="text-white/50">source</span>
+            <span className="text-emerald-400 text-right max-w-[100px] truncate">{sourceLabel}</span>
           </div>
 
           <div className="mt-1 flex justify-between">
-            <span className="text-white/50">is_ugc</span>
+            <span className="text-white/50">kind</span>
             <span className={decision.is_ugc ? "text-orange-400" : "text-blue-400"}>
-              {decision.is_ugc ? "true" : "false"}
+              {decision.is_ugc ? "local" : "place"}
             </span>
           </div>
 
@@ -318,24 +351,24 @@ function DebugOverlay({ decision }: { decision: DecisionViewModel }) {
           </div>
 
           <div className="mt-1.5 flex justify-between">
-            <span className="text-white/50">ui_state</span>
-            <span>{decision.ui_state}</span>
+            <span className="text-white/50">read</span>
+            <span>{readLabel}</span>
           </div>
 
           {decision.temporal_state ? (
             <div className="mt-1 flex justify-between">
-              <span className="text-white/50">temporal</span>
+              <span className="text-white/50">freshness</span>
               <span className="text-orange-300">{decision.temporal_state}</span>
             </div>
           ) : decision.is_ugc ? (
             <div className="mt-1 flex justify-between">
-              <span className="text-white/50">temporal</span>
+              <span className="text-white/50">freshness</span>
               <span className="text-white/30">—</span>
             </div>
           ) : null}
 
           {decision.is_fallback && (
-            <div className="mt-1.5 text-yellow-400">⚠ fallback</div>
+            <div className="mt-1.5 text-yellow-400">Limited live context</div>
           )}
         </div>
       )}
@@ -379,6 +412,11 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
   const [activeLensId, setActiveLensId] = useState<LensId>(
     defaultLensId,
   );
+  // Wellness-lens-only state — kept session-local so re-entering the lens
+  // preserves the last picked intent. Always declared (hooks order rule)
+  // but only consumed inside the WellnessLensView branch.
+  const [selectedWellnessIntent, setSelectedWellnessIntent] =
+    useState<WellnessIntent>(DEFAULT_INTENT);
   const [lensTransitioning, setLensTransitioning] = useState(false);
   const lensTransitionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const createdRevealTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -548,11 +586,28 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
           candidate_categories: candidateCategories,
         });
       }
-      setMode(lens.mode, { candidate_categories: candidateCategories });
-      lensTransitionTimerRef.current = setTimeout(() => {
+      // Wellness lens uses the local useWellnessEngine (no backend dependency).
+      // Skip the setMode call so we don't fire a wasted /api/hade/decide whose
+      // result the WellnessLensView never reads. Switching FROM wellness back
+      // to any other lens still calls setMode normally below, so backend flow
+      // resumes immediately.
+      if (lens.id === "wellness") {
+        if (process.env.NODE_ENV !== "production") {
+          console.log(
+            "[HADE LENS] skipping backend decide for wellness lens (local engine)",
+          );
+        }
+        // No transition copy is shown for wellness (WellnessLensView replaces
+        // the HeroDecisionCard entirely), so clear the transitioning flag
+        // immediately instead of waiting the 1400ms artificial delay.
         setLensTransitioning(false);
-        lensTransitionTimerRef.current = null;
-      }, 1400);
+      } else {
+        setMode(lens.mode, { candidate_categories: candidateCategories });
+        lensTransitionTimerRef.current = setTimeout(() => {
+          setLensTransitioning(false);
+          lensTransitionTimerRef.current = null;
+        }, 1400);
+      }
     },
     [activeLensId, clearCreatedDecisionConfirmation, setMode],
   );
@@ -855,6 +910,7 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
   // Once a new live decision arrives, those overrides are cleared automatically.
   const displayDecision = previousOverride ?? createdDecisionOverride ?? decision;
   const activeLens = LENS_OPTIONS.find((lens) => lens.id === activeLensId) ?? LENS_OPTIONS[0];
+  const isWellnessLens = activeLensId === "wellness";
 
   // Derived pivot reasons list — UGC-specific when applicable
   const pivotReasons: string[] = displayDecision?.is_ugc && displayDecision.ugc_meta
@@ -881,9 +937,35 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
         </div>
       )}
 
-      {!displayDecision && status !== "error" && <LoadingState />}
+      {/* Wellness lens short-circuits the standard /api/hade/decide flow —
+          renders the local wellness engine output instead. The IndustryLensSheet
+          stays mounted at the bottom so the user can switch back. */}
+      {status !== "error" && isWellnessLens && (
+        <>
+          <WellnessLensView
+            selectedIntent={selectedWellnessIntent}
+            onIntentChange={setSelectedWellnessIntent}
+            lensIcon={activeLens.icon}
+            lensLabel={activeLens.label}
+          />
+          <div className="mt-2.5 flex items-center justify-between gap-2 rounded-xl border border-line/45 bg-white/38 px-3 py-2">
+            <p className="min-w-0 truncate text-[10px] leading-tight text-ink/45">
+              Switch to a different direction at any time.
+            </p>
+            <button
+              type="button"
+              onClick={() => setShowLensSheet(true)}
+              className="shrink-0 rounded-full border border-line/55 bg-surface/70 px-3 py-1.5 text-[11px] font-semibold text-ink/52 transition-all active:scale-[0.97] active:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
+            >
+              View Other directions
+            </button>
+          </div>
+        </>
+      )}
 
-      {status !== "error" && displayDecision && (
+      {!isWellnessLens && !displayDecision && status !== "error" && <LoadingState />}
+
+      {!isWellnessLens && status !== "error" && displayDecision && (
         <>
           <div>
             <AnimatePresence mode="wait">
@@ -907,6 +989,13 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
                   <HeroDecisionCard
                     object={displayDecision.object}
                     mode={mode}
+                    confidence={displayDecision.confidence}
+                    uiState={displayDecision.ui_state}
+                    distanceLabel={displayDecision.distance_label}
+                    etaLabel={displayDecision.eta_label}
+                    rationale={displayDecision.rationale}
+                    whyNow={displayDecision.why_now}
+                    whyThis={displayDecision.why_this}
                     contextLabel={activeLens.context}
                     lensIcon={activeLens.icon}
                     lensLabel={activeLens.label}
@@ -961,13 +1050,13 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
             type="button"
             onClick={() => setVoiceSheetOpen(true)}
             className="mt-2 flex min-h-[52px] w-full items-center gap-3 rounded-2xl border border-line/55 bg-white/55 px-4 py-3 text-left transition-all active:scale-[0.99] active:bg-white/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
-            aria-label="Tell HADE what you want — voice input"
+            aria-label="Say what would help — voice input"
           >
             <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-ink/6">
               <Mic className="h-4 w-4 text-ink/50" aria-hidden="true" />
             </span>
             <div className="min-w-0">
-              <p className="text-[13px] font-semibold leading-tight text-ink/70">Tell HADE what you want</p>
+              <p className="text-[13px] font-semibold leading-tight text-ink/70">Say what would help</p>
               <p className="mt-0.5 text-[10px] leading-tight text-ink/38">Speak or type what you&apos;re in the mood for.</p>
             </div>
           </button>
@@ -979,6 +1068,11 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
       )}
 
       {/* ── Pinned CTA bar — thumb-reach zone ──────────────────────────────── */}
+      {/* Hidden in wellness mode: the bar's primary "Take me there" + Refine
+          / Not this controls all require a single backend HadeDecision, which
+          the wellness engine doesn't produce. Wellness uses its own in-card
+          place list as the actionable surface. */}
+      {!isWellnessLens && (
       <div className="fixed bottom-0 left-0 right-0 z-10 mx-auto w-full max-w-[430px] border-t border-line/10 bg-background/78 px-4 pb-[max(12px,env(safe-area-inset-bottom,12px))] pt-2.5 backdrop-blur-sm min-[390px]:px-5">
         <div className="flex flex-col gap-1.5">
 
@@ -1051,9 +1145,14 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
             type="button"
             onClick={handleGo}
             disabled={!displayDecision}
-            className="h-12 w-full rounded-2xl bg-blue-600 text-[15px] font-bold text-white transition-colors hover:bg-blue-700 active:bg-blue-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 disabled:opacity-40"
+            className="flex min-h-[54px] w-full flex-col items-center justify-center rounded-2xl bg-blue-600 px-4 text-white shadow-[0_12px_24px_rgba(49,107,255,0.20)] transition-colors hover:bg-blue-700 active:bg-blue-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 disabled:opacity-40"
           >
-            Navigate
+            <span className="text-[15px] font-bold leading-tight">
+              {displayDecision?.cta_label ?? "Take me there"}
+            </span>
+            <span className="mt-0.5 text-[10px] font-medium leading-tight text-white/70">
+              Opens Maps
+            </span>
           </button>
 
           {/* REJECTION — text-only, lowest visual weight */}
@@ -1068,6 +1167,7 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
 
         </div>
       </div>
+      )}
 
       <IndustryLensSheet
         open={showLensSheet}
@@ -1104,7 +1204,7 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
       <AnimatePresence>
         {showCreationFlow && (
           <motion.div
-            className="fixed inset-0 z-30 flex h-[100dvh] w-full max-w-[100vw] items-end overflow-x-hidden bg-black/25 px-3 pb-[max(10px,env(safe-area-inset-bottom,10px))]"
+            className="fixed inset-0 z-30 flex h-[100dvh] w-full max-w-[100vw] items-end overflow-hidden bg-black/25 px-2 pb-[max(8px,env(safe-area-inset-bottom,8px))] backdrop-blur-[1px]"
             onPointerDown={handleCreationBackdropPointerDown}
             onPointerUp={handleCreationBackdropPointerUp}
             onKeyDown={handleCreationOverlayKeyDown}
@@ -1113,22 +1213,21 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
             exit={{ opacity: 0 }}
           >
             <motion.div
-              className="mx-auto mb-2 flex max-h-[90dvh] w-full max-w-[min(430px,100vw)] flex-col"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
+              role="dialog"
+              aria-modal="true"
+              aria-label="Add something nearby"
+              tabIndex={-1}
+              className="mx-auto flex max-h-[calc(100dvh-16px)] w-full max-w-[430px] flex-col"
+              initial={{ y: 32, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 32, opacity: 0 }}
+              transition={{ duration: 0.18, ease: "easeOut" }}
             >
               <ErrorBoundary name="ActivityCreationView" onReset={closeCreationFlow}>
-                <div className="relative w-full max-w-full">
-                  <button
-                    type="button"
-                    onClick={closeCreationFlow}
-                    className="absolute right-3 top-3 z-10 rounded-full bg-white/80 px-2.5 py-1 text-[11px] font-semibold text-ink/60"
-                  >
-                    Close
-                  </button>
-                  <ActivityCreationView onCreate={handleCreatedActivitySaved} />
-                </div>
+                <ActivityCreationView
+                  onCreate={handleCreatedActivitySaved}
+                  onClose={closeCreationFlow}
+                />
               </ErrorBoundary>
             </motion.div>
           </motion.div>
@@ -1160,7 +1259,7 @@ export function DecisionScreen({ scenarioId, initialMode }: DecisionScreenProps)
             transition={{ type: "spring", stiffness: 400, damping: 28 }}
             className="pointer-events-none fixed bottom-[calc(env(safe-area-inset-bottom,0px)+152px)] inset-x-0 z-[60] mx-auto w-fit max-w-xs rounded-xl border border-line bg-surface px-3.5 py-2 text-[13px] text-ink shadow-md"
           >
-            📡 Signal Enqueued: {formatVibeLabel(toastTag)} (+0.2 influence)
+            Thanks. We&apos;ll remember: {formatVibeLabel(toastTag)}.
           </motion.div>
         )}
       </AnimatePresence>

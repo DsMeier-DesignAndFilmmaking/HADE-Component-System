@@ -175,7 +175,7 @@ export function VoiceSheet({ open, onClose, onApply }: VoiceSheetProps) {
             {voiceState === "idle" && (
               <div className="flex flex-1 flex-col items-center gap-4 overflow-y-auto px-4 pb-4 pt-4 min-[390px]:px-5">
                 <p className="text-[10px] font-medium uppercase tracking-widest text-ink/50">
-                  Tell HADE what you&apos;re looking for
+                  Say what would help right now
                 </p>
 
                 {hasSpeechAPI ? (
@@ -271,7 +271,7 @@ export function VoiceSheet({ open, onClose, onApply }: VoiceSheetProps) {
                 )}
 
                 {chips.length === 0 && (
-                  <p className="text-xs text-ink/40">No signals detected — try being more specific.</p>
+                  <p className="text-xs text-ink/40">I couldn&apos;t read a clear preference yet — try one more detail.</p>
                 )}
               </div>
             )}

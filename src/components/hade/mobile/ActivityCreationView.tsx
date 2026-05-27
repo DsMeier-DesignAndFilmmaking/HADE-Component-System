@@ -107,10 +107,11 @@ const MINUTE_OPTIONS = Array.from({ length: 60 }, (_, index) => String(index).pa
 const UGC_STORAGE_TIMEOUT_MS = 4_000;
 const PLACE_SEARCH_TIMEOUT_MS = 5_000;
 const LOCAL_UGC_DRAFTS_KEY = "hade.demo.localUgcDrafts";
-const LOCAL_SAVE_MESSAGE = "Saved locally for now. We'll sync when HADE reconnects.";
+const LOCAL_SAVE_MESSAGE = "Saved on this device. We'll retry when the connection is back.";
 
 interface ActivityCreationViewProps {
   onCreate?: (object: SpontaneousObject) => void;
+  onClose?: () => void;
 }
 
 function getDefaultActivityTime() {
@@ -383,7 +384,7 @@ async function syncLocalUgcDrafts() {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
+export function ActivityCreationView({ onCreate, onClose }: ActivityCreationViewProps) {
   const { emitVibeSignal, context } = useHadeAdaptiveContext();
 
   const [step,      setStep]      = useState<Step>("what");
@@ -525,7 +526,7 @@ export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
   const submitLabel =
     status === "submitting" ? "Saving..." :
     status === "success"    ? "Saved" :
-    status === "local"      ? "Saved locally" :
+    status === "local"      ? "Saved on device" :
     status === "error"      ? "Try Again" :
     "Start Something";
   const manualLocationNote = locationLabel.trim();
@@ -786,6 +787,19 @@ export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
     }
   }
 
+  function handleHeaderBack() {
+    if (status === "submitting") return;
+    if (step === "details") {
+      setStep("vibe");
+      return;
+    }
+    if (step === "vibe") {
+      setStep("what");
+      return;
+    }
+    onClose?.();
+  }
+
   async function persistUgc(ugcPayload: Record<string, unknown>): Promise<UgcPersistResult> {
     if (!navigator.onLine) {
       debugUgcStorage("offline", { endpoint: "/api/hade/ugc" });
@@ -981,7 +995,7 @@ export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
       });
 
       if (!localResult.ok) {
-        setErrorMsg("Couldn't save yet. Your entry is still here - try again when connection returns.");
+        setErrorMsg("Couldn't save yet. Your entry is still here; try again when the connection returns.");
         setStatus("error");
         return;
       }
@@ -1024,7 +1038,7 @@ export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
     <section
       ref={sheetRef}
       onPointerDownCapture={handleSheetPointerDownCapture}
-      className="hade-add-sheet relative flex w-full max-w-full max-h-[90dvh] min-h-0 flex-col overflow-hidden rounded-[22px] bg-surface shadow-soft"
+      className="hade-add-sheet relative flex max-h-[calc(100dvh-16px)] min-h-0 w-full max-w-full flex-col overflow-hidden rounded-t-[24px] border border-b-0 border-line/70 bg-surface shadow-panel"
     >
 
       {/* ── Confetti burst ──────────────────────────────────────────────────── */}
@@ -1051,20 +1065,37 @@ export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
       </AnimatePresence>
 
       {/* ── Header ──────────────────────────────────────────────────────────── */}
-      <div className="shrink-0 px-4 pb-3 pt-4 pr-14">
-        <p className="font-mono text-[10px] uppercase tracking-widest text-accent">ADD SOMETHING</p>
-        <h2 className="mt-0.5 text-lg font-semibold leading-tight text-ink">
-          {step === "what"    ? "What's happening?" :
-           step === "vibe"    ? "What's the vibe?"  : "Any details?"}
-        </h2>
-        <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-ink/40">
-          Step {stepNumber} of 3
-        </p>
+      <div className="shrink-0 border-b border-line/50 px-4 pb-3 pt-2.5">
+        <div className="mb-2 flex justify-center">
+          <span className="h-1 w-9 rounded-full bg-ink/15" aria-hidden="true" />
+        </div>
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-accent">Add something</p>
+            <h2 className="mt-0.5 text-lg font-semibold leading-tight text-ink">
+              {step === "what"    ? "What's happening?" :
+               step === "vibe"    ? "What's the vibe?"  : "Any details?"}
+            </h2>
+            <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-ink/40">
+              Step {stepNumber} of 3
+            </p>
+          </div>
+          {(step !== "what" || onClose) && (
+            <button
+              type="button"
+              onClick={handleHeaderBack}
+              disabled={status === "submitting"}
+              className="min-h-8 shrink-0 rounded-full border border-line/60 bg-white/70 px-3 text-[11px] font-semibold text-ink/55 transition-colors active:bg-white disabled:opacity-45 focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
+            >
+              {step === "what" ? "Close" : "Back"}
+            </button>
+          )}
+        </div>
       </div>
 
       <div
         ref={scrollContainerRef}
-        className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-4 pt-1"
+        className="min-h-0 flex-1 scroll-pb-28 overflow-y-auto overscroll-contain px-4 pb-4 pt-4"
       >
         <AnimatePresence mode="wait" initial={false}>
 
@@ -1224,7 +1255,7 @@ export function ActivityCreationView({ onCreate }: ActivityCreationViewProps) {
                     Where is this?
                   </span>
                   <span className="mt-1 block text-[12px] leading-snug text-ink/45">
-                    Add a location so HADE can surface this when someone is nearby.
+                    Add a location so people nearby can actually find it.
                   </span>
                 </div>
 

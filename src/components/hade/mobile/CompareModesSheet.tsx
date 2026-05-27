@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import type { AgentPersona, GeoLocation, HadeContext } from "@/types/hade";
 import type { DomainMode } from "@/lib/hade/useHade";
 import {
@@ -33,6 +33,7 @@ export function CompareModesSheet({
 }: CompareModesSheetProps) {
   const [results, setResults] = useState<CompareResult[] | null>(null);
   const [loading, setLoading] = useState(false);
+  const reduceMotion = useReducedMotion();
 
   useEffect(() => {
     if (!open || !geo) return;
@@ -54,54 +55,98 @@ export function CompareModesSheet({
     return () => controller.abort();
   }, [open, geo, persona, context]);
 
+  useEffect(() => {
+    if (!open) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [open, onClose]);
+
   return (
     <AnimatePresence>
       {open && (
         <motion.div
-          className="fixed inset-0 z-40 flex items-end justify-center bg-black/30 backdrop-blur-[2px]"
+          className="fixed inset-0 z-40 flex items-end justify-center bg-black/30 px-3 backdrop-blur-[2px]"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           onClick={onClose}
         >
           <motion.div
-            className="mx-auto w-full max-w-[430px] rounded-t-[22px] bg-background px-4 pb-[max(12px,env(safe-area-inset-bottom,12px))] pt-3.5 shadow-2xl"
-            initial={{ y: 80 }}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="compare-modes-title"
+            drag={reduceMotion ? false : "y"}
+            dragConstraints={{ top: 0, bottom: 0 }}
+            dragElastic={0.18}
+            onDragEnd={(_, info) => {
+              if (info.offset.y > 100) onClose();
+            }}
+            className="mx-auto flex max-h-[min(86dvh,560px)] w-full max-w-[430px] flex-col overflow-hidden rounded-t-[24px] border border-b-0 border-line/70 bg-background shadow-2xl"
+            initial={{ y: "100%" }}
             animate={{ y: 0 }}
-            exit={{ y: 80 }}
-            transition={{ type: "spring", damping: 28, stiffness: 280 }}
+            exit={{ y: "100%" }}
+            transition={
+              reduceMotion
+                ? { duration: 0 }
+                : { type: "spring", damping: 30, stiffness: 300 }
+            }
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-ink">
-                Compare modes
-              </h2>
+            <div className="flex justify-center pb-0.5 pt-2.5">
+              <span className="h-1 w-9 rounded-full bg-ink/15" aria-hidden="true" />
+            </div>
+
+            <div className="flex items-start justify-between gap-3 border-b border-line/50 px-4 pb-3 pt-2 min-[390px]:px-5">
+              <div className="min-w-0">
+                <h2 id="compare-modes-title" className="text-[15px] font-semibold leading-tight text-ink">
+                  Compare modes
+                </h2>
+                <p className="mt-1 text-[11px] leading-snug text-ink/45">
+                  The same situation, viewed three different ways.
+                </p>
+              </div>
               <button
                 type="button"
                 onClick={onClose}
-                className="rounded-full px-2.5 py-1 text-[11px] font-semibold text-ink/50 active:text-ink"
+                className="min-h-8 shrink-0 rounded-full border border-line/60 bg-white/70 px-3 text-[11px] font-semibold text-ink/55 transition-colors active:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
               >
                 Close
               </button>
             </div>
 
-            <div className="grid grid-cols-3 gap-1.5">
-              {COMPARE_MODES.map((mode) => {
-                const result = results?.find((r) => r.mode === mode);
-                return (
-                  <CompareCard
-                    key={mode}
-                    mode={mode}
-                    loading={loading || !result}
-                    result={result}
-                  />
-                );
-              })}
-            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-4 pt-4 min-[390px]:px-5">
+              {!geo ? (
+                <div className="rounded-2xl border border-line/60 bg-surface px-4 py-6 text-center">
+                  <p className="text-sm font-semibold text-ink/70">Location needed</p>
+                  <p className="mt-1 text-[12px] leading-snug text-ink/45">
+                    Turn on location to compare the same situation across modes.
+                  </p>
+                </div>
+              ) : (
+                <div className="flex snap-x gap-2 overflow-x-auto pb-1 min-[390px]:grid min-[390px]:grid-cols-3 min-[390px]:overflow-visible">
+                  {COMPARE_MODES.map((mode) => {
+                    const result = results?.find((r) => r.mode === mode);
+                    return (
+                      <CompareCard
+                        key={mode}
+                        mode={mode}
+                        loading={loading || !result}
+                        result={result}
+                      />
+                    );
+                  })}
+                </div>
+              )}
 
-            <p className="mt-2.5 text-center text-[9px] uppercase tracking-[0.14em] text-ink/30">
-              Same input · 3 different lenses
-            </p>
+              <p className="mt-3 text-center text-[9px] uppercase tracking-[0.14em] text-ink/30">
+                Same input · 3 lenses
+              </p>
+            </div>
           </motion.div>
         </motion.div>
       )}
@@ -121,7 +166,7 @@ function CompareCard({ mode, loading, result }: CompareCardProps) {
   const meta = MODE_META[mode];
 
   return (
-    <div className="flex min-h-[116px] flex-col rounded-xl border border-line/40 bg-surface p-2.5">
+    <div className="flex min-h-[136px] w-[132px] shrink-0 snap-start flex-col rounded-2xl border border-line/50 bg-surface p-3 min-[390px]:w-auto">
       <div className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-ink/45">
         <span aria-hidden="true">{meta.icon}</span>
         {meta.label}

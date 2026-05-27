@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import type { Intent } from "@/types/hade";
 
@@ -24,13 +24,24 @@ export function RefineSheet({ open, onClose, onConfirm }: RefineSheetProps) {
     onConfirm({ intent, urgency });
   };
 
+  useEffect(() => {
+    if (!open) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [open, onClose]);
+
   return (
     <AnimatePresence>
       {open && (
         <>
           <motion.div
             key="scrim"
-            className="fixed inset-0 z-40 bg-ink/30"
+            className="fixed inset-0 z-40 bg-ink/30 backdrop-blur-[1px]"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -42,7 +53,7 @@ export function RefineSheet({ open, onClose, onConfirm }: RefineSheetProps) {
             key="sheet"
             role="dialog"
             aria-modal="true"
-            aria-label="Refine your search"
+            aria-labelledby="refine-sheet-title"
             drag={reduceMotion ? false : "y"}
             dragConstraints={{ top: 0, bottom: 0 }}
             dragElastic={0.2}
@@ -57,18 +68,36 @@ export function RefineSheet({ open, onClose, onConfirm }: RefineSheetProps) {
                 ? { duration: 0 }
                 : { type: "spring", damping: 32, stiffness: 320 }
             }
-            className="fixed inset-x-0 bottom-0 z-50 flex max-h-[72dvh] flex-col rounded-t-[22px] border-t border-line bg-surface shadow-panel"
+            className="fixed inset-x-0 bottom-0 z-50 mx-auto flex max-h-[min(86dvh,560px)] w-full max-w-[430px] flex-col overflow-hidden rounded-t-[24px] border border-b-0 border-line bg-surface shadow-panel"
           >
             <div className="flex justify-center pb-0.5 pt-2.5">
               <span className="h-1 w-9 rounded-full bg-ink/15" aria-hidden="true" />
             </div>
 
-            <div className="flex flex-1 flex-col gap-4 overflow-y-auto px-4 pb-4 pt-3 min-[390px]:px-5">
+            <div className="flex items-start justify-between gap-3 border-b border-line/50 px-4 pb-3 pt-2 min-[390px]:px-5">
+              <div className="min-w-0">
+                <h2 id="refine-sheet-title" className="text-[15px] font-semibold leading-tight text-ink">
+                  Refine this decision
+                </h2>
+                <p className="mt-1 text-[11px] leading-snug text-ink/45">
+                  Adjust intent and urgency without leaving the current flow.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={onClose}
+                className="min-h-8 shrink-0 rounded-full border border-line/60 bg-white/70 px-3 text-[11px] font-semibold text-ink/55 transition-colors active:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="flex flex-1 flex-col gap-4 overflow-y-auto overscroll-contain px-4 pb-5 pt-4 min-[390px]:px-5">
               <div>
                 <p className="text-[10px] font-medium uppercase tracking-widest text-ink/50">
                   What are you after?
                 </p>
-                <div className="mt-2 flex flex-wrap gap-1.5">
+                <div className="mt-2 grid grid-cols-2 gap-1.5 min-[390px]:flex min-[390px]:flex-wrap">
                   {INTENTS.map((opt) => {
                     const selected = intent === opt;
                     return (
@@ -76,7 +105,7 @@ export function RefineSheet({ open, onClose, onConfirm }: RefineSheetProps) {
                         key={opt}
                         type="button"
                         onClick={() => setIntent(selected ? null : opt)}
-                        className={`min-h-9 rounded-full border px-3 text-sm font-medium transition-colors ${
+                        className={`min-h-10 rounded-xl border px-3 text-sm font-medium transition-colors min-[390px]:rounded-full ${
                           selected
                             ? "border-accent bg-accent/10 text-accent"
                             : "border-line bg-transparent text-ink/70"
@@ -94,7 +123,7 @@ export function RefineSheet({ open, onClose, onConfirm }: RefineSheetProps) {
                 <p className="text-[10px] font-medium uppercase tracking-widest text-ink/50">
                   How urgent?
                 </p>
-                <div className="mt-2 flex gap-1.5">
+                <div className="mt-2 grid grid-cols-3 gap-1.5">
                   {URGENCIES.map((u) => {
                     const selected = urgency === u;
                     return (
@@ -117,13 +146,13 @@ export function RefineSheet({ open, onClose, onConfirm }: RefineSheetProps) {
               </div>
             </div>
 
-            <div className="border-t border-line/70 bg-surface px-4 pb-[max(12px,env(safe-area-inset-bottom,12px))] pt-3 min-[390px]:px-5">
+            <div className="border-t border-line/70 bg-surface px-4 pb-[max(14px,env(safe-area-inset-bottom,14px))] pt-3 min-[390px]:px-5">
               <button
                 type="button"
                 onClick={handleConfirm}
-                className="h-11 w-full rounded-xl bg-accent text-sm font-semibold text-white shadow-soft transition-transform active:scale-[0.985] focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2"
+                className="min-h-12 w-full rounded-2xl bg-accent text-sm font-semibold text-white shadow-soft transition-transform active:scale-[0.985] focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2"
               >
-                Confirm
+                Apply refinement
               </button>
             </div>
           </motion.div>

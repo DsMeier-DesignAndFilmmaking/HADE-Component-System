@@ -38,36 +38,36 @@ function proximityReason(eta: number): ReasonCandidate | null {
 // Each phrase should answer "what makes RIGHT NOW interesting?"
 const TEMPORAL: Partial<Record<DayType, Partial<Record<TimeOfDay, string>>>> = {
   weekend_prime: {
-    early_evening: "Weekend night ahead",
-    evening: "Friday night energy",
-    late_night: "Night's just starting",
+    early_evening: "Still early enough",
+    evening: "Good night for it",
+    late_night: "Night still has room",
   },
   weekday_evening: {
-    early_evening: "Post-work wind-down",
-    evening: "Weeknight treat",
-    late_night: "Late weeknight out",
+    early_evening: "After-work reset",
+    evening: "Worth leaving for",
+    late_night: "Easy late option",
   },
   weekday: {
-    morning: "Good morning spot",
-    midday: "Perfect for lunch",
-    afternoon: "Afternoon escape",
-    early_evening: "End-of-day stop",
-    evening: "Evening pick",
-    late_night: "Late night option",
+    morning: "Good start nearby",
+    midday: "Fits a lunch break",
+    afternoon: "A useful pause",
+    early_evening: "End-of-day reset",
+    evening: "Easy evening call",
+    late_night: "Still open enough",
   },
   weekend: {
-    morning: "Lazy weekend morning",
-    midday: "Weekend lunch spot",
-    afternoon: "Weekend afternoon",
-    evening: "Weekend evening out",
-    late_night: "Late weekend night",
+    morning: "Slow morning fit",
+    midday: "Good weekend stop",
+    afternoon: "Easy afternoon move",
+    evening: "Worth the evening",
+    late_night: "Low-effort late plan",
   },
   holiday: {
-    morning: "Holiday morning treat",
-    midday: "Holiday lunch spot",
-    afternoon: "Holiday afternoon",
-    evening: "Holiday night out",
-    late_night: "Late holiday night",
+    morning: "Holiday pace fit",
+    midday: "Good holiday stop",
+    afternoon: "No-rush afternoon",
+    evening: "Holiday evening fit",
+    late_night: "Late, but doable",
   },
 };
 
@@ -87,10 +87,10 @@ function temporalReason(
 
 // User-intent alignment — only surfaces when the user explicitly refined.
 const INTENT_PHRASES: Record<string, string> = {
-  eat: "Solid food here",
-  drink: "Great drinks spot",
+  eat: "Food is the point",
+  drink: "Good drink stop",
   chill: "Good place to unwind",
-  scene: "The vibe is right",
+  scene: "Has some atmosphere",
 };
 
 function intentReason(
@@ -104,15 +104,15 @@ function intentReason(
 
 function urgencyReason(urgency: string | undefined): ReasonCandidate | null {
   if (urgency === "high")
-    return { text: "Open and ready now", priority: 22, tag: "urgency" };
+    return { text: "Easy to act on", priority: 22, tag: "urgency" };
   return null;
 }
 
 function energyReason(energy: string | undefined): ReasonCandidate | null {
   if (energy === "low")
-    return { text: "Low-key spot", priority: 25, tag: "energy" };
+    return { text: "Low-effort stop", priority: 25, tag: "energy" };
   if (energy === "high")
-    return { text: "High energy here", priority: 25, tag: "energy" };
+    return { text: "Can meet your energy", priority: 25, tag: "energy" };
   return null;
 }
 
@@ -129,10 +129,10 @@ function socialReason(
   if (!groupType || (groupType === "solo" && (!groupSize || groupSize <= 1)))
     return null;
   const phrases: Record<string, string> = {
-    couple: "Date night ready",
-    friends: "Fun with the group",
-    family: "Family friendly",
-    work: "Good for the team",
+    couple: "Good for two",
+    friends: "Easy group fit",
+    family: "Comfortable for family",
+    work: "Works for the team",
   };
   const phrase = phrases[groupType];
   if (phrase) return { text: phrase, priority: 24, tag: "social" };
