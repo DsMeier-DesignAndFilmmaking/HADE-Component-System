@@ -5,6 +5,7 @@ import { Clock, MapPin, ShieldCheck, Sparkles, Users } from "lucide-react";
 import type { SpontaneousObject, UiState } from "@/types/hade";
 import type { DomainMode } from "@/lib/hade/useHade";
 import { TEMPORAL_COPY, getActiveForCopy, type TemporalState } from "@/lib/hade/ugcCopy";
+import { WhyThisSheet } from "./WhyThisSheet";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -171,6 +172,7 @@ export function HeroDecisionCard({
   const [vibeOpen, setVibeOpen]   = useState(false);
   const [vibeText, setVibeText]   = useState("");
   const [vibeSent, setVibeSent]   = useState(false);
+  const [whyThisOpen, setWhyThisOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const timeLabel    = useMemo(() => getTimeLabel(object), [object]);
   const live         = useMemo(() => isLive(object), [object]);
@@ -353,14 +355,31 @@ export function HeroDecisionCard({
 
           {/* ── Why this? ───────────────────────────────────────────────────── */}
           {(whyPrimary || whySecondary) && (
-            <div className="mt-4 rounded-2xl border border-line/55 bg-background/70 p-3.5">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-ink/60">
+            <>
+              <button
+                type="button"
+                onClick={() => setWhyThisOpen(true)}
+                className="mt-4 flex min-h-11 w-full items-center justify-between gap-3 rounded-2xl border border-line/55 bg-background/70 px-3.5 py-2.5 text-left transition-colors hover:bg-surface active:bg-background focus:outline-none focus-visible:ring-2 focus-visible:ring-line"
+                aria-haspopup="dialog"
+                aria-expanded={whyThisOpen}
+              >
+                <span className="min-w-0">
+                  <span className="block text-[12px] font-semibold leading-tight text-ink/78">
                     Why this?
-                  </p>
+                  </span>
+                  <span className="mt-0.5 block text-[11px] leading-snug text-ink/65">
+                    View recommendation reasoning
+                  </span>
+                </span>
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent/10 text-accent">
+                  <ShieldCheck className="h-4 w-4" aria-hidden="true" />
+                </span>
+              </button>
+
+              <WhyThisSheet open={whyThisOpen} onClose={() => setWhyThisOpen(false)}>
+                <div className="rounded-2xl border border-line/55 bg-background/70 p-3.5">
                   {whyPrimary && (
-                    <p className="mt-1.5 text-[14px] font-medium leading-snug text-ink/78">
+                    <p className="text-[14px] font-medium leading-snug text-ink/78">
                       {whyPrimary}
                     </p>
                   )}
@@ -370,11 +389,8 @@ export function HeroDecisionCard({
                     </p>
                   )}
                 </div>
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent/10 text-accent">
-                  <ShieldCheck className="h-4 w-4" aria-hidden="true" />
-                </span>
-              </div>
-            </div>
+              </WhyThisSheet>
+            </>
           )}
 
           {/* ── Confidence ──────────────────────────────────────────────────── */}

@@ -18,7 +18,6 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import { getIntentMeta } from "@/lib/hade/wellness/intents";
-import { PILLAR_CONFIG } from "@/lib/hade/wellness/pillars";
 import type { UseWellnessEngineResult } from "@/lib/hade/wellness/useWellnessEngine";
 import type { WellnessPlace } from "@/lib/hade/wellness/types";
 import { PillBadge } from "./PillBadge";
@@ -116,8 +115,8 @@ export function WellnessDecisionCard({
     badges,
   } = engineResult;
 
-  const headerCfg = PILLAR_CONFIG[activePillar];
   const intentMeta = selectedIntent ? getIntentMeta(selectedIntent) : undefined;
+  const visiblePlace = places.length > 0 ? places[activeIndex % places.length] : null;
   const contextDiffers = contextHint.pillar !== resolved.pillar;
 
   return (
@@ -140,14 +139,6 @@ export function WellnessDecisionCard({
             {resolved.source === "intent" ? "You asked for" : "Why now"} ·{" "}
             {resolved.matchedRuleLabel}
           </span>
-        </div>
-        <div className="flex items-baseline gap-2">
-          <span aria-hidden="true" className="text-[24px] leading-none">
-            {headerCfg.chipEmoji}
-          </span>
-          <h2 className="text-[22px] font-semibold leading-tight text-ink">
-            {headerCfg.headerLabel}
-          </h2>
         </div>
         {intentMeta ? (
           <p className="text-[13px] leading-snug text-ink/70">
@@ -191,22 +182,24 @@ export function WellnessDecisionCard({
       >
         {loading ? (
           <LoadingSkeleton />
-        ) : places.length === 0 ? (
+        ) : !visiblePlace ? (
           <p className="rounded-2xl border border-dashed border-line bg-accent/5 p-4 text-center text-[13px] text-ink/60">
             I could not find a nearby {activePillar.toLowerCase()} option that felt specific enough.
           </p>
         ) : (
-          <ul className="flex flex-col gap-2">
-            <AnimatePresence mode="popLayout" initial={false}>
-              {places.map((place, idx) => (
-                <PlaceRow
-                  key={place.id}
-                  place={place}
-                  isActive={idx === activeIndex % places.length}
-                />
-              ))}
-            </AnimatePresence>
-          </ul>
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.div
+              key={visiblePlace.id}
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -4 }}
+              transition={{ duration: 0.2, ease: "easeOut" }}
+            >
+              <ul>
+                <PlaceRow place={visiblePlace} isActive />
+              </ul>
+            </motion.div>
+          </AnimatePresence>
         )}
       </section>
 

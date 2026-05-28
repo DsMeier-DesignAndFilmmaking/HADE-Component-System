@@ -44,7 +44,7 @@ export function WellnessLensView({
   // Resets to 0 whenever the intent changes so "Not this" cycles within the
   // new pillar's results, not the previous one's.
   const [activeIndex, setActiveIndex] = useState(0);
-  useEffect(() => { setActiveIndex(0); }, [selectedIntent]);
+  useEffect(() => { setActiveIndex(0); }, [selectedIntent, engine.activePillar]);
 
   // Adapter is invoked here purely to derive a short pillar-level subtitle
   // that matches the main demo's voice ("Mindfulness Reset · 0.3 mi").
