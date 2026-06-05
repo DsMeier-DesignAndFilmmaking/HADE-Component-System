@@ -222,7 +222,7 @@ export function DecisionCard({
               Finding a better fit...
             </HadeHeading>
             {pivotLabel && (
-              <span className="inline-flex w-fit items-center rounded-full border border-accent/20 bg-accent/5 px-3 py-1 text-[11px] font-semibold text-accent">
+              <span className="inline-flex w-fit items-center rounded-full border border-accent/20 bg-accent/5 px-3 py-1 text-[11px] font-semibold text-accentReadable">
                 {pivotLabel}
               </span>
             )}
@@ -236,7 +236,7 @@ export function DecisionCard({
                 {/* Label row */}
                 <div className="mb-2 flex flex-wrap items-center gap-1.5">
                   {isUGC ? (
-                    <span className="inline-flex items-center gap-1.5 rounded-full bg-accent/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-accent">
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-accent/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-accentReadable">
                       <span aria-hidden="true">👥</span>
                       Community Meetup
                     </span>

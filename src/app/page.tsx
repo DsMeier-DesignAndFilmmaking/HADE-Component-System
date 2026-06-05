@@ -51,7 +51,7 @@ export default function HomePage() {
   <motion.p 
     initial={{ opacity: 0, y: 10 }}
     animate={{ opacity: 1, y: 0 }}
-    className="mb-8 font-mono text-[10px] uppercase tracking-[0.4em] text-cyan-700 font-bold"
+    className="mb-8 font-mono text-[10px] uppercase tracking-[0.4em] text-accentReadable font-bold"
   >
     Human-Aware Decision Engine
   </motion.p>
@@ -104,7 +104,7 @@ export default function HomePage() {
     <HadeButton href="/demo" variant="primary" size="default">
       Experience HADE
     </HadeButton>
-    <HadeButton href="/components" variant="secondary" size="default">
+    <HadeButton href="/components" variant="secondary" size="default" className="!text-textPrimary hover:!text-textPrimary focus-visible:!text-textPrimary active:!text-textPrimary">
       See how it thinks
     </HadeButton>
   </motion.div>
@@ -124,7 +124,7 @@ export default function HomePage() {
         {/* INFRASTRUCTURE BLUEPRINT */}
         <section className="border-y border-border bg-surface/50 py-16 md:py-24">
           <div className="mx-auto max-w-7xl px-6">
-            <h2 className="mb-12 font-mono text-sm uppercase tracking-widest text-accentPrimary">Infrastructure for Decision-Making</h2>
+            <h2 className="mb-12 font-mono text-sm uppercase tracking-widest text-accentReadable">Infrastructure for Decision-Making</h2>
             
             <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
               {/* 01. Input Layer */}
@@ -203,7 +203,7 @@ export default function HomePage() {
               <div key={idx} className="flex flex-col rounded-2xl border border-border bg-surface p-8 transition-colors hover:border-accentPrimary/30 h-full">
                 <div className="mb-4 text-2xl">{item.icon}</div>
                 <h3 className="mb-2 font-bold text-textPrimary">{item.title}</h3>
-                <p className="mb-4 text-xs font-mono uppercase text-accentPrimary tracking-widest">{item.sub}</p>
+                <p className="mb-4 text-xs font-mono uppercase text-accentReadable tracking-widest">{item.sub}</p>
                 <p className="text-sm leading-relaxed text-textMuted">{item.desc}</p>
               </div>
             ))}
@@ -228,7 +228,7 @@ export default function HomePage() {
   <div className="mx-auto max-w-7xl px-6">
     <div className="grid grid-cols-1 gap-12 lg:grid-cols-2 lg:items-center">
       <div>
-        <h2 className="mb-6 text-3xl font-bold tracking-tight text-white">The Spontaneity Paradox</h2>
+        <h2 className="mb-6 text-3xl font-bold tracking-tight text-black">The Spontaneity Paradox</h2>
         <p className="mb-8 opacity-80 text-lg">
           Research confirms users don{"'"}t usually want "freedom of choice", they want fast, confident outcomes with zero cognitive load.
         </p>
@@ -236,13 +236,13 @@ export default function HomePage() {
           <div className="flex gap-4">
             <div className="font-mono text-accentPrimary font-bold">01</div>
             <p className="text-sm">
-              <strong className="text-white">Context Beats Preference:</strong> Static profiles are weak signals. HADE prioritizes real-time temporal and environmental context—weather, location, and social relay.
+              <strong className="text-black">Context Beats Preference:</strong> Static profiles are weak signals. HADE prioritizes real-time temporal and environmental context—weather, location, and social relay.
             </p>
           </div>
           <div className="flex gap-4">
             <div className="font-mono text-accentPrimary font-bold">02</div>
             <p className="text-sm">
-              <strong className="text-white">Overchoice is Friction:</strong> More options lead to lower satisfaction and delayed decisions. HADE reduces choice to a single, high-trust action⁹.
+              <strong className="text-black">Overchoice is Friction:</strong> More options lead to lower satisfaction and delayed decisions. HADE reduces choice to a single, high-trust action⁹.
             </p>
           </div>
         </div>
@@ -257,7 +257,7 @@ export default function HomePage() {
 
     {/* ADDED: FOOTER FOR CITATIONS 9-12 */}
     <div className="mt-16 border-t border-white/10 pt-8">
-      <div className="grid grid-cols-2 gap-x-8 gap-y-4 text-[10px] font-mono text-white/70 uppercase tracking-tighter sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-x-8 gap-y-4 text-[10px] font-mono text-black/70 uppercase tracking-tighter sm:grid-cols-4">
         <p>9. Harvard Business School + Columbia Studies</p>
         <p>10. Netflix Internal Engagement Data</p>
         <p>11. Microsoft Work Trend Index</p>

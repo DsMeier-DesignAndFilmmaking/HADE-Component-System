@@ -17,6 +17,7 @@ const config: Config = {
         textPrimary: tokenColor("--color-text-primary-rgb"),
         textMuted: tokenColor("--color-text-muted-rgb"),
         accentPrimary: tokenColor("--color-accent-primary-rgb"),
+        accentReadable: tokenColor("--color-accent-readable-rgb"),
         accentSecondary: tokenColor("--color-accent-secondary-rgb"),
         border: tokenColor("--color-border-rgb"),
         // Core HADE palette

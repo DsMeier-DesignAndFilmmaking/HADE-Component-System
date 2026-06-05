@@ -5,7 +5,7 @@ import { Layout } from "@/components/layout";
 function Section({ id, title, children }: { id: string; title: string; children: React.ReactNode }) {
   return (
     <section id={id} className="mb-14 scroll-mt-8">
-      <h2 className="font-mono text-xs uppercase tracking-widest text-accent mb-4 border-b border-line pb-2">
+      <h2 className="font-mono text-xs uppercase tracking-widest text-accentReadable mb-4 border-b border-line pb-2">
         {title}
       </h2>
       {children}
@@ -16,7 +16,7 @@ function Section({ id, title, children }: { id: string; title: string; children:
 function TypeRow({ name, type, description }: { name: string; type: string; description: string }) {
   return (
     <tr className="border-b border-line">
-      <td className="py-3 pr-4 font-mono text-xs text-accent">{name}</td>
+      <td className="py-3 pr-4 font-mono text-xs text-blue-700">{name}</td>
       <td className="py-3 pr-4 font-mono text-xs text-ink/60">{type}</td>
       <td className="py-3 text-xs text-ink/70">{description}</td>
     </tr>
@@ -36,7 +36,7 @@ export default function DocsPage() {
     <Layout>
       <main className="min-h-screen bg-background">
         <div className="mx-auto max-w-7xl px-6 py-12">
-        <p className="font-mono text-xs uppercase tracking-widest text-accent mb-3">
+        <p className="font-mono text-xs uppercase tracking-widest text-accentReadable mb-3">
           API Reference
         </p>
         <HadeHeading level={1} className="mb-3">

@@ -1071,7 +1071,7 @@ export function ActivityCreationView({ onCreate, onClose }: ActivityCreationView
         </div>
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-accent">Add something</p>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-accentReadable">Add something</p>
             <h2 className="mt-0.5 text-lg font-semibold leading-tight text-ink">
               {step === "what"    ? "What's happening?" :
                step === "vibe"    ? "What's the vibe?"  : "Any details?"}

@@ -235,7 +235,7 @@ export function HeroDecisionCard({
             <div className="flex min-w-0 flex-wrap items-center gap-1.5">
               {isUGC ? (
                 <>
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-accent/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-accent">
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-accent/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-accentReadable">
                     <Users className="h-3 w-3" aria-hidden="true" />
                     Community
                   </span>

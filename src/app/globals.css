@@ -8,6 +8,7 @@
   --color-text-primary: #1f2937;
   --color-text-muted: #4b5563;
   --color-accent-primary: #316bff;
+  --color-accent-readable: #2858dc;
   --color-accent-secondary: #f59e0b;
   --color-border: #e5e7eb;
   --color-background-rgb: 250 250 250;
@@ -15,6 +16,7 @@
   --color-text-primary-rgb: 31 41 55;
   --color-text-muted-rgb: 75 85 99;
   --color-accent-primary-rgb: 49 107 255;
+  --color-accent-readable-rgb: 40 88 220;
   --color-accent-secondary-rgb: 245 158 11;
   --color-border-rgb: 229 231 235;
   --color-ink-rgb: 11 13 18;
@@ -30,12 +32,14 @@
     --color-text-primary: #f6f7fb;
     --color-text-muted: #a7afbf;
     --color-accent-primary: #2858dc;
+    --color-accent-readable: #8ea7f7;
     --color-border: #293142;
     --color-background-rgb: 8 11 17;
     --color-surface-rgb: 18 23 34;
     --color-text-primary-rgb: 246 247 251;
     --color-text-muted-rgb: 167 175 191;
     --color-accent-primary-rgb: 40 88 220;
+    --color-accent-readable-rgb: 142 167 247;
     --color-border-rgb: 41 49 66;
     --color-ink-rgb: 246 247 251;
     --color-surface-legacy-rgb: 16 21 31;

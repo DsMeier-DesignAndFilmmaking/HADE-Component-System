@@ -222,7 +222,7 @@ function DesktopDebugDemo() {
       {/* Header */}
       <div className="mb-10 flex items-start justify-between gap-4">
         <div>
-          <p className="font-mono text-xs uppercase tracking-widest text-accent mb-3">
+          <p className="font-mono text-xs uppercase tracking-widest text-accentReadable mb-3">
             System Intelligence
           </p>
           <HadeHeading level={1} className="mb-3">
@@ -307,7 +307,7 @@ function DesktopDebugDemo() {
                 }`}
               >
                 <div className="flex justify-between items-start mb-1">
-                  <span className={`font-mono text-xs font-bold ${activeAgent.id === agent.id ? "text-accent" : "text-ink"}`}>
+                  <span className={`font-mono text-xs font-bold ${activeAgent.id === agent.id ? "text-accentReadable" : "text-ink"}`}>
                     {agent.id}
                   </span>
                   <span className="text-[9px] px-1.5 py-0.5 rounded-sm bg-ink/5 text-ink/65 border border-line uppercase font-medium">
@@ -465,7 +465,7 @@ function DesktopDebugDemo() {
           {/* ── Refine Panel — low state only ──────────────────────────────── */}
           {showRefinePanel && (
             <div className="mt-4 rounded-2xl border border-line bg-surface p-6">
-              <p className="font-mono text-xs uppercase tracking-widest text-accent mb-4">
+              <p className="font-mono text-xs uppercase tracking-widest text-accentReadable mb-4">
                 Refine Your Search
               </p>
 

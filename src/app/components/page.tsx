@@ -20,7 +20,7 @@ const SIGNAL_TYPES: SignalType[] = [
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="mb-14">
-      <h2 className="font-mono text-xs uppercase tracking-widest text-ink/40 mb-5 border-b border-line pb-2">
+      <h2 className="font-mono text-xs uppercase tracking-widest text-accentReadable mb-5 border-b border-line pb-2">
         {title}
       </h2>
       {children}
@@ -41,7 +41,7 @@ export default function ComponentsPage() {
     <Layout>
       <main className="min-h-screen bg-background">
         <div className="mx-auto max-w-7xl px-6 py-12">
-        <p className="font-mono text-xs uppercase tracking-widest text-accent mb-3">
+        <p className="font-mono text-xs uppercase tracking-widest text-accentReadable mb-3">
           Component Library
         </p>
         <HadeHeading level={1} className="mb-3">

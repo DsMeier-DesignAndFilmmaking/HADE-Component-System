@@ -67,7 +67,7 @@ function PlaceRow({
             <h3 className="truncate text-[15px] font-semibold text-ink">
               {place.name}
             </h3>
-            <span className={`${PILL_BASE} bg-accent/10 text-accent`}>
+            <span className={`${PILL_BASE} bg-accent/10 text-accentReadable`}>
               {place.validationTag}
             </span>
           </div>
@@ -128,7 +128,7 @@ export function WellnessDecisionCard({
       <header className="flex flex-col gap-2">
         <div className="flex items-center justify-between gap-2">
           <span
-            className={`${PILL_BASE} bg-accent/10 text-accent`}
+            className={`${PILL_BASE} bg-accent/10 text-accentReadable`}
             aria-label="Direction mode"
           >
             Wellness

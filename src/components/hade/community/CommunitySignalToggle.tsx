@@ -179,7 +179,7 @@ export function CommunitySignalToggle({
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent opacity-50" />
                   <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-accent" />
                 </span>
-                <span className="text-[10px] font-mono text-accent/60 uppercase tracking-wider">
+                <span className="text-[10px] font-mono text-accentReadable uppercase tracking-wider">
                   Live
                 </span>
               </>

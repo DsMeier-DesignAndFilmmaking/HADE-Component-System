@@ -82,7 +82,7 @@ function SettingSlider({
 }: SliderProps) {
   return (
     <div className="flex items-center gap-2.5">
-      <span className="text-[11px] font-mono text-accent w-8 text-right tabular-nums select-none">
+      <span className="text-[11px] font-mono text-accentReadable w-8 text-right tabular-nums select-none">
         {value.toFixed(2)}
       </span>
       <input
@@ -327,7 +327,7 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
             {/* Header */}
             <div className="flex items-center justify-between px-5 py-4 border-b border-line shrink-0">
               <div>
-                <p className="font-mono text-[9px] uppercase tracking-widest text-accent mb-0.5">
+                <p className="font-mono text-[9px] uppercase tracking-widest text-accentReadable mb-0.5">
                   Configuration
                 </p>
                 <h2 className="text-[15px] font-semibold text-ink tracking-tight">
@@ -553,7 +553,7 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
                     transition={{ duration: 0.2 }}
                     className="mt-1.5 rounded-lg border border-accent/20 bg-accent/5 px-3 py-2"
                   >
-                    <p className="text-[10px] font-mono text-accent/70 leading-relaxed">
+                    <p className="text-[10px] font-mono text-accentReadable leading-relaxed">
                       Debug payloads will appear in browser console
                       and API responses. Disable before production.
                     </p>

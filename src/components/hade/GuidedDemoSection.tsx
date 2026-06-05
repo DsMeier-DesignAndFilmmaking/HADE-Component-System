@@ -119,7 +119,7 @@ export function GuidedDemoSection() {
   return (
     <section className="mx-auto max-w-7xl px-6 py-20">
       <div className="mx-auto max-w-2xl text-center">
-        <p className="mb-3 font-mono text-[10px] uppercase tracking-[0.3em] text-accentPrimary">
+        <p className="mb-3 font-mono text-[10px] uppercase tracking-[0.3em] text-accentReadable">
           Try it live
         </p>
         <h2 className="text-3xl font-bold tracking-tight text-textPrimary md:text-4xl">
@@ -193,7 +193,7 @@ export function GuidedDemoSection() {
                   {DEMO_BUTTONS.find((b) => b.mode === result.mode)?.icon}{" "}
                   {DEMO_BUTTONS.find((b) => b.mode === result.mode)?.label}
                 </span>
-                <span className="rounded-full bg-accentPrimary/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-accentPrimary">
+                <span className="rounded-full bg-accentPrimary/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-accentReadable">
                   {result.category}
                 </span>
               </div>

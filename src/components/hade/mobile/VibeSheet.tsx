@@ -93,7 +93,7 @@ export function VibeSheet({ venueId: _venueId, venueName, isUGC = false, onDismi
       <div className="mx-auto mb-3 h-1 w-9 rounded-full bg-line" />
 
       {/* Header */}
-      <p className="mb-1 font-mono text-[10px] uppercase tracking-widest text-accent">
+      <p className="mb-1 font-mono text-[10px] uppercase tracking-widest text-accentReadable">
         How was it?
       </p>
       <p className="mb-3 text-sm font-semibold leading-snug text-ink">{venueName}</p>

@@ -116,7 +116,7 @@ function AdaptiveUINode({ phase }: { phase: HadePhase }) {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-1.5">
                   <div className="h-1.5 w-1.5 rounded-full bg-accentPrimary animate-ping" />
-                  <span className="text-[9px] font-mono font-bold text-accentPrimary uppercase">Optimal Match</span>
+                  <span className="text-[9px] font-mono font-bold text-accentReadable uppercase">Optimal Match</span>
                 </div>
                 <span className="text-[9px] font-mono text-textMuted">98% Match</span>
               </div>
